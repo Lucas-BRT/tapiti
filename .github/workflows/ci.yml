@@ -120,7 +120,7 @@ jobs:
           node-version: 22
       - run: scripts/build-wasm.sh
       - run: node --check apps/site/assets/lab/lab.js && node --check apps/site/assets/lab/worker.js
-      - run: node --check apps/site/assets/walk/build.js && node --check apps/site/assets/walk/scene.js && node --check scripts/vendor-three.mjs
+      - run: node --check apps/site/assets/walk/build.js && node --check apps/site/assets/walk/scene.js && node --check apps/site/assets/walk/dungeon.js && node --check scripts/vendor-three.mjs
       - run: for f in scripts/*.mjs; do node --check "$f"; done
       - run: node scripts/walk-check.mjs
 

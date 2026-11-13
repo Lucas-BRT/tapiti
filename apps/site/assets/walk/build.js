@@ -266,12 +266,15 @@ function wallMesh(loops) {
   const positions = new Float32Array(quads * 4 * 3)
   const normals = new Float32Array(quads * 4 * 3)
   const shade = new Float32Array(quads * 4)
+  const uvs = new Float32Array(quads * 4 * 2)
   const indices = new Uint32Array(quads * 6)
   let v = 0
   let q = 0
   // Three rings of heights; the lowest strip is darker, a cheap stand-in for ambient occlusion where wall meets floor.
   const rings = [[0, 0.35], [FOOT, 0.8], [WALL_HEIGHT, 1]]
   for (const loop of loops) {
+    // `along` is the length of wall walked so far: the horizontal texture coordinate, so stone courses follow the wall round corners.
+    let along = 0
     for (let k = 0; k < loop.length; k++) {
       const [ax, ay] = loop[k]
       const [bx, by] = loop[(k + 1) % loop.length]
@@ -284,19 +287,21 @@ function wallMesh(loops) {
       for (let r = 0; r < 2; r++) {
         const [h0, s0] = rings[r]
         const [h1, s1] = rings[r + 1]
-        const corners = [[ax, h0, ay, s0], [bx, h0, by, s0], [bx, h1, by, s1], [ax, h1, ay, s1]]
-        for (const [x, y, z, s] of corners) {
+        const corners = [[ax, h0, ay, s0, along], [bx, h0, by, s0, along + len], [bx, h1, by, s1, along + len], [ax, h1, ay, s1, along]]
+        for (const [x, y, z, s, u] of corners) {
           positions.set([x, y, z], v * 3)
           normals.set([nx, 0, nz], v * 3)
+          uvs.set([u, y], v * 2)
           shade[v] = s
           v++
         }
         indices.set([v - 4, v - 3, v - 2, v - 4, v - 2, v - 1], q * 6)
         q++
       }
+      along += len
     }
   }
-  return { positions: positions.subarray(0, v * 3), normals: normals.subarray(0, v * 3), shade: shade.subarray(0, v), indices: indices.subarray(0, q * 6), quads: q }
+  return { positions: positions.subarray(0, v * 3), normals: normals.subarray(0, v * 3), uvs: uvs.subarray(0, v * 2), shade: shade.subarray(0, v), indices: indices.subarray(0, q * 6), quads: q }
 }
 
 /* ---------------- Torches, pillars ---------------- */
@@ -394,6 +399,18 @@ function pathPoints(floor) {
   return { points, mark }
 }
 
+/** Where the walk starts: inside the first room, as far back from its way out as the room allows, so the camera looks at the way in. */
+function introPoint(field, points) {
+  const [cx, cy] = points[0]
+  const [nx, ny] = points.find((p) => Math.abs(p[0] - cx) > 1 || Math.abs(p[1] - cy) > 1) ?? [cx + 1, cy]
+  const len = sqrt((nx - cx) ** 2 + (ny - cy) ** 2) || 1
+  const dx = (cx - nx) / len
+  const dy = (cy - ny) / len
+  let back = 0
+  while (back < 400 && valueAt(field, cx + dx * (back + CELL), cy + dy * (back + CELL)) > 12) back += CELL
+  return [cx + dx * back, cy + dy * back]
+}
+
 /* ---------------- Everything ---------------- */
 
 export function build(floor) {
@@ -407,7 +424,10 @@ export function build(floor) {
       return ka[0] - kb[0] || ka[1] - kb[1]
     })
 
-  const { points, mark } = pathPoints(floor)
+  const walked = pathPoints(floor)
+  const intro = introPoint(field, walked.points)
+  const points = [intro, ...walked.points]
+  const mark = walked.mark.map((m) => ({ ...m, at: m.at + 1 }))
   const lengths = new Float32Array(points.length)
   for (let i = 1; i < points.length; i++) {
     const dx = points[i][0] - points[i - 1][0]
@@ -420,7 +440,8 @@ export function build(floor) {
     const m = roomMarks[Math.round((i * (roomMarks.length - 1)) / (STATIONS - 1))]
     const room = floor.nodes[m.node].room
     const [x, y] = floor.rooms[room].center
-    return { room, x, y, u: lengths[m.at] / total }
+    // The walk begins at the intro point, a little before the first room's centre: station 0 is that start.
+    return { room, x, y, u: i === 0 ? 0 : lengths[m.at] / total }
   })
 
   const leaf = floor.rooms.find((r) => r.alive && r.leaf)
@@ -439,6 +460,7 @@ export function build(floor) {
     walls: wallMesh(loops),
     torches: placeTorches(floor, loops),
     pillars: junctionPillars(floor),
+    intro,
     path: { points: Float32Array.from(points.flatMap(([x, y]) => [x, 0, y])), lengths, total },
     stations,
     leafRoom: leaf ? { id: leaf.id, center: leaf.center, cls: leaf.cls } : null,

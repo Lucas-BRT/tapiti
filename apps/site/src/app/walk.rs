@@ -148,7 +148,11 @@ pub async fn scene_backdrop(
             }
         </div>
         if scene {
-            <script type="module" src=(asset!("assets/walk/scene.js"))></script>
+            if mode == "landing" {
+                <script type="module" src=(asset!("assets/walk/dungeon.js"))></script>
+            } else {
+                <script type="module" src=(asset!("assets/walk/scene.js"))></script>
+            }
         }
     })
 }
