@@ -337,13 +337,6 @@ export function mount({ THREE, canvas, floor, scene: built, page }) {
     return out
   }
   const stationU = built.stations.map((s) => s.u)
-  // Where each room's text stands, as a share of the width to move the picture away from it (+ right, - left). Matches landing.css.
-  const SHIFT = [0.14, 0.16, 0, 0, -0.14, 0.16, -0.05]
-  const shiftAt = (u) => {
-    for (let i = 0; i < stationU.length - 1; i++) if (u <= stationU[i + 1]) return lerp(SHIFT[i], SHIFT[i + 1], smooth(stationU[i], stationU[i + 1], u))
-    return SHIFT[SHIFT.length - 1]
-  }
-
   const here = [0, 0, 0]
   const ahead = [0, 0, 0]
   const pose = { px: 0, py: EYE, pz: 0, yaw: 0, pitch: 0 }
@@ -352,6 +345,11 @@ export function mount({ THREE, canvas, floor, scene: built, page }) {
     pointAt(u, here)
     // Look at a point a little way along the path; where it turns, the head follows a moment later (see `yaw` in render).
     pointAt(u + LOOK / total, ahead)
+    // At the very end of the path there is no "ahead": keep the heading of the last stretch.
+    if (Math.hypot(ahead[0] - here[0], ahead[2] - here[2]) < 1) {
+      pointAt(u - LOOK / total, ahead)
+      return Math.atan2(here[0] - ahead[0], here[2] - ahead[2])
+    }
     return Math.atan2(ahead[0] - here[0], ahead[2] - here[2])
   }
 
@@ -373,6 +371,78 @@ export function mount({ THREE, canvas, floor, scene: built, page }) {
     return pose
   }
 
+  /* Text in the world: every room's text is a sign standing in that room, ahead of where the walk stops there. The signs are the page's own
+     elements (links, field and button keep working, and so does reading and focus), placed with the camera's matrices so they sit in the
+     picture's perspective. The canvas knows nothing of them, so a sign fades out as the walker leaves its room instead of showing through walls. */
+  const DEPTH = 130
+  const bodies = page ? [...page.querySelectorAll('[data-station] .room-body')] : []
+  const layer = document.createElement('div')
+  layer.className = 'world-text'
+  const rig = document.createElement('div')
+  rig.className = 'world-rig'
+  layer.append(rig)
+  const signs = bodies.map((el) => {
+    const station = Number(el.closest('[data-station]').dataset.station)
+    const at = stationU[station]
+    const heading = headingAt(at)
+    const sign = { el, base: [here[0] + Math.sin(heading) * DEPTH, here[2] + Math.cos(heading) * DEPTH], yaw: heading + Math.PI, left: [Math.cos(heading), -Math.sin(heading)] }
+    return sign
+  })
+  const view = new THREE.Matrix4()
+  const object = new THREE.Matrix4()
+  const quat = new THREE.Quaternion()
+  const position = new THREE.Vector3()
+  const scale = new THREE.Vector3()
+  const upAxis = new THREE.Vector3(0, 1, 0)
+  const e = (n) => (Math.abs(n) < 1e-10 ? 0 : n)
+  const placeSigns = () => {
+    const W = canvas.clientWidth
+    const H = canvas.clientHeight
+    const fov = (0.5 / Math.tan((camera.fov * Math.PI) / 360)) * H
+    layer.style.perspective = `${fov}px`
+    rig.style.width = `${W}px`
+    rig.style.height = `${H}px`
+    camera.updateMatrixWorld()
+    view.copy(camera.matrixWorld).invert()
+    const c = view.elements
+    rig.style.transform = `translateZ(${fov}px) matrix3d(${e(c[0])},${e(-c[1])},${e(c[2])},${e(c[3])},${e(c[4])},${e(-c[5])},${e(c[6])},${e(c[7])},${e(c[8])},${e(-c[9])},${e(c[10])},${e(c[11])},${e(c[12])},${e(-c[13])},${e(c[14])},${e(c[15])}) translate(${W / 2}px,${H / 2}px)`
+    const k = DEPTH / fov
+    for (const sign of signs) {
+      // On wide screens a sign stands to the left of the way ahead, so the way stays in sight; on narrow ones it is centred.
+      const panel = sign.el.offsetWidth
+      const shift = Math.max(0, W / 2 - panel / 2 - 56) * k
+      position.set(sign.base[0] + sign.left[0] * shift, EYE, sign.base[1] + sign.left[1] * shift)
+      // Fade by how far the sign is from the eyes: full when the walk has stopped in its room, gone before the next sign comes close.
+      const eye = position.clone().applyMatrix4(view)
+      const near = smooth(DEPTH * 0.3, DEPTH * 0.7, -eye.z)
+      const rest = Math.hypot(DEPTH, shift)
+      const far = 1 - smooth(rest + 15, rest + 55, eye.length())
+      const opacity = near * far
+      sign.el.style.opacity = opacity.toFixed(3)
+      sign.el.style.visibility = opacity < 0.02 ? 'hidden' : 'visible'
+      sign.el.style.pointerEvents = opacity > 0.6 ? 'auto' : 'none'
+      quat.setFromAxisAngle(upAxis, sign.yaw)
+      scale.set(k, k, k)
+      object.compose(position, quat, scale)
+      const o = object.elements
+      sign.el.style.transform = `translate(-50%,-50%) matrix3d(${e(o[0])},${e(o[1])},${e(o[2])},${e(o[3])},${e(-o[4])},${e(-o[5])},${e(-o[6])},${e(-o[7])},${e(o[8])},${e(o[9])},${e(o[10])},${e(o[11])},${e(o[12])},${e(o[13])},${e(o[14])},${e(o[15])})`
+    }
+  }
+  const mountSigns = () => {
+    if (!signs.length || layer.isConnected) return
+    page.before(layer)
+    for (const sign of signs) rig.append(sign.el)
+  }
+
+  /* Looking around: the pointer turns the head a little, so the sign and the stone move against each other. */
+  const look = { x: 0, y: 0, yaw: 0, pitch: 0 }
+  addEventListener('pointermove', (event) => {
+    if (reduced()) return
+    look.x = event.clientX / innerWidth - 0.5
+    look.y = event.clientY / innerHeight - 0.5
+    wake()
+  }, { passive: true })
+
   /* Scroll to walk position */
   const sections = page ? [...page.querySelectorAll('[data-station]')] : []
   const footer = document.querySelector('.site-footer')
@@ -390,7 +460,7 @@ export function mount({ THREE, canvas, floor, scene: built, page }) {
     let i = 0
     for (let k = 0; k < sections.length; k++) if (tops[k] <= mid) i = k
     const f = clamp((mid - tops[i]) / (heights[i] || 1), 0, 1)
-    const u = i >= stationU.length - 1 ? 1 : lerp(stationU[i], stationU[i + 1], smooth(0.35, 1, f))
+    const u = i >= stationU.length - 1 ? 1 : lerp(stationU[i], stationU[i + 1], smooth(0.5, 1, f))
     let dive = 0
     if (footer) {
       const rect = footer.getBoundingClientRect()
@@ -463,16 +533,15 @@ export function mount({ THREE, canvas, floor, scene: built, page }) {
       delta -= Math.round(delta / (2 * Math.PI)) * 2 * Math.PI
       yaw += delta * (1 - Math.exp(-Math.min(dt, 100) / 1000 / 0.22))
     }
+    const k = 1 - Math.exp(-Math.min(dt, 100) / 1000 / 0.15)
+    look.yaw += (-look.x * 0.2 - look.yaw) * k
+    look.pitch += (-look.y * 0.1 - look.pitch) * k
+    const yawNow = yaw + look.yaw
+    const pitchNow = p.pitch + look.pitch
     camera.position.set(p.px, p.py, p.pz)
-    forward.set(Math.sin(yaw) * Math.cos(p.pitch), Math.sin(p.pitch), Math.cos(yaw) * Math.cos(p.pitch))
+    forward.set(Math.sin(yawNow) * Math.cos(pitchNow), Math.sin(pitchNow), Math.cos(yawNow) * Math.cos(pitchNow))
     camera.lookAt(p.px + forward.x * 10, p.py + forward.y * 10, p.pz + forward.z * 10)
     camera.fov = innerWidth < innerHeight * 0.8 ? 80 : 70
-    // On wide screens the text stands at one side: the picture moves to the other, without turning the camera.
-    const cw = canvas.width
-    const ch = canvas.height
-    const shift = innerWidth >= 1100 ? shiftAt(state.u) * (1 - state.dive) : 0
-    if (shift) camera.setViewOffset(cw, ch, -shift * cw, 0, cw, ch)
-    else camera.clearViewOffset()
     camera.updateProjectionMatrix()
     // Lights: the pool goes to the torches nearest to the eyes.
     for (let i = 0; i < count; i++) scratch[i] = (spots[i][0] - p.px) ** 2 + (spots[i][2] - p.pz) ** 2
@@ -501,8 +570,10 @@ export function mount({ THREE, canvas, floor, scene: built, page }) {
     renderer.render(scene, camera)
     if (first) {
       first = false
+      mountSigns()
       document.documentElement.classList.add('walk-on')
     }
+    placeSigns()
     window.__walk = { tier, calls: renderer.info.render.calls, triangles: renderer.info.render.triangles, stations: built.stations, camera: { x: p.px, y: p.py, z: p.pz, u: state.u }, torches: count, poolSize, lights: pool.length + 3, stepped }
   }
 
@@ -595,6 +666,7 @@ export function mount({ THREE, canvas, floor, scene: built, page }) {
       cancelAnimationFrame(frameId)
       removeEventListener('scroll', onScroll)
       removeEventListener('resize', onResize)
+      layer.remove()
       for (const o of [wallGeometry, plane, pillarGeometry, jambGeometry, lintelGeometry, doorMaterial, bracketGeometry, flameGeometry, stepGeometry, texture, wallMaterial, pillarMaterial, floorMaterial, ceilingMaterial, stepMaterial, bracketMaterial, flames.material]) o.dispose()
       renderer.dispose()
       renderer.forceContextLoss()
