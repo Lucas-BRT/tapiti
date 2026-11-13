@@ -87,7 +87,7 @@
      The sign is a plain panel of the page's own colour, so it reads on any stone. */
   .world-text { position: fixed; inset: 0; z-index: 2; overflow: hidden; pointer-events: none; }
   .world-rig { position: absolute; left: 0; top: 0; transform-style: preserve-3d; }
-  .walk-on .room { min-height: 100svh; padding: 0; }
+  .walk-on .room { min-height: 0; padding: 0; }
   .walk-on .walk-backdrop::after { display: none; }
   .world-rig .room-body { position: absolute; left: 0; top: 0; width: min(560px, calc(100vw - 48px)); padding: 26px 30px; background: rgb(11 14 18 / .78); border: 1px solid rgb(239 231 214 / .14); border-radius: var(--radius-md); backface-visibility: hidden; }
   .world-rig h1 { font-size: clamp(2.6rem, 5vw, 3.8rem); margin-bottom: 16px; }

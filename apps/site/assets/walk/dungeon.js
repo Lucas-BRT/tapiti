@@ -112,7 +112,7 @@ function stone(THREE, color) {
 }
 
 /** One canvas for the floor and the ceiling: flagstone joints along the floor's grid, the mask as alpha, so one plane takes the floor's shape. */
-function flagTexture(THREE, floor, scene, size, { well = false } = {}) {
+function flagTexture(THREE, floor, scene, size, { grow = 0 } = {}) {
   const [x0, y0, x1, y1] = scene.bounds
   const W = size
   const H = Math.round((size * (y1 - y0)) / (x1 - x0))
@@ -130,7 +130,11 @@ function flagTexture(THREE, floor, scene, size, { well = false } = {}) {
   for (let i = 0; i < m.data.length; i++) { image.data[i * 4] = image.data[i * 4 + 1] = image.data[i * 4 + 2] = 255; image.data[i * 4 + 3] = m.data[i] }
   small.getContext('2d').putImageData(image, 0, 0)
   c.imageSmoothingEnabled = true
-  c.drawImage(small, (m.ox - x0 + m.cell / 2) * sx, (m.oy - y0 + m.cell / 2) * sy, m.nx * m.cell * sx, m.ny * m.cell * sy)
+  const place = (dx, dy) => c.drawImage(small, (m.ox - x0 + m.cell / 2) * sx + dx, (m.oy - y0 + m.cell / 2) * sy + dy, m.nx * m.cell * sx, m.ny * m.cell * sy)
+  place(0, 0)
+  // `grow` widens the shape by that many units all round. The ceiling is as high as the walls, so a wider ceiling is hidden by them, and no
+  // crack is left where the mask and the wall outline disagree by a fraction of a cell.
+  if (grow) for (const [a, b] of [[1, 0], [-1, 0], [0, 1], [0, -1], [0.7, 0.7], [0.7, -0.7], [-0.7, 0.7], [-0.7, -0.7]]) place(a * grow * sx, b * grow * sy)
   c.globalCompositeOperation = 'source-in'
   c.fillStyle = '#6d675f'
   c.fillRect(0, 0, W, H)
@@ -157,13 +161,6 @@ function flagTexture(THREE, floor, scene, size, { well = false } = {}) {
     c.stroke()
   }
   c.globalAlpha = 1
-  if (well) {
-    // The stairwell is a square hole in the floor (the ceiling above it stays whole), so the steps below it are seen, not hidden by a plane.
-    const { center, radius } = scene.stairs
-    const side = Math.min(radius * 1.1, 110)
-    c.globalCompositeOperation = 'destination-out'
-    c.fillRect((center[0] - side / 2 - x0) * sx, (center[1] - side / 2 - y0) * sy, side * sx, side * sy)
-  }
   const texture = new THREE.CanvasTexture(canvas)
   texture.colorSpace = THREE.SRGBColorSpace
   texture.anisotropy = 8
@@ -201,17 +198,27 @@ export function mount({ THREE, canvas, floor, scene: built, page }) {
 
   /* Floor and ceiling: one plane each, the texture's alpha cuts it to the shape of the floor. */
   const [bx0, by0, bx1, by1] = built.bounds
-  const texture = flagTexture(THREE, floor, built, 2048, { well: true })
-  const ceilingTexture = flagTexture(THREE, floor, built, 1024)
+  const texture = flagTexture(THREE, floor, built, 2048)
+  const ceilingTexture = flagTexture(THREE, floor, built, 1024, { grow: 8 })
   const plane = new THREE.PlaneGeometry(bx1 - bx0, by1 - by0)
   const floorMaterial = new THREE.MeshLambertMaterial({ map: texture, alphaTest: 0.5 })
+  // The stairwell is a square hole in the floor (the ceiling above it stays whole): the fragments inside it are dropped, so the steps below
+  // are seen (a hole in the texture would also open the ceiling, which shares nothing with the floor's texture but its plane).
+  const wellSide = Math.min(built.stairs.radius * 1.1, 110)
+  const well = [built.stairs.center[0] - wellSide / 2, built.stairs.center[1] - wellSide / 2, built.stairs.center[0] + wellSide / 2, built.stairs.center[1] + wellSide / 2]
+  floorMaterial.onBeforeCompile = (shader) => {
+    shader.uniforms.uWell = { value: Float32Array.from(well) }
+    shader.vertexShader = shader.vertexShader.replace('void main() {', 'varying vec3 vFloorPos;\nvoid main() {').replace('#include <begin_vertex>', '#include <begin_vertex>\nvFloorPos = (modelMatrix * vec4(position, 1.0)).xyz;')
+    shader.fragmentShader = shader.fragmentShader.replace('void main() {', 'uniform vec4 uWell;\nvarying vec3 vFloorPos;\nvoid main() {\n  if (vFloorPos.x > uWell.x && vFloorPos.x < uWell.z && vFloorPos.z > uWell.y && vFloorPos.z < uWell.w) discard;')
+  }
   const ground = new THREE.Mesh(plane, floorMaterial)
   ground.rotation.x = -Math.PI / 2
   ground.position.set((bx0 + bx1) / 2, 0, (by0 + by1) / 2)
   scene.add(ground)
-  const ceilingMaterial = new THREE.MeshLambertMaterial({ map: ceilingTexture, alphaTest: 0.5, color: '#8a847b' })
+  // The same plane as the floor, turned the same way (so the texture's shape lines up with the floor's) and seen from below: its back faces.
+  const ceilingMaterial = new THREE.MeshLambertMaterial({ map: ceilingTexture, alphaTest: 0.5, color: '#8a847b', side: 1 /* BackSide, which the vendored subset does not export */ })
   const ceiling = new THREE.Mesh(plane, ceilingMaterial)
-  ceiling.rotation.x = Math.PI / 2
+  ceiling.rotation.x = -Math.PI / 2
   ceiling.position.set((bx0 + bx1) / 2, WALL, (by0 + by1) / 2)
   scene.add(ceiling)
 
@@ -394,7 +401,7 @@ export function mount({ THREE, canvas, floor, scene: built, page }) {
     const station = Number(el.closest('[data-station]').dataset.station)
     const at = stationU[station]
     const heading = headingAt(at)
-    const sign = { el, base: [here[0] + Math.sin(heading) * DEPTH, here[2] + Math.cos(heading) * DEPTH], yaw: heading + Math.PI, left: [Math.cos(heading), -Math.sin(heading)] }
+    const sign = { el, station, base: [here[0] + Math.sin(heading) * DEPTH, here[2] + Math.cos(heading) * DEPTH], yaw: heading + Math.PI, left: [Math.cos(heading), -Math.sin(heading)] }
     return sign
   })
   const view = new THREE.Matrix4()
@@ -421,16 +428,34 @@ export function mount({ THREE, canvas, floor, scene: built, page }) {
       const panel = sign.el.offsetWidth
       const shift = Math.max(0, W / 2 - panel / 2 - 56) * k
       position.set(sign.base[0] + sign.left[0] * shift, EYE, sign.base[1] + sign.left[1] * shift)
-      // Fade by how far the sign is from the eyes: full when the walk has stopped in its room, gone before the next sign comes close.
+      // A sign shows only while the walk is near its room (by the length of path walked, not by how far it looks): it is gone before the
+      // walker is past it, so it is never seen huge and half-faded from the side, and two signs are never up at once.
       const eye = position.clone().applyMatrix4(view)
-      const near = smooth(DEPTH * 0.3, DEPTH * 0.7, -eye.z)
-      const rest = Math.hypot(DEPTH, shift)
-      const far = 1 - smooth(rest + 15, rest + 55, eye.length())
-      const opacity = near * far
+      const opacity = 1 - smooth(10, 55, Math.abs(state.u - stationU[sign.station]) * total)
       sign.el.style.opacity = opacity.toFixed(3)
       sign.el.style.visibility = opacity < 0.02 ? 'hidden' : 'visible'
       sign.el.style.pointerEvents = opacity > 0.6 ? 'auto' : 'none'
-      quat.setFromAxisAngle(upAxis, sign.yaw)
+      // The sign turns most of the way to face the walker, so it never reads at a steep angle while the walk goes round a bend.
+      let turn = yaw + look.yaw + Math.PI - sign.yaw
+      turn -= Math.round(turn / (2 * Math.PI)) * 2 * Math.PI
+      quat.setFromAxisAngle(upAxis, sign.yaw + turn * 0.75)
+      // And it stays on the screen: past its edges the sign slides along the view, so it is never cut by the window.
+      const depth = -eye.z
+      if (opacity > 0.02 && depth > 20) {
+        const sx = W / 2 + (eye.x * fov) / depth
+        const sy = H / 2 - (eye.y * fov) / depth
+        const halfW = (panel * DEPTH) / (2 * depth)
+        const halfH = (sign.el.offsetHeight * DEPTH) / (2 * depth)
+        const fit = (v, lo, hi, mid) => (hi - lo < 0 ? mid : clamp(v, lo, hi))
+        const nx = fit(sx, 20 + halfW, W - 20 - halfW, W / 2)
+        const ny = fit(sy, 72 + halfH, H - 48 - halfH, H / 2)
+        const m = camera.matrixWorld.elements
+        const dx = ((nx - sx) * depth) / fov
+        const dy = (-(ny - sy) * depth) / fov
+        position.x += m[0] * dx + m[4] * dy
+        position.y += m[1] * dx + m[5] * dy
+        position.z += m[2] * dx + m[6] * dy
+      }
       scale.set(k, k, k)
       object.compose(position, quat, scale)
       const o = object.elements
@@ -457,25 +482,41 @@ export function mount({ THREE, canvas, floor, scene: built, page }) {
   const footer = document.querySelector('.site-footer')
   let tops = []
   let heights = []
+  // Scrolling is walking: every metre of corridor costs the same amount of scroll, so the walk has one speed whatever the room. A room's
+  // section is a rest (the walk stands in the room, its sign in view) and then the stretch to the next room, as long as that stretch is.
+  const PX_PER_UNIT = 1.4
+  const restPx = () => innerHeight * 0.55
   const measure = () => {
+    sections.forEach((el, i) => {
+      const last = i === sections.length - 1
+      const stretch = last ? 0 : (stationU[i + 1] - stationU[i]) * total * PX_PER_UNIT
+      el.style.height = `${Math.round(last ? innerHeight : restPx() + stretch)}px`
+    })
     const base = scrollY
-    tops = sections.map((s) => s.getBoundingClientRect().top + base)
-    heights = sections.map((s) => s.getBoundingClientRect().height)
+    tops = sections.map((el) => el.getBoundingClientRect().top + base)
+    heights = sections.map((el) => el.getBoundingClientRect().height)
   }
   const target = () => {
     if (!sections.length) return { u: 0, dive: 0, station: 0 }
     const vh = innerHeight
-    const mid = scrollY + vh * 0.5
+    const y = scrollY + 1
     let i = 0
-    for (let k = 0; k < sections.length; k++) if (tops[k] <= mid) i = k
-    const f = clamp((mid - tops[i]) / (heights[i] || 1), 0, 1)
-    const u = i >= stationU.length - 1 ? 1 : lerp(stationU[i], stationU[i + 1], smooth(0.5, 1, f))
+    for (let k = 0; k < sections.length; k++) if (tops[k] <= y) i = k
+    const local = y - tops[i]
+    const rest = restPx()
+    let u = stationU[i]
+    let station = i
+    if (i < stationU.length - 1 && local > rest) {
+      const f = clamp((local - rest) / Math.max(1, heights[i] - rest), 0, 1)
+      u = lerp(stationU[i], stationU[i + 1], f)
+      station = f > 0.5 ? i + 1 : i
+    }
     let dive = 0
     if (footer) {
       const rect = footer.getBoundingClientRect()
       dive = clamp((vh - rect.top) / Math.max(1, Math.min(rect.height, vh * 0.6)), 0, 1)
     }
-    return { u, dive, station: f > 0.65 && i < stationU.length - 1 ? i + 1 : i }
+    return { u, dive, station }
   }
 
   /* State */
@@ -614,7 +655,7 @@ export function mount({ THREE, canvas, floor, scene: built, page }) {
     want = target()
     if (stepped) want.u = stationU[want.station]
     const dt = Math.min(now - prev, 100)
-    const k = stepped ? 1 : 1 - Math.exp(-(dt / 1000) / 0.18)
+    const k = stepped ? 1 : 1 - Math.exp(-(dt / 1000) / 0.26)
     const before = state.u
     state.u += (want.u - state.u) * k
     state.dive += (want.dive - state.dive) * k
