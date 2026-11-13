@@ -112,7 +112,7 @@ function stone(THREE, color) {
 }
 
 /** One canvas for the floor and the ceiling: flagstone joints along the floor's grid, the mask as alpha, so one plane takes the floor's shape. */
-function flagTexture(THREE, floor, scene, size) {
+function flagTexture(THREE, floor, scene, size, { well = false } = {}) {
   const [x0, y0, x1, y1] = scene.bounds
   const W = size
   const H = Math.round((size * (y1 - y0)) / (x1 - x0))
@@ -157,6 +157,13 @@ function flagTexture(THREE, floor, scene, size) {
     c.stroke()
   }
   c.globalAlpha = 1
+  if (well) {
+    // The stairwell is a square hole in the floor (the ceiling above it stays whole), so the steps below it are seen, not hidden by a plane.
+    const { center, radius } = scene.stairs
+    const side = Math.min(radius * 1.1, 110)
+    c.globalCompositeOperation = 'destination-out'
+    c.fillRect((center[0] - side / 2 - x0) * sx, (center[1] - side / 2 - y0) * sy, side * sx, side * sy)
+  }
   const texture = new THREE.CanvasTexture(canvas)
   texture.colorSpace = THREE.SRGBColorSpace
   texture.anisotropy = 8
@@ -194,14 +201,15 @@ export function mount({ THREE, canvas, floor, scene: built, page }) {
 
   /* Floor and ceiling: one plane each, the texture's alpha cuts it to the shape of the floor. */
   const [bx0, by0, bx1, by1] = built.bounds
-  const texture = flagTexture(THREE, floor, built, 2048)
+  const texture = flagTexture(THREE, floor, built, 2048, { well: true })
+  const ceilingTexture = flagTexture(THREE, floor, built, 1024)
   const plane = new THREE.PlaneGeometry(bx1 - bx0, by1 - by0)
   const floorMaterial = new THREE.MeshLambertMaterial({ map: texture, alphaTest: 0.5 })
   const ground = new THREE.Mesh(plane, floorMaterial)
   ground.rotation.x = -Math.PI / 2
   ground.position.set((bx0 + bx1) / 2, 0, (by0 + by1) / 2)
   scene.add(ground)
-  const ceilingMaterial = new THREE.MeshLambertMaterial({ map: texture, alphaTest: 0.5, color: '#8a847b' })
+  const ceilingMaterial = new THREE.MeshLambertMaterial({ map: ceilingTexture, alphaTest: 0.5, color: '#8a847b' })
   const ceiling = new THREE.Mesh(plane, ceilingMaterial)
   ceiling.rotation.x = Math.PI / 2
   ceiling.position.set((bx0 + bx1) / 2, WALL, (by0 + by1) / 2)
@@ -264,7 +272,8 @@ export function mount({ THREE, canvas, floor, scene: built, page }) {
   const steps = []
   for (let k = 0; k < 8; k++) {
     const step = new THREE.Mesh(stepGeometry, stepMaterial)
-    step.position.set(stairs.center[0], -10 - k * 20, stairs.center[1] - side / 2 + (k + 0.5) * (side / 8))
+    // The first step's top sits 6 units under the floor, never in its plane (that showed as a bar across the flags).
+    step.position.set(stairs.center[0], -16 - k * 20, stairs.center[1] - side / 2 + (k + 0.5) * (side / 8))
     steps.push(step)
     scene.add(step)
   }
@@ -667,7 +676,7 @@ export function mount({ THREE, canvas, floor, scene: built, page }) {
       removeEventListener('scroll', onScroll)
       removeEventListener('resize', onResize)
       layer.remove()
-      for (const o of [wallGeometry, plane, pillarGeometry, jambGeometry, lintelGeometry, doorMaterial, bracketGeometry, flameGeometry, stepGeometry, texture, wallMaterial, pillarMaterial, floorMaterial, ceilingMaterial, stepMaterial, bracketMaterial, flames.material]) o.dispose()
+      for (const o of [wallGeometry, plane, pillarGeometry, jambGeometry, lintelGeometry, doorMaterial, bracketGeometry, flameGeometry, stepGeometry, texture, ceilingTexture, wallMaterial, pillarMaterial, floorMaterial, ceilingMaterial, stepMaterial, bracketMaterial, flames.material]) o.dispose()
       renderer.dispose()
       renderer.forceContextLoss()
       window.__walk = null
