@@ -6,7 +6,7 @@ use topcoat::{
     view::{View, view},
 };
 
-use super::walk::{ROOM_IDS, plate, room, route, step, token, walk_backdrop};
+use super::walk::{ROOM_IDS, pause, room, step, walk_backdrop};
 use crate::{
     app::{leaf, t},
     floor::{self, TrustedHtml},
@@ -19,10 +19,6 @@ const INSTALL_COMMAND: &str =
 
 #[page]
 pub async fn page(cx: &Cx) -> Result<impl View> {
-    let shapes = floor::shapes(t!(shapes_figure_label).resolve(cx).into_owned());
-    let seed_caption = t!(seed_caption, seed: floor::SHAPES_SEED)
-        .resolve(cx)
-        .into_owned();
     let speed = floor::speed();
     // For whoever reads the source.
     let hint = TrustedHtml(format!(
@@ -33,7 +29,7 @@ pub async fn page(cx: &Cx) -> Result<impl View> {
         <link rel="stylesheet" href=(asset!("assets/landing.css"))>
         <div class="walk">
             walk_backdrop()
-            route()
+            pause()
             <div class="rooms">
                 room(
                     id: ROOM_IDS[0],
@@ -86,28 +82,6 @@ pub async fn page(cx: &Cx) -> Result<impl View> {
                     station: 1,
                     <h2>(t!(shapes_title))</h2>
                     <p>(t!(shapes_text))</p>
-                    <ul class="shape-row">
-                        <li>
-                            token(shape: "rect")
-                            (t!(shape_rect))
-                        </li>
-                        <li>
-                            token(shape: "disc")
-                            (t!(shape_disc))
-                        </li>
-                        <li>
-                            token(shape: "oct")
-                            (t!(shape_oct))
-                        </li>
-                        <li>
-                            token(shape: "L")
-                            (t!(shape_l))
-                        </li>
-                        <li>
-                            token(shape: "star")
-                            (t!(shape_star))
-                        </li>
-                    </ul>
                 )
                 room(
                     id: ROOM_IDS[2],
@@ -129,15 +103,12 @@ pub async fn page(cx: &Cx) -> Result<impl View> {
                                 min="0"
                                 max="4294967295"
                                 required=(true)
-                                value=(floor::SHAPES_SEED)
+                                value=(floor::WALK_SEED)
                             >
                             <button class="button primary" type="submit">
                                 (t!(seed_submit))
                             </button>
                         </form>
-                    </div>
-                    <div class="table-plates">
-                        plate(caption: seed_caption, (shapes))
                     </div>
                 )
                 room(
@@ -146,22 +117,18 @@ pub async fn page(cx: &Cx) -> Result<impl View> {
                     <h2>(t!(descent_title))</h2>
                     <ol class="steps">
                         step(
-                            shape: "rect",
                             <h3>(t!(descent_seed_title))</h3>
                             <p>(t!(descent_seed_text))</p>
                         )
                         step(
-                            shape: "oct",
                             <h3>(t!(descent_rooms_title))</h3>
                             <p>(t!(descent_rooms_text))</p>
                         )
                         step(
-                            shape: "L",
                             <h3>(t!(descent_tunnels_title))</h3>
                             <p>(t!(descent_tunnels_text))</p>
                         )
                         step(
-                            shape: "disc",
                             <h3>(t!(descent_check_title))</h3>
                             <p>(t!(descent_check_text))</p>
                         )

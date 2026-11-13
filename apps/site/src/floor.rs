@@ -3,11 +3,11 @@
 use std::sync::OnceLock;
 use std::time::Instant;
 use tapiti_core::{
-    generate::{Floor, Node},
+    generate::Floor,
     params::{Size, rich_of_size},
     stage::stage,
 };
-use tapiti_render::{Style, floor_svg, view_box};
+use tapiti_render::{Style, floor_svg};
 use topcoat::{
     context::Cx,
     view::{NodeViewParts, PartsWriter},
@@ -30,8 +30,6 @@ pub const WALK_SIZE: Size = Size::Medium;
 pub const WALK_SIZE_INDEX: usize = 2;
 /// Sections of the landing page, one room each.
 pub const STATIONS: usize = 7;
-/// Shapes figure: the medium size with every shape weighted equally, so all five appear.
-pub const SHAPES_SEED: u32 = 16;
 
 fn svg(floor: &Floor, label: String) -> TrustedHtml {
     TrustedHtml(floor_svg(
@@ -51,62 +49,6 @@ pub fn walk() -> &'static Floor {
 
 pub fn walk_svg(label: String) -> TrustedHtml {
     svg(walk(), label)
-}
-
-/// A room of the walk where the page stops, with where it sits on the SVG (world units and percentages of the view box).
-#[derive(Clone, Copy, Debug)]
-pub struct Station {
-    pub room: usize,
-    pub x: f64,
-    pub y: f64,
-    pub left_pct: f64,
-    pub top_pct: f64,
-}
-
-/// The rooms along the main path, from the entrance to the exit.
-pub fn path_rooms(floor: &Floor) -> Vec<usize> {
-    floor
-        .main_path
-        .iter()
-        .filter_map(|&node| match floor.nodes.get(node) {
-            Some(Node::Room { room }) => Some(*room),
-            _ => None,
-        })
-        .collect()
-}
-
-/// Seven rooms spread over the main path: room `round(i * (K - 1) / 6)` of its `K` rooms.
-pub fn stations() -> [Station; STATIONS] {
-    let floor = walk();
-    let path = path_rooms(floor);
-    let [vx, vy, vw, vh] = view_box(floor, &Style::default());
-    let last = (path.len() - 1) as f64;
-    std::array::from_fn(|i| {
-        let room = path[(i as f64 * last / (STATIONS - 1) as f64).round() as usize];
-        let [x, y] = floor.rooms[room].center;
-        Station {
-            room,
-            x,
-            y,
-            left_pct: (x - vx) / vw * 100.0,
-            top_pct: (y - vy) / vh * 100.0,
-        }
-    })
-}
-
-pub fn shapes(label: String) -> TrustedHtml {
-    static FLOOR: OnceLock<Floor> = OnceLock::new();
-    let floor = FLOOR.get_or_init(|| {
-        let mut params = rich_of_size(Size::Medium);
-        params.weights.rect = 1.0;
-        params.weights.disc = 1.0;
-        params.weights.oct = 1.0;
-        params.weights.l = 1.0;
-        params.weights.star = 1.0;
-        params.m = 8;
-        stage(SHAPES_SEED, &params, 8).d
-    });
-    svg(floor, label)
 }
 
 /// Numbers measured on this machine when the server starts, so the landing page never quotes a figure the code did not produce.
@@ -143,14 +85,48 @@ pub fn speed() -> Speed {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tapiti_core::validate::validate;
+    use tapiti_core::{generate::Node, validate::validate};
+    use tapiti_render::view_box;
 
-    #[test]
-    fn the_shapes_figure_shows_all_five_shapes() {
-        let svg = shapes(String::new()).0;
-        for class in ["c-rect", "c-disc", "c-oct", "c-L", "c-star"] {
-            assert!(svg.contains(class), "{class}");
-        }
+    /// A room of the walk where the page stops, with where it sits on the SVG (world units and percentages of the view box).
+    #[derive(Clone, Copy, Debug)]
+    pub struct Station {
+        pub room: usize,
+        pub x: f64,
+        pub y: f64,
+        pub left_pct: f64,
+        pub top_pct: f64,
+    }
+
+    /// The rooms along the main path, from the entrance to the exit.
+    pub fn path_rooms(floor: &Floor) -> Vec<usize> {
+        floor
+            .main_path
+            .iter()
+            .filter_map(|&node| match floor.nodes.get(node) {
+                Some(Node::Room { room }) => Some(*room),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Seven rooms spread over the main path: room `round(i * (K - 1) / 6)` of its `K` rooms.
+    pub fn stations() -> [Station; STATIONS] {
+        let floor = walk();
+        let path = path_rooms(floor);
+        let [vx, vy, vw, vh] = view_box(floor, &Style::default());
+        let last = (path.len() - 1) as f64;
+        std::array::from_fn(|i| {
+            let room = path[(i as f64 * last / (STATIONS - 1) as f64).round() as usize];
+            let [x, y] = floor.rooms[room].center;
+            Station {
+                room,
+                x,
+                y,
+                left_pct: (x - vx) / vw * 100.0,
+                top_pct: (y - vy) / vh * 100.0,
+            }
+        })
     }
 
     #[test]

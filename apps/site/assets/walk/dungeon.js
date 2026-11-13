@@ -435,19 +435,6 @@ export function mount({ THREE, canvas, floor, scene: built, page }) {
     }, 100)
   }
 
-  const minimapSvg = document.querySelector('.minimap-floor svg')
-  const you = document.querySelector('.minimap .you')
-  const viewBox = minimapSvg ? minimapSvg.viewBox.baseVal : null
-  const stops = [...document.querySelectorAll('.minimap .stop')]
-  const ticks = [...document.querySelectorAll('.route-list a')]
-  let currentStation = -1
-  const markStation = (i) => {
-    if (i === currentStation) return
-    currentStation = i
-    for (const [k, el] of stops.entries()) k === i ? el.setAttribute('aria-current', 'true') : el.removeAttribute('aria-current')
-    for (const [k, el] of ticks.entries()) k === i ? el.setAttribute('aria-current', 'true') : el.removeAttribute('aria-current')
-  }
-
   const ordered = new Array(count)
   const scratch = new Float32Array(count)
   const forward = new THREE.Vector3()
@@ -516,12 +503,6 @@ export function mount({ THREE, canvas, floor, scene: built, page }) {
       first = false
       document.documentElement.classList.add('walk-on')
     }
-    // The minimap's "you are here" dot and the current station.
-    if (you && viewBox) {
-      you.style.left = `${((here[0] - viewBox.x) / viewBox.width) * 100}%`
-      you.style.top = `${((here[2] - viewBox.y) / viewBox.height) * 100}%`
-    }
-    markStation(want.station)
     window.__walk = { tier, calls: renderer.info.render.calls, triangles: renderer.info.render.triangles, stations: built.stations, camera: { x: p.px, y: p.py, z: p.pz, u: state.u }, torches: count, poolSize, lights: pool.length + 3, stepped }
   }
 
