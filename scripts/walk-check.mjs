@@ -49,6 +49,7 @@ assert.ok(triangles > 200 && triangles <= 15000, `${triangles} wall triangles`)
 const torches = scene.torches.length / 4
 assert.ok(torches >= 20 && torches <= 60, `${torches} torches`)
 assert.ok(scene.contours >= 1)
+assert.ok(scene.doors.length >= 4 && scene.doors.length % 4 === 0, 'a doorway at each end of the corridors')
 assert.ok(ms < 150, `build took ${ms.toFixed(1)} ms`)
 
 // Walls are inside the floor's bounds, and no taller than the wall height.

@@ -1,4 +1,4 @@
-/* Tapiti: a torchlit stone floor. Dark only. Stone in shadow is cool, so the warm torch reads as warm; one accent, carrot, the colour of
+/* Tapiti: a torchlit stone floor. Dark only. Stone in shadow is cool, so the warm torch reads as warm; one accent, the pink of
    the mark. The floors are the colour on the page. The page's base colour is also the 3D scene's fog and clear colour. */
 @layer reset, tokens, base, layout, components, pages;
 
@@ -16,10 +16,10 @@
     --bone: #efe7d6;       /* text */
     --ash: #c2baab;        /* secondary text: 9.6:1 on abyss */
     --faint: #8f887c;      /* large or non-text only */
-    --carrot: #f08a3c;     /* the one accent, the accent; the logo is pink (#ff2e63) */
-    --carrot-hi: #ffa25e;  /* hover on carrot */
-    --link: #f7a565;       /* links in prose: carrot lifted for small text */
-    --soil: #1a1410;       /* text on carrot */
+    --carrot: #ff2e63;     /* the one accent: the pink of the logo (the name stays from the old carrot) */
+    --carrot-hi: #ff5c85;  /* hover on the accent */
+    --link: #ff8fab;       /* links in prose: the accent lifted for small text */
+    --soil: #1a0a10;       /* text on the accent */
     --plate: #1b1712;      /* floor figures and the minimap */
     --ok: #7cc98f;
     --danger: #ef7a6e;
@@ -32,12 +32,12 @@
     --map-corridor: #6d7584;
 
     /* Read by the 3D scene: CSS is the one place that says what the light looks like. */
-    --light-torch: #ffbf85;   /* about 2700 K: warm, not orange paint */
+    --light-torch: #ff9a85;   /* warm with a rose edge, so the flame belongs to the logo */
     --light-carried: #ffd4ad; /* the lantern you carry, a little cooler */
     --light-fill: #2b3442;    /* the stone in shadow */
     --light-below: #6d8fc4;   /* cold air rising from the stairwell */
 
-    --sel: #6a4220; /* text selection */
+    --sel: #6a1a35; /* text selection */
 
     --font-display: "Grenze", Georgia, "Times New Roman", serif;
     --font-body: "Alegreya Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -59,7 +59,7 @@
 }
 
 @layer base {
-  html { background: var(--abyss); scrollbar-color: var(--stone-500) var(--abyss); accent-color: var(--carrot); scroll-padding-top: calc(var(--header-h) + 16px); }
+  html { scroll-behavior: smooth; background: var(--abyss); scrollbar-color: var(--stone-500) var(--abyss); accent-color: var(--carrot); scroll-padding-top: calc(var(--header-h) + 16px); }
   body {
     margin: 0;
     min-height: 100vh;
@@ -123,7 +123,7 @@
 
 @layer components {
   /* The fixed backdrop of the 3D scene (landing page, leaf chamber): the dimmed map or nothing until the scene is ready. */
-  .walk-backdrop { position: fixed; inset: 0 0 auto 0; height: 100lvh; z-index: 0; display: grid; place-items: center; pointer-events: none; background: radial-gradient(60vw 50vh at 66% 42%, rgb(255 173 102 / .08), transparent 70%), var(--abyss); }
+  .walk-backdrop { position: fixed; inset: 0 0 auto 0; height: 100lvh; z-index: 0; display: grid; place-items: center; pointer-events: none; background: radial-gradient(60vw 50vh at 66% 42%, rgb(255 46 99 / .07), transparent 70%), var(--abyss); }
   .walk-backdrop svg { width: min(100%, 1100px); height: 100%; margin-left: auto; opacity: .3; transition: opacity .5s; }
   .walk-backdrop canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; opacity: 0; transition: opacity .8s var(--ease-out); }
   html.walk-on .walk-backdrop canvas { opacity: 1; }
@@ -132,7 +132,7 @@
   .button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 48px; padding: 10px 22px; border-radius: var(--radius-sm); font-weight: 700; font-size: 1.05rem; text-decoration: none; border: 1px solid rgb(239 231 214 / .32); background: rgb(11 14 18 / .55); color: var(--bone); transition: background-color .15s, border-color .15s, color .15s; }
   .button:hover { background: var(--stone-800); border-color: rgb(239 231 214 / .6); }
   .button:active { transform: translateY(1px); }
-  .button.primary { background: var(--carrot); border-color: var(--carrot); color: var(--soil); box-shadow: 0 1px 0 rgb(255 255 255 / .25) inset, 0 8px 24px -8px rgb(240 138 60 / .55); }
+  .button.primary { background: var(--carrot); border-color: var(--carrot); color: var(--soil); box-shadow: 0 1px 0 rgb(255 255 255 / .25) inset, 0 8px 24px -8px rgb(255 46 99 / .55); }
   .button.primary:hover { background: var(--carrot-hi); border-color: var(--carrot-hi); }
   .cta-row { display: flex; flex-wrap: wrap; gap: 12px; }
 

@@ -129,6 +129,15 @@ const sizeDescription = $('size-description')
 const changedStatus = $('changed-status')
 const seedInput = $('seed-input')
 const sizeButtons = [...root.querySelectorAll('.size-button')]
+// `/lab?seed=279` opens the lab on that seed (the landing page links its seed field here).
+{
+  const asked = new URLSearchParams(location.search).get('seed')
+  const seed = asked === null || asked.trim() === '' ? NaN : Number(asked)
+  if (Number.isInteger(seed) && seed >= 0 && seed <= 0xffffffff) {
+    state.seed = seed
+    seedInput.value = String(seed)
+  }
+}
 
 const syncForm = () => {
   for (const el of fields) {

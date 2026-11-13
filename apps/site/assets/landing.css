@@ -33,6 +33,17 @@
   #entrance { align-items: flex-end; padding-bottom: clamp(48px, 12vh, 120px); }
   #entrance .room-body { width: min(100%, 40rem); }
 
+  /* The install block of the entrance: the command for Linux, a button for Windows and macOS. With scripts off all three show; the script keeps the visitor's own. */
+  .install { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 0 0 18px; }
+  .install .command { display: flex; align-items: center; gap: 4px; padding: 6px 6px 6px 16px; background: rgb(11 14 18 / .78); border: 1px solid var(--stone-500); border-radius: var(--radius-sm); }
+  .install .command code { font-size: .92rem; color: var(--bone); overflow-wrap: anywhere; }
+  .install .copy-command { min-height: 36px; padding: 4px 14px; font: 700 .95rem var(--font-body); color: var(--soil); background: var(--carrot); border: 0; border-radius: var(--radius-xs); cursor: pointer; }
+  .install .copy-command:hover { background: var(--carrot-hi); }
+  .install .caption { margin: 8px 0 0; }
+  .install[data-picked] > :not([data-picked]) { display: none; }
+  .link-quiet { color: var(--ash); font-size: 1rem; }
+  .cta-row { align-items: center; }
+
   /* Room shapes: the text at the top, the five shapes along the floor. */
   #shapes .room-body { display: flex; flex-direction: column; width: 100%; min-height: calc(100svh - var(--header-h) - 96px); }
   #shapes .room-body::before { inset: -8% 40% 40% -18%; }
@@ -48,16 +59,18 @@
   .token .c-L { fill: var(--map-L); }
   .token .c-star { fill: var(--map-star); }
 
-  /* The checks: a map table that covers the scene, two floors side by side, the one kept and the one thrown away. */
+  /* The seed: a map table that covers the scene, a floor beside the field that digs it. */
   #gate { align-items: center; background: var(--stone-950); border-block: 1px solid var(--stone-600); box-shadow: 0 -40px 80px rgb(11 14 18 / .9), 0 40px 80px rgb(11 14 18 / .9); }
   #gate .room-body { display: grid; grid-template-columns: minmax(16rem, 1fr) minmax(0, 2fr); gap: clamp(28px, 4vw, 64px); align-items: center; width: 100%; }
   #gate .room-body::before { display: none; }
   #gate p { text-shadow: none; color: var(--ash); }
+  .seed-form { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; margin-top: 22px; }
+  .seed-form label { flex-basis: 100%; color: var(--ash); font-size: .98rem; }
+  .seed-form input { width: 12ch; min-height: 48px; padding: 8px 12px; font: 500 1.05rem var(--font-mono); color: var(--bone); background: var(--stone-800); border: 1px solid var(--stone-500); border-radius: var(--radius-sm); }
   .table-plates { display: grid; grid-template-columns: 1fr 1fr; gap: clamp(16px, 2vw, 28px); align-items: start; }
   .plate { margin: 0; }
   .plate svg { display: block; width: 100%; height: auto; padding: 10px; background: var(--plate); border: 1px solid var(--stone-600); border-radius: var(--radius-md); box-shadow: var(--shadow-lift); }
   .plate figcaption { margin-top: 12px; color: var(--bone); font-size: .98rem; line-height: 1.4; }
-  .rejected .plate svg { border-color: rgb(239 122 110 / .55); }
   .verdict { margin: 8px 0 0; padding: 0; list-style: none; }
   .verdict code { display: inline-block; padding: 2px 8px; color: #ffc9c2; background: rgb(239 122 110 / .12); border-radius: var(--radius-xs); font-size: .84rem; overflow-wrap: anywhere; }
 
@@ -76,7 +89,7 @@
   .register { display: grid; gap: clamp(18px, 3vh, 30px); margin: 8px 0 0; }
   .register > div { display: grid; gap: 4px; }
   .register dd { order: 1; margin: 0; font: 500 clamp(2.8rem, 5.6vw, 4.6rem)/.95 var(--font-display); font-variant-numeric: tabular-nums; letter-spacing: -.01em; color: var(--bone); text-shadow: 0 2px 30px rgb(11 14 18 / .9); }
-  .register > div:first-child dd { color: #ffd2a8; }
+  .register > div:first-child dd { color: #ffc2d1; }
   .register dt { order: 2; color: var(--ash); font-size: 1.02rem; text-shadow: 0 1px 12px rgb(11 14 18 / .9); }
 
   /* Run it: a list of ways in, left and compact. */
@@ -114,7 +127,7 @@
     .route-pause:not([hidden]) { display: block; width: 100%; padding: 6px 8px; font: 500 .9rem var(--font-body); color: var(--ash); background: transparent; border: 1px solid var(--stone-600); border-radius: var(--radius-sm); cursor: pointer; transition: color .15s, border-color .15s; }
     .route-pause:hover { color: var(--bone); border-color: var(--stone-500); }
   }
-  .you { position: absolute; width: 10px; height: 10px; margin: -5px 0 0 -5px; border-radius: 50%; background: var(--carrot); box-shadow: 0 0 0 3px rgb(240 138 60 / .3); pointer-events: none; }
+  .you { position: absolute; width: 10px; height: 10px; margin: -5px 0 0 -5px; border-radius: 50%; background: var(--carrot); box-shadow: 0 0 0 3px rgb(255 46 99 / .3); pointer-events: none; }
   .stop { position: absolute; width: 10px; height: 10px; margin: -5px 0 0 -5px; border: 2px solid var(--bone); border-radius: 50%; background: var(--plate); }
   .stop[aria-current] { border-color: var(--carrot); }
   html:not(.walk-on) .you { display: none; }

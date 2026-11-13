@@ -10,7 +10,7 @@
   .docs-nav li a { position: relative; display: block; padding: 7px 10px 7px 22px; border-radius: var(--radius-sm); color: var(--ash); text-decoration: none; font-size: 1rem; line-height: 1.35; transition: color .15s, background-color .15s; }
   .docs-nav li a:hover { color: var(--bone); background: var(--stone-900); }
   .docs-nav li a[aria-current] { color: var(--bone); font-weight: 700; background: var(--stone-900); }
-  .docs-nav li a[aria-current]::before, .docs-toc a[aria-current]::before { content: ""; position: absolute; left: 9px; top: .95em; width: 6px; height: 6px; border-radius: 50%; background: var(--carrot); box-shadow: 0 0 8px 1px rgb(240 138 60 / .5); }
+  .docs-nav li a[aria-current]::before, .docs-toc a[aria-current]::before { content: ""; position: absolute; left: 9px; top: .95em; width: 6px; height: 6px; border-radius: 50%; background: var(--carrot); box-shadow: 0 0 8px 1px rgb(255 46 99 / .5); }
 
   .docs-search { position: relative; margin: 0; }
   .docs-search::before { content: ""; position: absolute; left: 12px; top: 50%; width: 16px; height: 16px; margin-top: -8px; background: var(--ash); pointer-events: none; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-3.5-3.5'/%3E%3C/svg%3E") center / contain no-repeat; }

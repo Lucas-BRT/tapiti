@@ -224,6 +224,38 @@ export function mount({ THREE, canvas, floor, scene: built, page }) {
     scene.add(pillarMesh)
   }
 
+  /* Doorways: two jambs and a lintel where each corridor meets its room, so a room ends and a passage begins. */
+  const doors = built.doors.length / 4
+  const jambGeometry = new THREE.BoxGeometry(6, 46, 6)
+  const lintelGeometry = new THREE.BoxGeometry(56, 14, 7)
+  for (const g of [jambGeometry, lintelGeometry]) {
+    const uv = g.attributes.uv
+    const [gw, gh] = g === jambGeometry ? [6, 46] : [56, 14]
+    for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * gw, uv.getY(i) * gh)
+    g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count * 3).fill(1), 3))
+  }
+  const doorMaterial = stone(THREE, '#7d7d86')
+  const jambs = new THREE.InstancedMesh(jambGeometry, doorMaterial, doors * 2)
+  const lintels = new THREE.InstancedMesh(lintelGeometry, doorMaterial, doors)
+  const dm = new THREE.Matrix4()
+  const dq = new THREE.Quaternion()
+  const dpos = new THREE.Vector3()
+  const dscale = new THREE.Vector3(1, 1, 1)
+  const up = new THREE.Vector3(0, 1, 0)
+  for (let i = 0; i < doors; i++) {
+    const [x, z, dx, dz] = built.doors.subarray(i * 4, i * 4 + 4)
+    // The box's x axis lies across the corridor, its z along it.
+    dq.setFromAxisAngle(up, Math.atan2(dx, dz))
+    const side = [-dz, dx]
+    for (const sgn of [-1, 1]) {
+      dpos.set(x + side[0] * sgn * 19, 23, z + side[1] * sgn * 19)
+      jambs.setMatrixAt(i * 2 + (sgn < 0 ? 0 : 1), dm.compose(dpos, dq, dscale))
+    }
+    dpos.set(x, 46 + 7, z)
+    lintels.setMatrixAt(i, dm.compose(dpos, dq, dscale))
+  }
+  scene.add(jambs, lintels)
+
   /* The stairwell: a square cut into the floor, steps going down, and cold light rising from it. */
   const stairs = built.stairs
   const side = Math.min(stairs.radius * 1.1, 110)
@@ -582,7 +614,7 @@ export function mount({ THREE, canvas, floor, scene: built, page }) {
       cancelAnimationFrame(frameId)
       removeEventListener('scroll', onScroll)
       removeEventListener('resize', onResize)
-      for (const o of [wallGeometry, plane, pillarGeometry, bracketGeometry, flameGeometry, stepGeometry, texture, wallMaterial, pillarMaterial, floorMaterial, ceilingMaterial, stepMaterial, bracketMaterial, flames.material]) o.dispose()
+      for (const o of [wallGeometry, plane, pillarGeometry, jambGeometry, lintelGeometry, doorMaterial, bracketGeometry, flameGeometry, stepGeometry, texture, wallMaterial, pillarMaterial, floorMaterial, ceilingMaterial, stepMaterial, bracketMaterial, flames.material]) o.dispose()
       renderer.dispose()
       renderer.forceContextLoss()
       window.__walk = null

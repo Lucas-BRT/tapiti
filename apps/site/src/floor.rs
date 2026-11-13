@@ -3,10 +3,9 @@
 use std::sync::OnceLock;
 use std::time::Instant;
 use tapiti_core::{
-    generate::{Floor, Node, generate},
+    generate::{Floor, Node},
     params::{Size, rich_of_size},
     stage::stage,
-    validate::validate,
 };
 use tapiti_render::{Style, floor_svg, view_box};
 use topcoat::{
@@ -33,8 +32,6 @@ pub const WALK_SIZE_INDEX: usize = 2;
 pub const STATIONS: usize = 7;
 /// Shapes figure: the medium size with every shape weighted equally, so all five appear.
 pub const SHAPES_SEED: u32 = 16;
-/// Validator figure: a medium first draw that the validator rejects (the exit ends up too close to the entrance).
-pub const REJECTED_SEED: u32 = 17;
 
 fn svg(floor: &Floor, label: String) -> TrustedHtml {
     TrustedHtml(floor_svg(
@@ -112,17 +109,6 @@ pub fn shapes(label: String) -> TrustedHtml {
     svg(floor, label)
 }
 
-/// The rejected first draw and what the validator said about it.
-pub fn rejected(label: String) -> (TrustedHtml, Vec<String>) {
-    static FLOOR: OnceLock<(Floor, Vec<String>)> = OnceLock::new();
-    let (floor, violations) = FLOOR.get_or_init(|| {
-        let floor = generate(REJECTED_SEED, &rich_of_size(Size::Medium));
-        let violations = validate(&floor);
-        (floor, violations)
-    });
-    (svg(floor, label), violations.clone())
-}
-
 /// Numbers measured on this machine when the server starts, so the landing page never quotes a figure the code did not produce.
 #[derive(Clone, Copy, Debug)]
 pub struct Speed {
@@ -157,15 +143,7 @@ pub fn speed() -> Speed {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn the_validator_really_rejects_the_figure_floor() {
-        let (_, violations) = rejected(String::new());
-        assert!(
-            violations.iter().any(|v| v.starts_with("V5")),
-            "{violations:?}"
-        );
-    }
+    use tapiti_core::validate::validate;
 
     #[test]
     fn the_shapes_figure_shows_all_five_shapes() {

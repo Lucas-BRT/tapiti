@@ -399,6 +399,23 @@ function pathPoints(floor) {
   return { points, mark }
 }
 
+/** One doorway per end of every corridor, on the wall of its room: [x, z, dx, dz] with (dx, dz) the unit vector pointing down the corridor. */
+function doorsAt(floor) {
+  const out = []
+  for (const edge of floor.edges) {
+    const n = edge.pts.length
+    if (n < 2) continue
+    for (const [at, from] of [[0, 1], [n - 1, n - 2]]) {
+      const [x, y] = edge.pts[at]
+      const [ox, oy] = edge.pts[from]
+      const len = sqrt((ox - x) ** 2 + (oy - y) ** 2)
+      if (len < 0.01) continue
+      out.push(x, y, (ox - x) / len, (oy - y) / len)
+    }
+  }
+  return Float32Array.from(out)
+}
+
 /** Where the walk starts: inside the first room, as far back from its way out as the room allows, so the camera looks at the way in. */
 function introPoint(field, points) {
   const [cx, cy] = points[0]
@@ -460,6 +477,7 @@ export function build(floor) {
     walls: wallMesh(loops),
     torches: placeTorches(floor, loops),
     pillars: junctionPillars(floor),
+    doors: doorsAt(floor),
     intro,
     path: { points: Float32Array.from(points.flatMap(([x, y]) => [x, 0, y])), lengths, total },
     stations,

@@ -12,15 +12,15 @@ use crate::{
     floor::{self, TrustedHtml},
 };
 
+/// Where the releases are: the page for Windows and macOS, and the command for Linux.
+const RELEASES: &str = "https://github.com/Lucas-BRT/tapiti/releases/latest";
+const INSTALL_COMMAND: &str =
+    "curl -fsSL https://raw.githubusercontent.com/Lucas-BRT/tapiti/main/install.sh | bash";
+
 #[page]
 pub async fn page(cx: &Cx) -> Result<impl View> {
     let shapes = floor::shapes(t!(shapes_figure_label).resolve(cx).into_owned());
-    let (rejected, violations) =
-        floor::rejected(t!(rejected_figure_label).resolve(cx).into_owned());
-    let kept_caption = t!(validator_kept_caption, seed: floor::SHAPES_SEED)
-        .resolve(cx)
-        .into_owned();
-    let rejected_caption = t!(validator_caption, seed: floor::REJECTED_SEED)
+    let seed_caption = t!(seed_caption, seed: floor::SHAPES_SEED)
         .resolve(cx)
         .into_owned();
     let speed = floor::speed();
@@ -40,17 +40,46 @@ pub async fn page(cx: &Cx) -> Result<impl View> {
                     station: 0,
                     <h1>(t!(hero_title))</h1>
                     <p class="lede">(t!(hero_text))</p>
-                    <div class="cta-row">
-                        <a class="button primary" href=(href!(crate::app::lab::page))>
-                            (t!(cta_lab))
+                    <div class="install" data-install="">
+                        <div class="install-linux" data-os="linux">
+                            <div class="command">
+                                <code>(INSTALL_COMMAND)</code>
+                                <button
+                                    class="copy-command"
+                                    type="button"
+                                    hidden=(true)
+                                    data-copy=(INSTALL_COMMAND)
+                                    data-copied=(t!(install_copied).resolve(cx).into_owned())
+                                >
+                                    (t!(install_copy))
+                                </button>
+                            </div>
+                            <p class="caption">(t!(install_linux))</p>
+                        </div>
+                        <a class="button primary" data-os="windows" href=(RELEASES)>
+                            (t!(install_windows))
                         </a>
-                        <a class="button" href=(href!(crate::app::docs::_page::page))>
-                            (t!(cta_docs))
+                        <a class="button primary" data-os="macos" href=(RELEASES)>
+                            (t!(install_macos))
                         </a>
                     </div>
-                    <p class="caption">
-                        (t!(walk_caption, seed: floor::WALK_SEED, size: "medium"))
-                    </p>
+                    <div class="cta-row">
+                        <a class="button" href="#shapes">(t!(cta_explore))</a>
+                        <a class="button" href=(href!(crate::app::lab::page))>
+                            (t!(cta_lab))
+                        </a>
+                        <a
+                            class="link-quiet"
+                            href=(href!(
+                                crate::app::docs::slug::_page::page,
+                                crate::app::docs::slug::slug: "getting-started",
+                            ).fragment(
+                                "install",
+                            ))
+                        >
+                            (t!(install_other))
+                        </a>
+                    </div>
                 )
                 room(
                     id: ROOM_IDS[1],
@@ -84,19 +113,31 @@ pub async fn page(cx: &Cx) -> Result<impl View> {
                     id: ROOM_IDS[2],
                     station: 2,
                     <div class="table-text">
-                        <h2>(t!(validator_title))</h2>
-                        <p>(t!(validator_text))</p>
+                        <h2>(t!(seed_title))</h2>
+                        <p>(t!(seed_text))</p>
+                        <form
+                            class="seed-form"
+                            action=(href!(crate::app::lab::page))
+                            method="get"
+                        >
+                            <label for="landing-seed">(t!(seed_label))</label>
+                            <input
+                                id="landing-seed"
+                                name="seed"
+                                type="number"
+                                inputmode="numeric"
+                                min="0"
+                                max="4294967295"
+                                required=(true)
+                                value=(floor::SHAPES_SEED)
+                            >
+                            <button class="button primary" type="submit">
+                                (t!(seed_submit))
+                            </button>
+                        </form>
                     </div>
                     <div class="table-plates">
-                        plate(caption: kept_caption, (shapes))
-                        <div class="rejected">
-                            plate(caption: rejected_caption, (rejected))
-                            <ul class="verdict">
-                                for violation in violations {
-                                    <li><code>(violation)</code></li>
-                                }
-                            </ul>
-                        </div>
+                        plate(caption: seed_caption, (shapes))
                     </div>
                 )
                 room(
