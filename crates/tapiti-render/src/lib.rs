@@ -8,6 +8,9 @@ use std::fmt::Write;
 use tapiti_core::generate::{room_hops, Floor, Node, Role};
 use tapiti_core::geom::{dir_of, Shape, V};
 
+mod hatch;
+pub use hatch::{hatch, HatchMark};
+
 /// How colours reach the SVG.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Theme {
@@ -62,6 +65,7 @@ pub const CLASS_NAMES: &[&str] = &[
     "junction",
     "door",
     "label",
+    "hatch",
 ];
 
 fn n(v: f64) -> String {
@@ -106,16 +110,16 @@ fn theme_css(theme: Theme) -> &'static str {
     match theme {
         Theme::Inherit => "",
         Theme::Dark => concat!(
-            ".tapiti-floor{background:#15110e}.grid{stroke:#2b231d}.corridor{stroke:#5a4e43}",
-            ".room{stroke-width:4}.c-rect{fill:#496c9a}.c-disc{fill:#29a89a}.c-oct{fill:#9b78d1}.c-L{fill:#ce843c}.c-star{fill:#d0ae38}",
-            ".r-plain{stroke:#2b231d}.r-entrance{stroke:#4ac26b}.r-exit{stroke:#f08a3c}",
-            ".junction{fill:#f2e9dc;stroke:#15110e}.door{stroke:#f2e9dc}.label{fill:#fff}"
+            ".tapiti-floor{background:#1c1916}.grid{stroke:#484138}.corridor{stroke:#857d70}",
+            ".room{stroke-width:2}.c-rect{fill:#719ab0}.c-disc{fill:#94b49d}.c-oct{fill:#cdbbd2}.c-L{fill:#bb8d58}.c-star{fill:#e8d07d}",
+            ".r-plain{stroke:#49463f}.r-entrance{stroke:#8eaf91}.r-exit{stroke:#ff8fab}",
+            ".junction{fill:#f4f0e5;stroke:#1c1916}.door{stroke:#f4f0e5}.label{fill:#252421;stroke:#fbf8ee;stroke-width:3;paint-order:stroke;stroke-linejoin:round;font-family:monospace}.hatch{color:#49463f}"
         ),
         Theme::Light => concat!(
-            ".tapiti-floor{background:#f7f1e6}.grid{stroke:#e6dccb}.corridor{stroke:#b3a590}",
-            ".room{stroke-width:4}.c-rect{fill:#315f96}.c-disc{fill:#087f76}.c-oct{fill:#7253af}.c-L{fill:#a95812}.c-star{fill:#936c00}",
-            ".r-plain{stroke:#e6dccb}.r-entrance{stroke:#1d9a44}.r-exit{stroke:#d96b13}",
-            ".junction{fill:#2a2118;stroke:#f7f1e6}.door{stroke:#2a2118}.label{fill:#fff}"
+            ".tapiti-floor{background:#fbf8ee}.grid{stroke:#dce1df}.corridor{stroke:#857d70}",
+            ".room{stroke-width:2}.c-rect{fill:#719ab0}.c-disc{fill:#94b49d}.c-oct{fill:#cdbbd2}.c-L{fill:#bb8d58}.c-star{fill:#e8d07d}",
+            ".r-plain{stroke:#49463f}.r-entrance{stroke:#31533d}.r-exit{stroke:#a51f48}",
+            ".junction{fill:#302e2b;stroke:#fbf8ee}.door{stroke:#302e2b}.label{fill:#252421;stroke:#fbf8ee;stroke-width:3;paint-order:stroke;stroke-linejoin:round;font-family:monospace}.hatch{color:#49463f}"
         ),
     }
 }
@@ -229,6 +233,30 @@ pub fn floor_svg(d: &Floor, style: &Style) -> String {
                 );
             }
         }
+        out.push_str(r#"<g class="hatch" aria-hidden="true">"#);
+        for mark in hatch(&r.shape, r.cls.name(), 10.0) {
+            match mark {
+                HatchMark::Dot(p) => {
+                    let _ = write!(
+                        out,
+                        r#"<circle fill="currentColor" cx="{}" cy="{}" r="1.2"/>"#,
+                        n(p[0]),
+                        n(p[1])
+                    );
+                }
+                HatchMark::Line(a, b) => {
+                    let _ = write!(
+                        out,
+                        r#"<path fill="none" stroke="currentColor" stroke-width="1" d="M{} {}L{} {}"/>"#,
+                        n(a[0]),
+                        n(a[1]),
+                        n(b[0]),
+                        n(b[1])
+                    );
+                }
+            }
+        }
+        out.push_str("</g>");
     }
     for r in d.rooms.iter().filter(|r| r.alive) {
         for port in &r.used {
@@ -345,7 +373,13 @@ mod tests {
                 ..Style::default()
             }
         )
-        .contains("#f7f1e6"));
+        .contains("#fbf8ee"));
+        let s = svg(3, &Style::default());
+        assert!(s.contains("class=\"hatch\""));
+        assert!(
+            !s.contains("url(#"),
+            "inline floors must not share pattern ids"
+        );
     }
 
     #[test]
