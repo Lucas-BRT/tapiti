@@ -32,6 +32,7 @@
     --map-star: #e8d07d;
     --map-corridor: #857d70;
     --map-hatch: #49463f;
+    --map-grid: #dce1df;
 
     /* Read by the scene: graphite on paper, with restrained watercolour washes. */
     --scene-wall: #ece6d8;
@@ -146,6 +147,7 @@
   .cta-row { display: flex; flex-wrap: wrap; gap: 12px; }
 
   /* Floor colours: the SVG only carries classes, the tokens colour it. */
+  .tapiti-floor .grid { stroke: var(--map-grid); }
   .tapiti-floor .corridor { stroke: var(--map-corridor); }
   .tapiti-floor .room { stroke: var(--plate); stroke-width: 2; }
   .tapiti-floor .hatch { color: var(--map-hatch); }

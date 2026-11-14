@@ -77,7 +77,7 @@ await open('/leaf')
 const robots = await run("return document.querySelector('meta[name=robots]')?.content")
 check('/leaf is noindex', /noindex/.test(robots ?? ''), robots)
 const leafOn = await until("return document.documentElement.classList.contains('walk-on')")
-check('the leaf chamber draws its room', leafOn && (await run('return window.__walk && window.__walk.poolSize')) === 1)
+check('the leaf chamber draws its room', leafOn && (await run('return window.__walk && window.__walk.torches')) === 1)
 for (const path of ['/nope', '/a/b/c', '/docs/nope']) {
   const status = await run(`return (await fetch('${path}')).status`)
   const title = await run(`return (await (await fetch('${path}')).text()).includes('Nothing here')`)

@@ -26,6 +26,7 @@ const remember = (key, value) => {
 }
 
 await init()
+const paper = await import(root.dataset.paper)
 
 /* ---------------- Workers ---------------- */
 
@@ -294,6 +295,7 @@ $('bench-800').addEventListener('click', async () => {
 
 const canvas = $('floor-map')
 const ctx = canvas.getContext('2d')
+const hatches = paper.hatchPatterns(ctx, css('--map-hatch'))
 const mapTooltip = $('map-tooltip')
 const zoomLabel = $('zoom-label')
 const viewSection = $('view')
@@ -397,6 +399,12 @@ const draw = () => {
     ctx.globalAlpha = room.leaf ? 0.62 : 0.9
     ctx.fill()
     ctx.globalAlpha = 1
+    const pattern = hatches[room.cls]
+    if (pattern) {
+      pattern.setTransform(new DOMMatrix().scale(px))
+      ctx.fillStyle = pattern
+      ctx.fill()
+    }
     const role = roleColor(room.role)
     ctx.strokeStyle = role || ink
     ctx.lineWidth = (role ? 3.5 : 1.5) * px
@@ -530,7 +538,7 @@ const el = (tag, attrs = {}, ...kids) => {
   return node
 }
 const helpButton = (text) => el('button', { type: 'button', class: 'help-button', 'data-help': text, 'aria-label': tr('lab_help_prefix', { text }), 'aria-expanded': 'false', 'aria-describedby': 'help-tooltip' }, '?')
-const swatch = (color) => { const i = el('i', { 'aria-hidden': 'true' }); i.style.background = color; return i }
+const swatch = (color, shape) => { const i = el('i', { 'aria-hidden': 'true' }); i.style.backgroundColor = color; if (shape) i.dataset.shape = shape; return i }
 
 const translate = (message, table) => {
   for (const [pattern, id] of table) {
@@ -624,14 +632,14 @@ const renderResults = () => {
     results.append(details)
   })
 
-  const chips = Object.entries(m.byClass).map(([name, count]) => el('span', { class: 'shape-chip' }, swatch(`var(--map-${name})`), `${className(name)}: ${count}`))
+  const chips = Object.entries(m.byClass).map(([name, count]) => el('span', { class: 'shape-chip' }, swatch(`var(--map-${name})`, name), `${className(name)}: ${count}`))
   results.append(el('section', { class: 'result-section' }, el('h3', {}, tr('lab_shapes_title')), el('div', { class: 'chip-list' }, ...chips)))
 
   if (current.floor.log.length) {
     results.append(el('details', { class: 'result-group' }, el('summary', {}, tr('lab_log_title')), el('ul', { class: 'log-list' }, ...current.floor.log.map((line) => el('li', {}, translate(line, LOGS))))))
   }
 
-  const legend = (names, color) => names.map((name) => el('span', { class: 'legend-item' }, swatch(color(name)), name === 'plain' ? '' : (color === shapeColor ? className(name) : roleName(name))))
+  const legend = (names, color) => names.map((name) => el('span', { class: 'legend-item' }, swatch(color(name), color === shapeColor ? name : undefined), name === 'plain' ? '' : (color === shapeColor ? className(name) : roleName(name))))
   const shapeColor = (name) => `var(--map-${name})`
   const roleColor = (name) => `var(--role-${name})`
   results.append(el('details', { class: 'result-group' }, el('summary', {}, tr('lab_legend_title')),
@@ -794,7 +802,7 @@ async function mount3d() {
     if (ticket !== mounting || !view3d.active) return
     const [THREE, build, scene] = view3d.modules
     view3d.handle?.dispose({ keepContext: true })
-    view3d.handle = scene.mount({ THREE, canvas: canvas3d, floor: current.floor, scene: build.build(current.floor), mode: 'orbit' })
+    view3d.handle = scene.mount({ THREE, paper, canvas: canvas3d, floor: current.floor, scene: build.build(current.floor), mode: 'orbit' })
   } catch (error) {
     console.warn('lab: the 3D view did not start', error)
     leave3d()

@@ -67,6 +67,8 @@ await sleep(300)
 report('the reading drawer opens', (await run("document.getElementById('reading-toggle').click(); await new Promise(r => setTimeout(r, 300)); return document.getElementById('reading-toggle').getAttribute('aria-expanded') + '|' + (document.activeElement?.id)")) === 'true|results', 'drawer')
 report('Escape closes the drawer and returns the focus', (await run("document.getElementById('lab').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await new Promise(r => setTimeout(r, 300)); return document.getElementById('reading-toggle').getAttribute('aria-expanded') + '|' + (document.activeElement?.id)")) === 'false|reading-toggle', 'escape')
 
+report('the shape legend repeats the plan hatches', (await run("return document.querySelectorAll('.legend-list [data-shape]').length")) === 5, 'legend')
+
 // The 3D view: mounts a scene, redraws on regenerate, and leaving it disposes the scene.
 await resize(1440, 900)
 await sleep(300)

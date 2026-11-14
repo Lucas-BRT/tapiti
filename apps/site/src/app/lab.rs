@@ -199,6 +199,7 @@ pub async fn page(cx: &Cx) -> Result<impl View> {
             data-three=(asset!("assets/vendor/three-subset.min.js"))
             data-build=(asset!("assets/walk/build.js"))
             data-scene=(asset!("assets/walk/scene.js"))
+            data-paper=(asset!("assets/walk/paper.js"))
         >
             <noscript><p class="lab-noscript">(e!(lab_needs_js))</p></noscript>
             <div class="lab-tabs" role="tablist" aria-label=(e!(lab_tabs_aria))>
