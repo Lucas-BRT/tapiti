@@ -1,6 +1,6 @@
 // The dungeon: a fixed three.js scene behind the landing page, seen in the first person. Scrolling walks the camera, at eye height, along the
 // main path of one real floor (the one the generator draws for `data-seed` and `data-size`, built here by the same wasm module the lab uses).
-// The rooms are the generator's own; only the drawing is a dungeon: stone courses on the walls, flagged floor, a low ceiling, torchlight and fog.
+// The rooms are the generator's own; paper, pencil hatching and a pink route give the floor its Fieldnotes drawing style.
 // Scrolling stays native: this file only reads the scroll position. Without WebGL2, scripts or consent to data, the page keeps the
 // server-rendered SVG of the same floor behind it. Geometry comes from build.js (pure data); this file owns everything that touches the GPU.
 
@@ -15,9 +15,6 @@ const css = (name) => getComputedStyle(document.documentElement).getPropertyValu
 const clamp = (x, lo, hi) => (x < lo ? lo : x > hi ? hi : x)
 const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t) }
 const lerp = (a, b, t) => a + (b - a) * t
-
-/** A number in [0, 1) from an integer, with no randomness: every visitor sees the same flicker. */
-const hash = (n) => (Math.imul(n + 1, 2654435761) >>> 0) / 4294967296
 
 /** Human scale: a corridor is 44 units wide, about 2.5 m, so a metre is 17.6 units. */
 const EYE = 29
@@ -41,78 +38,8 @@ function remember(key, value, store = localStorage) {
   }
 }
 
-/* ---------------- Light, flames ---------------- */
-
-const FLAME_VERTEX = `
-  attribute float phase;
-  attribute float lit;
-  uniform float uTime;
-  uniform float uSway;
-  varying vec2 vUv;
-  varying float vLevel;
-  void main() {
-    vUv = uv;
-    vec4 mv = modelViewMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);
-    float n = (sin(uTime * 7.1 + phase * 6.2831) + sin(uTime * 11.3 + phase * 17.0) + sin(uTime * 17.9 + phase * 31.0)) / 3.0;
-    vLevel = lit * (0.86 + 0.14 * n * uSway);
-    mv.xy += position.xy * vec2(7.0, 13.0) * (0.9 + 0.1 * vLevel);
-    mv.y += 6.0;
-    gl_Position = projectionMatrix * mv;
-  }
-`
-const FLAME_FRAGMENT = `
-  uniform vec3 uColor;
-  varying vec2 vUv;
-  varying float vLevel;
-  void main() {
-    vec2 p = vUv - vec2(0.5, 0.32);
-    p.x *= 1.7;
-    float d = length(p) * 2.0;
-    float a = smoothstep(1.0, 0.0, d);
-    a *= a;
-    vec3 core = mix(uColor, vec3(1.0, 0.86, 0.62), smoothstep(0.5, 0.0, d));
-    gl_FragColor = vec4(core * a * vLevel, a * vLevel);
-  }
-`
-
-/* ---------------- Stone ---------------- */
-
-/**
- * Lambert lighting with courses of dressed stone, drawn from the wall's own coordinates (`uv`: length along the wall, height): a row every
- * 8 units, blocks 18 long, each row shifted, each block a little lighter or darker, mortar between. No texture to download.
- */
-function stone(THREE, color) {
-  const material = new THREE.MeshLambertMaterial({ color, vertexColors: true })
-  material.onBeforeCompile = (shader) => {
-    shader.vertexShader = shader.vertexShader
-      .replace('void main() {', 'varying vec2 vStoneUv;\nvoid main() {')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvStoneUv = uv;')
-    shader.fragmentShader = shader.fragmentShader
-      .replace(
-        'void main() {',
-        `varying vec2 vStoneUv;
-        float h21(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
-        void main() {`,
-      )
-      .replace(
-        '#include <color_fragment>',
-        `#include <color_fragment>
-        vec2 g = vec2(vStoneUv.x / 18.0, vStoneUv.y / 8.0);
-        float row = floor(g.y);
-        g.x += row * 0.5 + h21(vec2(row, 1.0)) * 3.0;
-        vec2 cell = floor(g);
-        vec2 f = fract(g);
-        float mortar = clamp(step(f.x, 0.035) + step(f.y, 0.075), 0.0, 1.0);
-        float tone = 0.72 + 0.36 * h21(cell + row * 7.0);
-        diffuseColor.rgb *= mix(tone, 0.42, mortar);`,
-      )
-  }
-  material.customProgramCacheKey = () => 'tapiti-stone'
-  return material
-}
-
-/** One canvas for the floor and the ceiling: flagstone joints along the floor's grid, the mask as alpha, so one plane takes the floor's shape. */
-function flagTexture(THREE, floor, scene, size, { grow = 0 } = {}) {
+/** Paper flags and the pencilled route, clipped by the floor mask. */
+function flagTexture(THREE, scene, size) {
   const [x0, y0, x1, y1] = scene.bounds
   const W = size
   const H = Math.round((size * (y1 - y0)) / (x1 - x0))
@@ -130,29 +57,16 @@ function flagTexture(THREE, floor, scene, size, { grow = 0 } = {}) {
   for (let i = 0; i < m.data.length; i++) { image.data[i * 4] = image.data[i * 4 + 1] = image.data[i * 4 + 2] = 255; image.data[i * 4 + 3] = m.data[i] }
   small.getContext('2d').putImageData(image, 0, 0)
   c.imageSmoothingEnabled = true
-  const place = (dx, dy) => c.drawImage(small, (m.ox - x0 + m.cell / 2) * sx + dx, (m.oy - y0 + m.cell / 2) * sy + dy, m.nx * m.cell * sx, m.ny * m.cell * sy)
-  place(0, 0)
-  // `grow` widens the shape by that many units all round. The ceiling is as high as the walls, so a wider ceiling is hidden by them, and no
-  // crack is left where the mask and the wall outline disagree by a fraction of a cell.
-  if (grow) for (const [a, b] of [[1, 0], [-1, 0], [0, 1], [0, -1], [0.7, 0.7], [0.7, -0.7], [-0.7, 0.7], [-0.7, -0.7]]) place(a * grow * sx, b * grow * sy)
+  c.drawImage(small, (m.ox - x0 + m.cell / 2) * sx, (m.oy - y0 + m.cell / 2) * sy, m.nx * m.cell * sx, m.ny * m.cell * sy)
   c.globalCompositeOperation = 'source-in'
-  c.fillStyle = '#6d675f'
+  c.fillStyle = css('--scene-floor')
   c.fillRect(0, 0, W, H)
   c.globalCompositeOperation = 'source-atop'
-  // Flags: a row every 18 units, a joint every 30, each row shifted; a few darker flags from a fixed hash.
-  const flagW = 30 * sx
-  const flagH = 18 * sy
-  for (let row = 0, y = 0; y < H; row++, y += flagH) {
-    for (let col = -1, x = -((row * 0.5 + 0.3) % 1) * flagW; x < W; col++, x += flagW) {
-      const v = hash(row * 997 + col)
-      c.globalAlpha = 0.22 * v
-      c.fillStyle = '#000'
-      c.fillRect(x, y, flagW, flagH)
-    }
-  }
-  c.globalAlpha = 0.7
-  c.strokeStyle = '#1f1c19'
-  c.lineWidth = 1.4
+  const flagW = 28 * sx
+  const flagH = 28 * sy
+  c.globalAlpha = 0.2
+  c.strokeStyle = css('--scene-ink')
+  c.lineWidth = 0.8
   for (let row = 0, y = 0; y < H; row++, y += flagH) {
     c.beginPath()
     c.moveTo(0, y)
@@ -161,6 +75,18 @@ function flagTexture(THREE, floor, scene, size, { grow = 0 } = {}) {
     c.stroke()
   }
   c.globalAlpha = 1
+  c.strokeStyle = css('--scene-route')
+  c.lineWidth = 1.8 * sx
+  c.setLineDash([8 * sx, 6 * sx])
+  c.beginPath()
+  const points = scene.path.points
+  for (let i = 0; i < points.length; i += 3) {
+    const x = (points[i] - x0) * sx, y = (points[i + 2] - y0) * sy
+    if (i) c.lineTo(x, y)
+    else c.moveTo(x, y)
+  }
+  c.stroke()
+  c.setLineDash([])
   const texture = new THREE.CanvasTexture(canvas)
   texture.colorSpace = THREE.SRGBColorSpace
   texture.anisotropy = 8
@@ -170,40 +96,33 @@ function flagTexture(THREE, floor, scene, size, { grow = 0 } = {}) {
 /* ---------------- Mount ---------------- */
 
 /** Builds the scene for `floor` on `canvas` and returns a handle. `THREE` is the vendored module, `scene` the result of build.js. */
-export function mount({ THREE, canvas, floor, scene: built, page }) {
-  const abyss = new THREE.Color(css('--abyss') || '#0b0e12')
+export function mount({ THREE, paper, canvas, floor, scene: built, page }) {
+  const abyss = new THREE.Color(css('--abyss'))
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: devicePixelRatio < 1.5, powerPreference: 'low-power' })
   renderer.outputColorSpace = THREE.SRGBColorSpace
-  renderer.toneMapping = THREE.ACESFilmicToneMapping
-  renderer.toneMappingExposure = 1.25
   renderer.setClearColor(abyss, 1)
 
   const scene = new THREE.Scene()
   scene.background = abyss
-  scene.fog = new THREE.FogExp2(abyss, 0.0045)
+  scene.fog = new THREE.FogExp2(abyss, 0.0024)
   const camera = new THREE.PerspectiveCamera(70, 1, 2, 2500)
 
-  /* Walls: stone courses, with the vertical blocks of the wall's own length. */
+  /* Unlit graphite and paper: shading comes from the hatch, so it stays stable while scrolling. */
   const wallGeometry = new THREE.BufferGeometry()
   const w = built.walls
   wallGeometry.setAttribute('position', new THREE.BufferAttribute(w.positions, 3))
   wallGeometry.setAttribute('normal', new THREE.BufferAttribute(w.normals, 3))
   wallGeometry.setAttribute('uv', new THREE.BufferAttribute(w.uvs, 2))
-  const colors = new Float32Array(w.shade.length * 3)
-  for (let i = 0; i < w.shade.length; i++) colors.fill(w.shade[i], i * 3, i * 3 + 3)
-  wallGeometry.setAttribute('color', new THREE.BufferAttribute(colors, 3))
   wallGeometry.setIndex(new THREE.BufferAttribute(w.indices, 1))
-  const wallMaterial = stone(THREE, '#9a9aa2')
+  const wallMaterial = paper.wallMaterial(THREE, css('--scene-wall'), css('--scene-ink'))
   scene.add(new THREE.Mesh(wallGeometry, wallMaterial))
 
-  /* Floor and ceiling: one plane each, the texture's alpha cuts it to the shape of the floor. */
+  /* The paper floor keeps the real outline; the untouched page is the sky. */
   const [bx0, by0, bx1, by1] = built.bounds
-  const texture = flagTexture(THREE, floor, built, 2048)
-  const ceilingTexture = flagTexture(THREE, floor, built, 1024, { grow: 8 })
+  const texture = flagTexture(THREE, built, 2048)
   const plane = new THREE.PlaneGeometry(bx1 - bx0, by1 - by0)
-  const floorMaterial = new THREE.MeshLambertMaterial({ map: texture, alphaTest: 0.5 })
-  // The stairwell is a square hole in the floor (the ceiling above it stays whole): the fragments inside it are dropped, so the steps below
-  // are seen (a hole in the texture would also open the ceiling, which shares nothing with the floor's texture but its plane).
+  const floorMaterial = new THREE.MeshBasicMaterial({ map: texture, alphaTest: 0.5 })
+  // Keep the stairwell open in the floor plane.
   const wellSide = Math.min(built.stairs.radius * 1.1, 110)
   const well = [built.stairs.center[0] - wellSide / 2, built.stairs.center[1] - wellSide / 2, built.stairs.center[0] + wellSide / 2, built.stairs.center[1] + wellSide / 2]
   floorMaterial.onBeforeCompile = (shader) => {
@@ -215,22 +134,13 @@ export function mount({ THREE, canvas, floor, scene: built, page }) {
   ground.rotation.x = -Math.PI / 2
   ground.position.set((bx0 + bx1) / 2, 0, (by0 + by1) / 2)
   scene.add(ground)
-  // The same plane as the floor, turned the same way (so the texture's shape lines up with the floor's) and seen from below: its back faces.
-  const ceilingMaterial = new THREE.MeshLambertMaterial({ map: ceilingTexture, alphaTest: 0.5, color: '#8a847b', side: 1 /* BackSide, which the vendored subset does not export */ })
-  const ceiling = new THREE.Mesh(plane, ceilingMaterial)
-  ceiling.rotation.x = -Math.PI / 2
-  ceiling.position.set((bx0 + bx1) / 2, WALL, (by0 + by1) / 2)
-  scene.add(ceiling)
-
   /* Corner pillars at the junctions hide the seams where corridors cross. */
   const pillars = built.pillars.length / 2
-  const pillarMaterial = stone(THREE, '#8a8a92')
+  const pillarMaterial = paper.wallMaterial(THREE, css('--scene-wall'), css('--scene-ink'))
   const pillarGeometry = new THREE.BoxGeometry(7, WALL, 7)
   // Box faces carry uv in [0, 1]; scale them to wall units so the courses match the walls.
   const boxUv = pillarGeometry.attributes.uv
   for (let i = 0; i < boxUv.count; i++) boxUv.setXY(i, boxUv.getX(i) * 7, boxUv.getY(i) * WALL)
-  const pillarColors = new Float32Array(pillarGeometry.attributes.position.count * 3).fill(1)
-  pillarGeometry.setAttribute('color', new THREE.BufferAttribute(pillarColors, 3))
   let pillarMesh = null
   if (pillars) {
     pillarMesh = new THREE.InstancedMesh(pillarGeometry, pillarMaterial, pillars)
@@ -247,9 +157,8 @@ export function mount({ THREE, canvas, floor, scene: built, page }) {
     const uv = g.attributes.uv
     const [gw, gh] = g === jambGeometry ? [6, 46] : [56, 14]
     for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * gw, uv.getY(i) * gh)
-    g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count * 3).fill(1), 3))
   }
-  const doorMaterial = stone(THREE, '#7d7d86')
+  const doorMaterial = paper.wallMaterial(THREE, css('--scene-door'), css('--scene-ink'))
   const jambs = new THREE.InstancedMesh(jambGeometry, doorMaterial, doors * 2)
   const lintels = new THREE.InstancedMesh(lintelGeometry, doorMaterial, doors)
   const dm = new THREE.Matrix4()
@@ -271,72 +180,40 @@ export function mount({ THREE, canvas, floor, scene: built, page }) {
   }
   scene.add(jambs, lintels)
 
-  /* The stairwell: a square cut into the floor, steps going down, and cold light rising from it. */
+  /* Darker pencil steps below the paper floor. */
   const stairs = built.stairs
   const side = Math.min(stairs.radius * 1.1, 110)
-  const stepMaterial = new THREE.MeshLambertMaterial({ color: '#615b52' })
+  const stepMaterial = paper.wallMaterial(THREE, css('--scene-step'), css('--scene-ink'))
   const stepGeometry = new THREE.BoxGeometry(side, 20, side / 8)
-  const steps = []
+  const stepUv = stepGeometry.attributes.uv
+  for (let i = 0; i < stepUv.count; i++) stepUv.setXY(i, stepUv.getX(i) * side, stepUv.getY(i) * 20)
   for (let k = 0; k < 8; k++) {
     const step = new THREE.Mesh(stepGeometry, stepMaterial)
     // The first step's top sits 6 units under the floor, never in its plane (that showed as a bar across the flags).
     step.position.set(stairs.center[0], -16 - k * 20, stairs.center[1] - side / 2 + (k + 0.5) * (side / 8))
-    steps.push(step)
     scene.add(step)
   }
-  const below = new THREE.PointLight(css('--light-below') || '#6d8fc4', 400, 380, 1)
-  below.position.set(stairs.center[0], -90, stairs.center[1])
-  scene.add(below)
-
-  /* Torches: brackets and flames (two draw calls), lit by a fixed pool of lights that follows the camera. */
+  /* Drawn torches stay still on the paper; they need no point lights. */
   const count = built.torches.length / 4
   const bracketGeometry = new THREE.BoxGeometry(3, 12, 3)
-  const bracketMaterial = new THREE.MeshLambertMaterial({ color: '#3a3430' })
+  const bracketMaterial = new THREE.MeshBasicMaterial({ color: css('--scene-ink') })
   const brackets = new THREE.InstancedMesh(bracketGeometry, bracketMaterial, count)
   const flameGeometry = new THREE.PlaneGeometry(1, 1)
   const flames = new THREE.InstancedMesh(flameGeometry, null, count)
-  const phase = new Float32Array(count)
-  const lit = new Float32Array(count)
+  const lit = new Float32Array(count).fill(1)
   const m4 = new THREE.Matrix4()
-  const spots = []
   for (let i = 0; i < count; i++) {
     const x = built.torches[i * 4]
     const z = built.torches[i * 4 + 1]
-    spots.push([x, 38, z])
     brackets.setMatrixAt(i, m4.makeTranslation(x, 31, z))
     flames.setMatrixAt(i, m4.makeTranslation(x, 38, z))
-    phase[i] = hash(i)
   }
-  flames.geometry.setAttribute('phase', new THREE.InstancedBufferAttribute(phase, 1))
   const litAttribute = new THREE.InstancedBufferAttribute(lit, 1)
   flames.geometry.setAttribute('lit', litAttribute)
-  const flameUniforms = { uTime: { value: 0 }, uSway: { value: 1 }, uColor: { value: new THREE.Color(css('--light-torch') || '#ff8a4c') } }
-  flames.material = new THREE.ShaderMaterial({ vertexShader: FLAME_VERTEX, fragmentShader: FLAME_FRAGMENT, uniforms: flameUniforms, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending })
+  const flameUniforms = { uColor: { value: new THREE.Color(css('--light-torch')) }, uCore: { value: new THREE.Color('#f1d58c') }, uInk: { value: new THREE.Color(css('--scene-ink')) } }
+  flames.material = new THREE.ShaderMaterial({ vertexShader: paper.FLAME_VERTEX, fragmentShader: paper.FLAME_FRAGMENT, uniforms: flameUniforms, transparent: true, depthWrite: false })
   flames.frustumCulled = false
   scene.add(brackets, flames)
-  // Torches light up outwards from the entrance: delay by distance from the first station.
-  const entrance = built.stations[0]
-  let farthest = 1
-  const delays = spots.map(([x, , z]) => { const d = Math.sqrt((x - entrance.x) ** 2 + (z - entrance.y) ** 2); farthest = Math.max(farthest, d); return d })
-  for (let i = 0; i < count; i++) delays[i] = (delays[i] / farthest) * 0.8
-
-  /* Lights: warm torches against dark stone, and a little light about the one who walks. */
-  // Decay 1, not the physical 2: wide soft pools of light instead of hot spots on the nearest wall and black beyond.
-  const TORCH = 150
-  const CARRIED = 70
-  const hemisphere = new THREE.HemisphereLight(new THREE.Color(css('--light-fill') || '#2b3442'), abyss, 0.9)
-  scene.add(hemisphere)
-  const carried = new THREE.PointLight(css('--light-carried') || '#ffd4ad', CARRIED, 300, 1)
-  scene.add(carried)
-  const pool = []
-  const POOL = 6
-  for (let i = 0; i < POOL; i++) {
-    const light = new THREE.PointLight(css('--light-torch') || '#ff8a4c', TORCH, 360, 1)
-    pool.push(light)
-    scene.add(light)
-  }
-  let poolSize = POOL
-
   /* The path: where the eyes are along it, and which way they look. */
   const pts = built.path.points
   const lens = built.path.lengths
@@ -435,6 +312,7 @@ export function mount({ THREE, canvas, floor, scene: built, page }) {
       sign.el.style.opacity = opacity.toFixed(3)
       sign.el.style.visibility = opacity < 0.02 ? 'hidden' : 'visible'
       sign.el.style.pointerEvents = opacity > 0.6 ? 'auto' : 'none'
+      sign.el.inert = opacity <= 0.6
       // The sign turns most of the way to face the walker, so it never reads at a steep angle while the walk goes round a bend.
       let turn = yaw + look.yaw + Math.PI - sign.yaw
       turn -= Math.round(turn / (2 * Math.PI)) * 2 * Math.PI
@@ -528,7 +406,6 @@ export function mount({ THREE, canvas, floor, scene: built, page }) {
   // `?tier=0` (to 3) pins the quality tier, for screenshots on slow software renderers.
   const pinned = params.has('tier')
   let tier = pinned ? clamp(Number(params.get('tier')) || 0, 0, 3) : Number(remember('tapiti.walk.tier', undefined, sessionStorage)) || 0
-  if (tier >= 2) poolSize = Math.min(poolSize, 3)
   if (tier >= 3) flames.visible = false
   let dpr = 1
   const applySize = () => {
@@ -555,27 +432,18 @@ export function mount({ THREE, canvas, floor, scene: built, page }) {
     }, 100)
   }
 
-  const ordered = new Array(count)
-  const scratch = new Float32Array(count)
   const forward = new THREE.Vector3()
-  let started = performance.now()
   let lastScroll = 0
   let frameId = 0
-  let timer = 0
   let stopped = false
   let first = true
   const samples = []
   let sampleStart = 0
   let prev = performance.now()
   let stillDrawn = false
-  let walked = 0
 
-  const render = (now, dt) => {
-    const t = (now - started) / 1000
-    const ignition = stepped ? 1 : null
-    // Eyes: a slow sway of the head with the distance walked, none when the page stands still or motion is reduced.
-    const bob = stepped ? 0 : Math.sin(walked * 0.32) * 0.7
-    const p = poseAt(state.u, state.dive, bob)
+  const render = (dt) => {
+    const p = poseAt(state.u, state.dive, 0)
     // The head turns into a bend a moment after the path does, instead of snapping at every corner.
     if (yaw === null || stepped) yaw = p.yaw
     else {
@@ -593,38 +461,25 @@ export function mount({ THREE, canvas, floor, scene: built, page }) {
     camera.lookAt(p.px + forward.x * 10, p.py + forward.y * 10, p.pz + forward.z * 10)
     camera.fov = innerWidth < innerHeight * 0.8 ? 80 : 70
     camera.updateProjectionMatrix()
-    // Lights: the pool goes to the torches nearest to the eyes.
-    for (let i = 0; i < count; i++) scratch[i] = (spots[i][0] - p.px) ** 2 + (spots[i][2] - p.pz) ** 2
-    for (let i = 0; i < count; i++) ordered[i] = i
-    ordered.sort((a, b) => scratch[a] - scratch[b])
-    let changed = false
-    for (let i = 0; i < count; i++) {
-      const level = ignition ?? smooth(0, 0.45, t - delays[i])
-      if (lit[i] !== level) { lit[i] = level; changed = true }
-    }
-    if (changed) litAttribute.needsUpdate = true
-    flameUniforms.uTime.value = stepped ? 0 : t
-    flameUniforms.uSway.value = stepped ? 0 : 1
-    for (let k = 0; k < POOL; k++) {
-      const light = pool[k]
-      if (k >= poolSize || !count) { light.intensity = 0; continue }
-      const torch = ordered[k]
-      const [x, y, z] = spots[torch]
-      light.position.set(x, y, z)
-      const n = stepped ? 0 : (Math.sin(t * 7.1 + hash(torch) * 6.28) + Math.sin(t * 11.3 + hash(torch) * 17) + Math.sin(t * 17.9 + hash(torch) * 31)) / 3
-      light.intensity = TORCH * (0.86 + 0.14 * n) * lit[torch]
-    }
-    carried.position.set(p.px + forward.x * 12, Math.max(p.py - 4, -60), p.pz + forward.z * 12)
-    carried.intensity = CARRIED * smooth(0, 0.45, t)
-    below.intensity = 400 * smooth(0.6, 1, state.u) * (1 - state.dive * 0.4)
     renderer.render(scene, camera)
     if (first) {
       first = false
       mountSigns()
       document.documentElement.classList.add('walk-on')
+      measure()
+      const linked = sections.find((section) => `#${section.id}` === location.hash)
+      if (linked) {
+        // Scene sections replace the reading layout: resolve the deep link against their final heights.
+        scrollTo({ top: linked.getBoundingClientRect().top + scrollY, behavior: 'instant' })
+        want = target()
+        state.u = stationU[want.station]
+        state.dive = want.dive
+        yaw = null
+        onScroll()
+      }
     }
     placeSigns()
-    window.__walk = { tier, calls: renderer.info.render.calls, triangles: renderer.info.render.triangles, stations: built.stations, camera: { x: p.px, y: p.py, z: p.pz, u: state.u }, torches: count, poolSize, lights: pool.length + 3, stepped }
+    window.__walk = { tier, calls: renderer.info.render.calls, triangles: renderer.info.render.triangles, stations: built.stations, camera: { x: p.px, y: p.py, z: p.pz, u: state.u }, torches: count, poolSize: 0, lights: 0, stepped }
   }
 
   const adapt = (now) => {
@@ -642,7 +497,6 @@ export function mount({ THREE, canvas, floor, scene: built, page }) {
         tier++
         remember('tapiti.walk.tier', String(tier), sessionStorage)
         if (tier === 1) applySize()
-        else if (tier === 2) poolSize = Math.min(poolSize, 3)
         else flames.visible = false
       }
     }
@@ -650,31 +504,24 @@ export function mount({ THREE, canvas, floor, scene: built, page }) {
 
   const step = (now) => {
     frameId = 0
-    timer = 0
     if (stopped || document.hidden || offscreen) return
     want = target()
     if (stepped) want.u = stationU[want.station]
     const dt = Math.min(now - prev, 100)
     const k = stepped ? 1 : 1 - Math.exp(-(dt / 1000) / 0.26)
-    const before = state.u
     state.u += (want.u - state.u) * k
     state.dive += (want.dive - state.dive) * k
-    walked += Math.abs(state.u - before) * total
     const moving = Math.abs(want.u - state.u) > 1e-4 || Math.abs(want.dive - state.dive) > 1e-4
     if (!moving) { state.u = want.u; state.dive = want.dive }
     adapt(now)
     if (stepped && stillDrawn && !moving && state.station === want.station) return
     state.station = want.station
-    render(now, dt)
-    const ignitionBusy = now - started < 1400
+    render(dt)
     if (stepped) { stillDrawn = true; return }
-    if (moving || ignitionBusy || now - lastScroll < 300) { frameId = requestAnimationFrame(step); return }
-    if (state.dive >= 1) return
-    // Resting: the flames still flicker, at 15 fps, for a few seconds, then the loop sleeps until the next scroll.
-    if (now - lastScroll < 6000) timer = setTimeout(() => { frameId = requestAnimationFrame(step) }, 66)
+    if (moving || now - lastScroll < 300) { if (!frameId) frameId = requestAnimationFrame(step); return }
   }
   const wake = () => {
-    if (stopped || frameId || timer) return
+    if (stopped || frameId) return
     frameId = requestAnimationFrame(step)
   }
   const onScroll = () => { lastScroll = performance.now(); wake() }
@@ -695,9 +542,8 @@ export function mount({ THREE, canvas, floor, scene: built, page }) {
   applySize()
   want = target()
   state = { u: stepped ? stationU[want.station] : 0, dive: stepped ? want.dive : 0, station: -1 }
-  started = performance.now()
-  prev = started
-  lastScroll = started
+  prev = performance.now()
+  lastScroll = prev
   wake()
 
   const setStepped = (value) => {
@@ -712,12 +558,11 @@ export function mount({ THREE, canvas, floor, scene: built, page }) {
     resume: () => setStepped(reduced()),
     dispose() {
       stopped = true
-      clearTimeout(timer)
       cancelAnimationFrame(frameId)
       removeEventListener('scroll', onScroll)
       removeEventListener('resize', onResize)
       layer.remove()
-      for (const o of [wallGeometry, plane, pillarGeometry, jambGeometry, lintelGeometry, doorMaterial, bracketGeometry, flameGeometry, stepGeometry, texture, ceilingTexture, wallMaterial, pillarMaterial, floorMaterial, ceilingMaterial, stepMaterial, bracketMaterial, flames.material]) o.dispose()
+      for (const o of [wallGeometry, plane, pillarGeometry, jambGeometry, lintelGeometry, doorMaterial, bracketGeometry, flameGeometry, stepGeometry, texture, wallMaterial, pillarMaterial, floorMaterial, stepMaterial, bracketMaterial, flames.material]) o.dispose()
       renderer.dispose()
       renderer.forceContextLoss()
       window.__walk = null
@@ -728,16 +573,16 @@ export function mount({ THREE, canvas, floor, scene: built, page }) {
 /* ---------------- The landing page ---------------- */
 
 async function boot() {
-  if (!root || params.get('scene') === 'off' || saveData() || !hasWebGL2()) return
+  if (!root || params.get('scene') === 'off' || saveData() || matchMedia('(forced-colors: active)').matches || !hasWebGL2()) return
   const canvas = root.querySelector('canvas')
   const seed = Number(root.dataset.seed)
   const size = Number(root.dataset.size)
-  const [wasm, build, THREE] = await Promise.all([import('/lab/pkg/tapiti.js'), import(root.dataset.build), import(root.dataset.three)])
+  const [wasm, build, THREE, paper] = await Promise.all([import('/lab/pkg/tapiti.js'), import(root.dataset.build), import(root.dataset.three), import(root.dataset.paper)])
   await wasm.default()
   const answer = JSON.parse(wasm.stage_json(seed, wasm.rich_params(size)))
   const floor = answer.floor
   const built = build.build(floor)
-  const handle = mount({ THREE, canvas, floor, scene: built, page: document.querySelector('.rooms') })
+  const handle = mount({ THREE, paper, canvas, floor, scene: built, page: document.querySelector('.rooms') })
 
   const toggle = document.querySelector('.route-pause')
   if (toggle) {

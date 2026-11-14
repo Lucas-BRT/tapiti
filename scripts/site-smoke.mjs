@@ -1,6 +1,6 @@
 // Smoke test of the landing page's walk in headless Firefox, over WebDriver BiDi (Node 22+ and `firefox`; start the site first).
 //   node scripts/site-smoke.mjs [base-url]        default: http://127.0.0.1:3000
-// Checks the scene starts and stays inside its budgets, follows the scroll, agrees with the server's minimap, does not shift the layout,
+// Checks the scene starts and stays inside its budgets, follows the seven rooms, keeps paper signs readable,
 // can be switched off, steps under reduced motion, and that the docs load neither three.js nor wasm. With AXE_JS set, also runs axe-core.
 import { spawn } from 'node:child_process'
 import { readFileSync } from 'node:fs'
@@ -41,10 +41,9 @@ const until = async (body, ms = 20000) => { for (let t = 0; t < ms; t += 250) { 
 let failed = 0
 const check = (name, ok, detail = '') => { if (!ok) failed++; console.log(`${ok ? 'ok  ' : 'FAIL'} ${name}${ok ? '' : `: ${detail}`}`) }
 
-// The layout without the scene: the reference for "no layout shift".
+// The native reading view stays available without WebGL.
 await open('/?scene=off')
 await sleep(800)
-const h1Off = await run("return document.querySelector('h1').getBoundingClientRect().top")
 check('?scene=off keeps the map', (await run("return !document.documentElement.classList.contains('walk-on') && !window.__walk")) === true)
 
 const webgl = await run("const c = document.createElement('canvas'); let why = ''; c.addEventListener('webglcontextcreationerror', (e) => { why = e.statusMessage }); const gl = c.getContext('webgl2'); return gl ? 'yes' : 'no: ' + (why || 'no reason given')")
@@ -55,24 +54,23 @@ check('the scene starts', started)
 const w = JSON.parse((await run('return JSON.stringify(window.__walk && { ...window.__walk, stations: window.__walk.stations.map((s) => [s.x, s.y, s.u]) })')) ?? 'null') ?? {}
 check('draw calls <= 40', w.calls <= 40, w.calls)
 check('triangles <= 60000', w.triangles <= 60000, w.triangles)
-check('lights: 6 pool + carried + below + hemisphere', w.lights <= 9, w.lights)
-const h1On = await run("return document.querySelector('h1').getBoundingClientRect().top")
-check('the scene does not move the page', Math.abs(h1On - h1Off) < 0.5, `${h1Off} vs ${h1On}`)
-
-const stops = JSON.parse(await run("return JSON.stringify([...document.querySelectorAll('.minimap .stop')].map((a) => [Number(a.dataset.x), Number(a.dataset.y)]))"))
-check('minimap stops match the scene stations', w.stations && stops.length === 7 && stops.every(([x, y], i) => Math.abs(x - w.stations[i][0]) < 0.1 && Math.abs(y - w.stations[i][1]) < 0.1), JSON.stringify(stops))
+check('the paper walk needs no lights', w.lights === 0, w.lights)
+const rooms = JSON.parse(await run("return JSON.stringify([...document.querySelectorAll('.rooms [data-station]')].map((s) => Number(s.dataset.station)))"))
+check('the seven HTML rooms match the scene stations', w.stations?.length === 7 && rooms.length === 7 && rooms.every((n, i) => n === i))
+check('world signs retain the original content', (await run("return document.querySelectorAll('.world-rig .room-body').length")) === 7)
+check('signs have opaque paper', (await run("return getComputedStyle(document.querySelector('.world-rig .room-body')).backgroundColor")) === 'rgb(255, 252, 243)')
+check('Caveat is bundled and loaded', (await run("await document.fonts.ready; return document.fonts.check('600 24px Caveat')")) === true)
 
 for (const [i, section] of ['entrance', 'shapes', 'gate', 'dig', 'numbers', 'run', 'stairs'].entries()) {
-  await run(`const s = document.getElementById('${section}'); window.scrollTo({ top: s.getBoundingClientRect().top + scrollY - innerHeight * 0.5 + 2, behavior: 'instant' })`)
-  const reached = await until(`return Math.abs(window.__walk.camera.u - ${w.stations?.[i]?.[2] ?? 0}) < 0.02`, 8000)
+  await run(`const s = document.getElementById('${section}'); window.scrollTo({ top: s.offsetTop, behavior: 'instant' })`)
+  const reached = await until(`return Math.abs(window.__walk.camera.u - ${w.stations?.[i]?.[2] ?? 0}) < 0.001`, 8000)
   check(`scrolling to "${section}" brings the camera there`, reached, await run('return JSON.stringify(window.__walk.camera)'))
 }
-const marked = await run("return document.querySelector('.minimap .stop[aria-current]')?.getAttribute('href')")
-check('the minimap and gauge follow the room', marked === '#stairs', marked)
-
-await open('/?motion=reduce')
+await open('/?motion=reduce#gate')
 await until("return document.documentElement.classList.contains('walk-on')")
 check('reduced motion steps the camera', (await run('return window.__walk && window.__walk.stepped')) === true)
+check('the gate deep link survives the scene layout', await until(`return Math.abs(window.__walk.camera.u - ${w.stations?.[2]?.[2] ?? 0}) < 0.001`))
+check('the seed sign can receive keyboard focus', (await run("const input = document.querySelector('.world-rig input[name=seed]'); input?.focus(); return !!input && document.activeElement === input")) === true)
 
 // A dead end, and every address that leads nowhere, in the same room (with the right status).
 await open('/leaf')

@@ -1,4 +1,4 @@
-//! The landing page as a walk down one floor: seven rooms, a route (minimap and room list) and the floor itself as the backdrop.
+//! The landing page as a walk down one floor: seven paper notes and the floor itself as the backdrop.
 //! Everything here is plain HTML and CSS; with scripts off, the page reads the same and its links still move you between rooms.
 
 use std::sync::OnceLock;
@@ -34,7 +34,7 @@ fn floor_label(cx: &Cx) -> String {
 }
 
 /// One room of the walk: a section at least one screen tall on wide screens. Each room lays its text out its own way (see landing.css);
-/// there is no box around it, the scene shows through.
+/// its paper surface keeps the text legible over the scene.
 #[component]
 pub async fn room(
     cx: &Cx,
@@ -82,6 +82,7 @@ pub async fn scene_backdrop(
                 data-mode=(mode)
                 data-three=(asset!("assets/vendor/three-subset.min.js"))
                 data-build=(asset!("assets/walk/build.js"))
+                data-paper=(asset!("assets/walk/paper.js"))
                 data-seed=(floor::WALK_SEED.to_string())
                 data-size=(floor::WALK_SIZE_INDEX.to_string())
             }
