@@ -12,7 +12,7 @@ use topcoat::{
     Result,
     asset::{AssetBundle, RouterBuilderAssetExt, asset},
     context::{BaseUrl, Cx},
-    font::{Font, fontsource::fontsource_font},
+    font::{Font, font, fontsource::fontsource_font},
     l10n::{fluent::messages, locale},
     metadata::{Metadata, OpenGraph, Url},
     router::{
@@ -148,14 +148,15 @@ const GITHUB_ISSUES: &str = "https://github.com/Lucas-BRT/tapiti/issues";
 // Self-hosted: the font files are bundled as assets and served by this app.
 // rustfmt and `topcoat fmt` wrap this macro differently; keep the Topcoat layout.
 #[rustfmt::skip]
-const GRENZE: Font =
-    fontsource_font!(
-        GRENZE,
-        weight: [600, 700],
-        style: Normal,
-        subset: [Latin],
-        host: Asset,
-    );
+const CAVEAT: Font = font! {
+    "Caveat",
+    @font-face {
+        src: url(asset!("assets/fonts/caveat-latin-600-normal-5.2.8.woff2")) format(
+            "woff2");
+            font-weight: 600;
+            font-display: swap;
+    }
+};
 #[rustfmt::skip]
 const ALEGREYA_SANS: Font =
     fontsource_font!(
@@ -195,7 +196,7 @@ async fn language(cx: &Cx, body: Body, next: Next<'_>) -> Result<Response> {
     with(Metadata::new()
         .title(t!(title))
         .description(t!(description))
-        .theme_color("#0b0e12")
+        .theme_color("#f4f0e5")
         .canonical(Url::Current)
         .open_graph(
             OpenGraph::new().site_name("Tapiti").image(asset!("assets/brand/og.png")),
@@ -206,9 +207,9 @@ async fn layout(cx: &Cx, slot: Slot<'_>) -> Result<impl View> {
         <!DOCTYPE html>
         <html lang="en">
             <head>
-                <meta name="color-scheme" content="dark">
+                <meta name="color-scheme" content="light">
                 topcoat::metadata::tags()
-                topcoat::font::link(font: GRENZE)
+                topcoat::font::link(font: CAVEAT)
                 topcoat::font::link(font: ALEGREYA_SANS)
                 topcoat::font::link(font: ALEGREYA_SANS_ITALIC)
                 topcoat::font::link(font: JETBRAINS_MONO)
