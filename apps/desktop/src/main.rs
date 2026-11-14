@@ -236,8 +236,10 @@ impl App {
         if std::env::var("TAPITI_LAYOUT").is_ok_and(|v| v == "growth") {
             self.params.layout = tapiti_core::params::Layout::Growth;
         }
-        if std::env::var("TAPITI_THEME").is_ok_and(|v| v == "light") {
-            self.ctx.set_theme(egui::ThemePreference::Light);
+        match std::env::var("TAPITI_THEME").as_deref() {
+            Ok("light") => self.ctx.set_theme(egui::ThemePreference::Light),
+            Ok("dark") => self.ctx.set_theme(egui::ThemePreference::Dark),
+            _ => {}
         }
         if let Some(zoom) = std::env::var("TAPITI_ZOOM")
             .ok()
@@ -773,6 +775,7 @@ impl eframe::App for App {
 }
 
 fn setup_style(ctx: &egui::Context) {
+    ctx.set_theme(egui::ThemePreference::Light);
     theme::apply(ctx);
 }
 

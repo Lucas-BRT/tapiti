@@ -1,20 +1,15 @@
-//! The look of the app, taken from the UI of the Zed editor (zed-industries/zed, `main`): its One Dark and One Light colours
-//! (`assets/themes/one/one.json`), its 4 px spacing grid (`crates/ui/src/styles/spacing.rs`: gaps of 4, 6 and 8 px), its type sizes
-//! (`typography.rs`: 12, 14 and 16 px for text, 18 px for a headline), a tab bar 32 px high with 1 px borders (`tab.rs`, `tab_bar.rs`),
-//! buttons 28 px (medium) and 22 px (default) high with 8 px or 4 px of padding (`button_like.rs`), and surfaces that rise from the
-//! window background to the panel, the element and the editor (`elevation.rs`). The radius of a button (`rounded_sm`) was not in the
-//! files that were read; 4 px is a guess. The light accent and the main button are a blue of our own (Zed's light accent is a lavender, white on it is
-//! 3:1), so both themes read as blue.
+//! Fieldnotes: warm paper, graphite controls and a pink marker. The dark variant keeps the same room pigments.
 
 use eframe::egui::{self, Color32, CornerRadius, Margin, Stroke, Theme};
 
-/// Zed's `Base04`, `Base06` and `Base08` spacings, in points.
+/// Shared 4 px spacing base, in points.
 pub const GAP: f32 = 4.0;
 pub const GAP_MEDIUM: f32 = 6.0;
 pub const PAD: f32 = 8.0;
-/// A tab and the bar of tabs are 32 px high in Zed.
+/// Tab bar height, in points.
 pub const TAB_HEIGHT: f32 = 32.0;
-pub const RADIUS: u8 = 4;
+pub const RADIUS: u8 = 3;
+pub const ON_PRIMARY: Color32 = Color32::from_rgb(0x28, 0x10, 0x1a);
 
 const fn rgb(hex: u32) -> Color32 {
     Color32::from_rgb((hex >> 16) as u8, (hex >> 8) as u8, hex as u8)
@@ -37,7 +32,7 @@ pub struct Colors {
     pub text: Color32,
     pub text_muted: Color32,
     pub accent: Color32,
-    /// The fill of the main button, dark enough for white text.
+    /// Pink marker fill, paired with [`ON_PRIMARY`].
     pub primary: Color32,
     pub success: Color32,
     pub error: Color32,
@@ -46,39 +41,39 @@ pub struct Colors {
 pub fn colors(dark: bool) -> Colors {
     if dark {
         Colors {
-            bar: rgb(0x3b414d),
-            panel: rgb(0x2f343e),
-            editor: rgb(0x282c33),
-            element: rgb(0x2e343e),
-            element_hover: rgb(0x363c46),
-            element_active: rgb(0x454a56),
-            border: rgb(0x464b57),
-            border_variant: rgb(0x363c46),
-            border_focused: rgb(0x47679e),
-            text: rgb(0xdce0e5),
-            text_muted: rgb(0xa9afbc),
-            accent: rgb(0x74ade8),
-            primary: rgb(0x47679e),
-            success: rgb(0xa1c181),
-            error: rgb(0xd07277),
+            bar: rgb(0x24201c),
+            panel: rgb(0x28231d),
+            editor: rgb(0x1c1916),
+            element: rgb(0x342d25),
+            element_hover: rgb(0x40372e),
+            element_active: rgb(0x534235),
+            border: rgb(0x8d8272),
+            border_variant: rgb(0x484138),
+            border_focused: rgb(0xff8fab),
+            text: rgb(0xf4f0e5),
+            text_muted: rgb(0xc8c0b0),
+            accent: rgb(0xff8fab),
+            primary: rgb(0xff2e63),
+            success: rgb(0x8eaf91),
+            error: rgb(0xe59b9b),
         }
     } else {
         Colors {
-            bar: rgb(0xdcdcdd),
-            panel: rgb(0xebebec),
-            editor: rgb(0xfafafa),
-            element: rgb(0xebebec),
-            element_hover: rgb(0xdfdfe0),
-            element_active: rgb(0xcacaca),
-            border: rgb(0xc9c9ca),
-            border_variant: rgb(0xdfdfe0),
-            border_focused: rgb(0x6a97e0),
-            text: rgb(0x242529),
-            text_muted: rgb(0x58585a),
-            accent: rgb(0x2f6bd1),
-            primary: rgb(0x2f6bd1),
-            success: rgb(0x669f59),
-            error: rgb(0xd36151),
+            bar: rgb(0xe9e3d5),
+            panel: rgb(0xf7f3e9),
+            editor: rgb(0xfbf8ee),
+            element: rgb(0xede7d9),
+            element_hover: rgb(0xe1d9c9),
+            element_active: rgb(0xefd0d6),
+            border: rgb(0x7c7568),
+            border_variant: rgb(0xdce1df),
+            border_focused: rgb(0xa51f48),
+            text: rgb(0x302e2b),
+            text_muted: rgb(0x5d584f),
+            accent: rgb(0xa51f48),
+            primary: rgb(0xff2e63),
+            success: rgb(0x31533d),
+            error: rgb(0x922d3c),
         }
     }
 }
@@ -113,7 +108,7 @@ pub fn card_frame(ui: &egui::Ui) -> egui::Frame {
         .inner_margin(Margin::same(PAD as i8 + 2))
 }
 
-/// The text and surfaces of every widget, for both themes, in Zed's tokens.
+/// The text and surfaces of every widget, in both Fieldnotes variants.
 pub fn apply(ctx: &egui::Context) {
     for (theme, dark) in [(Theme::Dark, true), (Theme::Light, false)] {
         let c = colors(dark);
@@ -143,7 +138,7 @@ pub fn apply(ctx: &egui::Context) {
             ] {
                 widget.bg_fill = fill;
                 widget.weak_bg_fill = fill;
-                widget.bg_stroke = Stroke::new(1.0, c.border_variant);
+                widget.bg_stroke = Stroke::new(1.0, c.border);
                 widget.fg_stroke = Stroke::new(1.0, c.text);
                 widget.corner_radius = radius;
                 widget.expansion = 0.0;
@@ -182,7 +177,7 @@ pub fn apply(ctx: &egui::Context) {
     }
 }
 
-/// One tab of a tab bar, as Zed draws it: 32 px high, the active one on the editor surface with the accent along its bottom edge, the
+/// One tab: 32 px high, the active one on the editor surface with the accent along its bottom edge, the
 /// others on the bar in muted text, a 1 px border under all of them. Returns the response for clicks.
 pub fn tab(ui: &mut egui::Ui, label: &str, selected: bool) -> egui::Response {
     let c = of(ui);
@@ -224,4 +219,54 @@ pub fn tab(ui: &mut egui::Ui, label: &str, selected: bool) -> egui::Response {
         color,
     );
     response
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn luminance(c: Color32) -> f64 {
+        [c.r(), c.g(), c.b()]
+            .into_iter()
+            .zip([0.2126, 0.7152, 0.0722])
+            .map(|(v, weight)| {
+                let v = f64::from(v) / 255.0;
+                weight
+                    * if v <= 0.04045 {
+                        v / 12.92
+                    } else {
+                        ((v + 0.055) / 1.055).powf(2.4)
+                    }
+            })
+            .sum()
+    }
+
+    #[test]
+    fn both_themes_keep_text_and_controls_readable() {
+        for dark in [false, true] {
+            let c = colors(dark);
+            let ratio = |a, b| {
+                let (a, b) = (luminance(a), luminance(b));
+                (a.max(b) + 0.05) / (a.min(b) + 0.05)
+            };
+            for surface in [
+                c.bar,
+                c.panel,
+                c.editor,
+                c.element,
+                c.element_hover,
+                c.element_active,
+            ] {
+                assert!(ratio(c.text, surface) >= 4.5);
+                assert!(
+                    ratio(c.text_muted, surface) >= 4.5,
+                    "dark={dark}, surface={surface:?}: {}",
+                    ratio(c.text_muted, surface)
+                );
+            }
+            assert!(ratio(ON_PRIMARY, c.primary) >= 4.5);
+            assert!(ratio(c.border, c.editor) >= 3.0);
+            assert!(ratio(c.accent, c.panel) >= 4.5);
+        }
+    }
 }

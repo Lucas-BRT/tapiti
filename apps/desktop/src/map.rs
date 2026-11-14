@@ -60,6 +60,7 @@ pub struct Palette {
     pub corridor: Color32,
     pub grid: Color32,
     pub ink: Color32,
+    pub hatch: Color32,
     pub accent: Color32,
     pub success: Color32,
     pub danger: Color32,
@@ -71,13 +72,10 @@ impl Palette {
         let c = crate::theme::colors(dark);
         Self {
             background: c.editor,
-            corridor: if dark {
-                Color32::from_rgb(0x4a, 0x52, 0x60)
-            } else {
-                Color32::from_rgb(0xa9, 0xb1, 0xbd)
-            },
+            corridor: Color32::from_rgb(0x85, 0x7d, 0x70),
             grid: c.border_variant,
             ink: c.text,
+            hatch: Color32::from_rgb(0x49, 0x46, 0x3f),
             accent: c.accent,
             success: c.success,
             danger: c.error,
@@ -86,32 +84,27 @@ impl Palette {
     }
 
     pub fn shape(&self, class: &str) -> Color32 {
-        let (r, g, b) = match (class, self.dark) {
-            ("rect", true) => (0x49, 0x6c, 0x9a),
-            ("disc", true) => (0x29, 0xa8, 0x9a),
-            ("oct", true) => (0x9b, 0x78, 0xd1),
-            ("L", true) => (0xce, 0x84, 0x3c),
-            ("star", true) => (0xd0, 0xae, 0x38),
-            ("rect", false) => (0x31, 0x5f, 0x96),
-            ("disc", false) => (0x08, 0x7f, 0x76),
-            ("oct", false) => (0x72, 0x53, 0xaf),
-            ("L", false) => (0xa9, 0x58, 0x12),
-            ("star", false) => (0x93, 0x6c, 0x00),
+        let (r, g, b) = match class {
+            "rect" => (0x71, 0x9a, 0xb0),
+            "disc" => (0x94, 0xb4, 0x9d),
+            "oct" => (0xcd, 0xbb, 0xd2),
+            "L" => (0xbb, 0x8d, 0x58),
+            "star" => (0xe8, 0xd0, 0x7d),
             _ => (0x59, 0x67, 0x7a),
         };
         Color32::from_rgb(r, g, b)
     }
 
-    /// Text on top of a room fill: white reads on every shape colour.
+    /// Graphite labels on the light room washes.
     fn on_room(&self) -> Color32 {
-        Color32::WHITE
+        Color32::from_rgb(0x25, 0x24, 0x21)
     }
 
     fn role(&self, role: Role) -> Color32 {
         match role {
             Role::Entrance => self.success,
             Role::Exit => self.accent,
-            Role::Plain => self.grid,
+            Role::Plain => self.hatch,
         }
     }
 }
@@ -283,13 +276,14 @@ fn label(painter: &Painter, xf: &Xf, text: &str, at: [f64; 2], color: Color32, w
     } else {
         text
     };
-    painter.text(
-        xf.pt(at),
-        Align2::CENTER_CENTER,
-        text,
+    let galley = painter.layout_no_wrap(
+        text.to_string(),
         FontId::proportional(size.clamp(9.0, 40.0)),
         color,
     );
+    let rect = Rect::from_center_size(xf.pt(at), galley.size());
+    painter.rect_filled(rect.expand(2.0), 2.0, Color32::from_rgb(0xff, 0xfc, 0xf3));
+    painter.galley(rect.min, galley, color);
 }
 
 pub fn draw_building(
@@ -375,6 +369,17 @@ pub fn draw_floor(painter: &Painter, xf: &Xf, floor: &Floor, overlays: Overlays,
                 4.0,
                 false,
             );
+            let spacing = 10.0 / f64::from(xf.scale.max(0.01));
+            for mark in tapiti_render::hatch(&room.shape, room.cls.name(), spacing) {
+                match mark {
+                    tapiti_render::HatchMark::Dot(p) => {
+                        painter.circle_filled(xf.pt(p), 1.2, pal.hatch);
+                    }
+                    tapiti_render::HatchMark::Line(a, b) => {
+                        painter.line_segment([xf.pt(a), xf.pt(b)], Stroke::new(1.0, pal.hatch));
+                    }
+                }
+            }
         } else {
             room_shape(painter, xf, &room.shape, None, pal.danger, 3.0, true);
         }

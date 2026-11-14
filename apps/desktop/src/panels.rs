@@ -34,7 +34,7 @@ fn primary(ui: &Ui, text: &str) -> Button<'static> {
     Button::new(
         RichText::new(text.to_string())
             .strong()
-            .color(Color32::WHITE),
+            .color(theme::ON_PRIMARY),
     )
     .fill(theme::of(ui).primary)
 }
