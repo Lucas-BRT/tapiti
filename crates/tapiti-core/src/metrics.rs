@@ -32,6 +32,21 @@ pub struct Metrics {
     pub geometric_path_to_exit: Option<f64>,
     pub lambda2: f64,
     pub by_class: BTreeMap<String, usize>,
+    /// The measures of the height layer; absent while it is off.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub height: Option<HeightMetrics>,
+}
+
+/// What the height layer made of the floor.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HeightMetrics {
+    pub min: f64,
+    pub max: f64,
+    pub range: f64,
+    /// The steepest corridor, rise over run.
+    pub max_slope: f64,
+    pub mean_slope: f64,
 }
 
 struct Tarjan<'a> {
@@ -254,6 +269,20 @@ pub fn metrics_of(d: &Floor) -> Metrics {
         geometric_path_to_exit,
         lambda2: if eig.len() > 1 { eig[1] } else { 0.0 },
         by_class,
+        height: d
+            .environment
+            .as_ref()
+            .and_then(|e| e.height.as_ref())
+            .map(|field| {
+                let slopes = crate::environment::height::edge_slopes(d, field);
+                HeightMetrics {
+                    min: field.min,
+                    max: field.max,
+                    range: field.max - field.min,
+                    max_slope: slopes.iter().copied().fold(0.0, f64::max),
+                    mean_slope: slopes.iter().sum::<f64>() / slopes.len().max(1) as f64,
+                }
+            }),
     }
 }
 

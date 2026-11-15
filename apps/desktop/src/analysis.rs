@@ -94,6 +94,29 @@ pub fn analysis_tab(app: &mut App, ui: &mut Ui) {
         ));
     });
 
+    // ---- height ----
+    if let Some(h) = &m.height {
+        card(ui, "Height", |ui| {
+            ui.columns(2, |cols| {
+                tile(
+                    &mut cols[0],
+                    format!("{:.0}", h.range),
+                    "Range",
+                    &format!("From {:.0} to {:.0}", h.min, h.max),
+                );
+                tile(
+                    &mut cols[1],
+                    format!("{:.2}", h.max_slope),
+                    "Steepest corridor",
+                    &format!(
+                        "Rise over run; the average is {:.2} (limit {})",
+                        h.mean_slope, map.floor.params.environment.height.max_slope
+                    ),
+                );
+            });
+        });
+    }
+
     // ---- at a glance ----
     card(ui, "At a glance", |ui| {
         ui.columns(2, |cols| {

@@ -354,6 +354,24 @@ The entrance and the exit are optional (`entrance`, `exitRoom`, in both layouts)
 
 The `bsp` layout (`layout: "bsp"`) replaces the growth of rooms. The world is cut into $n$ leaves, $n$ being the number of rooms: the largest leaf that is at least two cells long on its longer side is cut across that side at a ratio between $0.38$ and $0.62$, which gives leaves of different proportions. A room stands a `gap` in from each side of its leaf, fills $65\%$ to $100\%$ of each side (up to three cells) and is never smaller than one cell less its two gaps. Sibling subtrees are joined bottom-up by the corridor of least cost between the closest pair of rooms, one from each side. The entrance is the room of the westernmost leaf, and cycles are added as in any other floor. It is a layout, not an intent: the intents that plan their own rooms (Spine with detours, Ring, Hub and wings) need Growth and `Params::intent_error` rejects them with it, while the intents that only state requirements on the graph run with it.
 
+### Height
+
+The `environment.height` layer gives every node of $H$ (rooms and junctions) an elevation $h$, and so every corridor a slope. Corridors are straight ramps between the heights of their two ends, and rooms are flat. The rule is
+
+$$
+\lvert h_u - h_v\rvert \le s\,\ell(e)\qquad\text{for every corridor } e=\{u,v\},
+$$
+
+with $s$ the steepest slope (`maxSlope`, rise over run) and $\ell(e)$ the length of the corridor, the sum of its segments. The layer draws a target $t_i$ for each room, from a stream of its own, and takes the largest function below the targets that obeys the rule,
+
+$$
+h_i=\min_j\bigl(t_j+s\,d(i,j)\bigr),
+$$
+
+$d$ being the distance along the corridors. It is always feasible, whatever the cycles, and it needs only sums and comparisons, so it is the same on every platform. Junctions draw no target. With the style *hills*, $t_i$ is uniform between $0$ and the relief; with *descent*, $t_i=-\mathrm{relief}\cdot k_i/k_{max}$ with $k_i$ the number of corridors from the entrance, so the floor goes down.
+
+The layer runs after the layout and moves no room: the floor with height on is the floor with it off, plus the heights. The validator checks the rule (E1) and the measures give the range and the steepest and the mean slope. With the layer off, nothing about it is in the Λ or in the floor.
+
 ### Zones
 
 The `zones` parameter cuts the world into $k$ strips along its longer side, $k$ being `zones.count` (two at least, and no more than half the longer side in cells, four at most, so each strip stays two cells wide or more). Zoning is independent of the layout and of the topology profile. The zone of a point is a pure function of the point and of Λ, so it draws nothing from the generator and a floor without zones draws what it always drew.

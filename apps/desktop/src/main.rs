@@ -100,6 +100,7 @@ pub enum Tab {
 #[derive(Debug, Clone, Copy)]
 pub struct Overlays {
     pub cells: bool,
+    pub height: bool,
     pub labels: bool,
     pub ports: bool,
     pub pairs: bool,
@@ -127,6 +128,8 @@ pub struct App {
     pub seed_draft: String,
     pub params: Params,
     pub defaults: Value,
+    /// The settings Λ leaves out of its JSON while they are off, with their values then.
+    pub skipped_defaults: Value,
     /// Paths of the parameters that differ from the size default.
     pub changed: HashSet<String>,
     pub json_text: String,
@@ -178,6 +181,7 @@ impl App {
             seed: 1,
             seed_draft: "1".into(),
             defaults: serde_json::to_value(&params).unwrap_or(Value::Null),
+            skipped_defaults: skipped_defaults(),
             params,
             changed: HashSet::new(),
             json_text: String::new(),
@@ -187,6 +191,7 @@ impl App {
             filter: String::new(),
             overlays: Overlays {
                 cells: true,
+                height: true,
                 labels: true,
                 ports: false,
                 pairs: false,
@@ -245,6 +250,9 @@ impl App {
             if let Ok(profile) = serde_json::from_value(Value::String(intent)) {
                 self.params.apply_intent(profile);
             }
+        }
+        if std::env::var("TAPITI_HEIGHT").is_ok() {
+            self.params.environment.height.enabled = true;
         }
         match std::env::var("TAPITI_THEME").as_deref() {
             Ok("light") => self.ctx.set_theme(egui::ThemePreference::Light),
@@ -493,7 +501,9 @@ impl App {
             .iter()
             .flat_map(|group| &group.fields)
             .filter(|field| {
-                get_path(&current, &field.path) != get_path(&self.defaults, &field.path)
+                // A setting the JSON leaves out is at its default.
+                get_path(&current, &field.path)
+                    .is_some_and(|value| Some(value) != self.default_ref(&field.path))
             })
             .map(|field| field.path.clone())
             .collect();
@@ -644,6 +654,11 @@ impl App {
         }
     }
 
+    /// The default of a parameter: from the size's Λ, or, for a setting its JSON leaves out while it is off, the value it has then.
+    pub fn default_ref(&self, path: &str) -> Option<&Value> {
+        get_path(&self.defaults, path).or_else(|| get_path(&self.skipped_defaults, path))
+    }
+
     pub fn change_param(&mut self, path: &str, value: Value) {
         let mut params = serde_json::to_value(&self.params).unwrap_or(Value::Null);
         set_path(&mut params, path, value);
@@ -667,12 +682,7 @@ impl App {
         let mut value = serde_json::to_value(&self.params).unwrap_or(Value::Null);
         // Reset tuning without changing the selected exploration intent.
         for field in group.fields.iter().filter(|f| f.path != "topology.profile") {
-            if let Some(default) = get_path(&self.defaults, &field.path)
-                .cloned()
-                .or_else(|| (field.path == "topology.minDetours").then(|| Value::from(0)))
-                .or_else(|| (field.path == "zones.count").then(|| Value::from(0)))
-                .or_else(|| (field.path == "zones.bottleneck").then(|| Value::from(false)))
-            {
+            if let Some(default) = self.default_ref(&field.path).cloned() {
                 set_path(&mut value, &field.path, default);
             }
         }
@@ -812,6 +822,16 @@ impl eframe::App for App {
         panels::json_window(self, &ctx);
         self.take_screenshot(&ctx);
     }
+}
+
+/// The settings Λ leaves out of its JSON while they are off, with the values they have then: the desktop compares a Λ with its
+/// defaults and must be able to reset a setting that is not in the JSON.
+fn skipped_defaults() -> Value {
+    serde_json::json!({
+        "zones": tapiti_core::params::ZoneSpec::default(),
+        "environment": tapiti_core::environment::EnvSpec::default(),
+        "topology": { "minDetours": 0 },
+    })
 }
 
 fn setup_style(ctx: &egui::Context) {

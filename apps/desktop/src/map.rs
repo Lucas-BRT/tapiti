@@ -319,6 +319,27 @@ pub fn draw_building(
     }
 }
 
+/// The height of each room as a fraction of the floor's range (low 0, high 1); empty without a height layer.
+fn room_heights(floor: &Floor) -> Vec<Option<f32>> {
+    let Some(field) = floor.environment.as_ref().and_then(|e| e.height.as_ref()) else {
+        return Vec::new();
+    };
+    let span = (field.max - field.min).max(1e-9);
+    let mut out = vec![None; floor.rooms.len()];
+    for (node, h) in floor.nodes.iter().zip(&field.nodes) {
+        if let Node::Room { room } = node {
+            out[*room] = Some(((h - field.min) / span) as f32);
+        }
+    }
+    out
+}
+
+/// Blue for low ground, amber for high.
+fn height_color(t: f32) -> Color32 {
+    Color32::from_rgb(0x3f, 0x6f, 0xa8)
+        .lerp_to_gamma(Color32::from_rgb(0xd9, 0x8a, 0x3a), t.clamp(0.0, 1.0))
+}
+
 pub fn draw_floor(painter: &Painter, xf: &Xf, floor: &Floor, overlays: Overlays, pal: &Palette) {
     if overlays.cells {
         grid(painter, xf, &floor.grid_x, &floor.grid_y, pal.grid);
@@ -357,14 +378,23 @@ pub fn draw_floor(painter: &Painter, xf: &Xf, floor: &Floor, overlays: Overlays,
             false,
         );
     }
+    let heights = if overlays.height {
+        room_heights(floor)
+    } else {
+        Vec::new()
+    };
     for room in &floor.rooms {
         if room.alive {
             let alpha = if room.leaf { 0.65 } else { 0.92 };
+            let mut fill = pal.shape(room.cls.name());
+            if let Some(Some(t)) = heights.get(room.id) {
+                fill = fill.lerp_to_gamma(height_color(*t), 0.55);
+            }
             room_shape(
                 painter,
                 xf,
                 &room.shape,
-                Some(pal.shape(room.cls.name()).gamma_multiply(alpha)),
+                Some(fill.gamma_multiply(alpha)),
                 pal.role(room.role),
                 4.0,
                 false,

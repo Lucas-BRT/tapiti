@@ -346,8 +346,8 @@ fn layout_card(app: &mut App, ui: &mut Ui) {
                         .flat_map(|g| &g.fields)
                         .find(|f| f.path == path)
                     {
-                        let value = get_path(&current, path).cloned().unwrap_or(Value::from(0));
-                        let default = get_path(&app.defaults, path);
+                        let value = value_of(app, &current, path);
+                        let default = app.default_ref(path);
                         if let Some(next) = field_row(ui, field, &value, default) {
                             edits.push((field.path.clone(), next));
                         }
@@ -436,7 +436,7 @@ fn intent_card(app: &mut App, ui: &mut Ui) {
                         .flat_map(|g| &g.fields)
                         .find(|f| f.path == *path)
                     {
-                        let value = get_path(&current, path).cloned().unwrap_or(Value::from(0));
+                        let value = value_of(app, &current, path);
                         if let Some(next) = field_row(ui, field, &value, None) {
                             edits.push((field.path.clone(), next));
                         }
@@ -462,7 +462,7 @@ fn intent_card(app: &mut App, ui: &mut Ui) {
                         .flat_map(|g| &g.fields)
                         .find(|f| f.path == path)
                     {
-                        let value = get_path(&current, path).cloned().unwrap_or(Value::from(0));
+                        let value = value_of(app, &current, path);
                         if let Some(next) = field_row(ui, field, &value, None) {
                             edits.push((field.path.clone(), next));
                         }
@@ -583,9 +583,61 @@ pub fn side_panel(app: &mut App, ui: &mut Ui) {
 // ---- Settings: one list of collapsible groups --------------------------------------------------
 
 /// Intent comes first; advanced groups open only on demand or when a search matches them.
+/// The value of a parameter in the Λ JSON; a setting the JSON leaves out while it is off has its default.
+fn value_of(app: &App, current: &Value, path: &str) -> Value {
+    get_path(current, path)
+        .or_else(|| app.default_ref(path))
+        .cloned()
+        .unwrap_or(Value::Null)
+}
+
+/// The environment layers, each off until turned on; the settings of a layer show only while it is on.
+fn environment_card(app: &mut App, ui: &mut Ui) {
+    let current = serde_json::to_value(&app.params).unwrap_or(Value::Null);
+    let mut edits = Vec::new();
+    card(ui, "Environment", |ui| {
+        ui.label(muted(
+            ui,
+            "Layers laid over the floor. All are off until you turn them on.",
+        ));
+        ui.add_space(4.0);
+        let on = app.params.environment.height.enabled;
+        Grid::new("environment_height")
+            .num_columns(3)
+            .spacing([8.0, 6.0])
+            .show(ui, |ui| {
+                for path in [
+                    "environment.height.enabled",
+                    "environment.height.style",
+                    "environment.height.relief",
+                    "environment.height.maxSlope",
+                ] {
+                    if path != "environment.height.enabled" && !on {
+                        continue;
+                    }
+                    if let Some(field) = app
+                        .groups
+                        .iter()
+                        .flat_map(|g| &g.fields)
+                        .find(|f| f.path == path)
+                    {
+                        let value = value_of(app, &current, path);
+                        if let Some(next) = field_row(ui, field, &value, app.default_ref(path)) {
+                            edits.push((field.path.clone(), next));
+                        }
+                    }
+                }
+            });
+    });
+    for (path, value) in edits {
+        app.change_param(&path, value);
+    }
+}
+
 fn design_tab(app: &mut App, ui: &mut Ui) {
     layout_card(app, ui);
     intent_card(app, ui);
+    environment_card(app, ui);
     ui.add_space(theme::GAP);
     ui.label(muted(
         ui,
@@ -619,6 +671,7 @@ fn advanced_tab(app: &mut App, ui: &mut Ui) {
                 !needle.is_empty()
                     || (f.path != "topology.profile"
                         && !f.path.starts_with("zones.")
+                        && !f.path.starts_with("environment.")
                         && f.path != "layout"
                         && !layout_fields(app.params.layout).contains(&f.path.as_str())
                         && !intent_fields(app.params.topology.profile).contains(&f.path.as_str())
@@ -660,11 +713,9 @@ fn advanced_tab(app: &mut App, ui: &mut Ui) {
                     .spacing([10.0, 6.0])
                     .show(ui, |ui| {
                         for field in fields {
-                            let value = get_path(&current, &field.path)
-                                .cloned()
-                                .unwrap_or(Value::Null);
+                            let value = value_of(app, &current, &field.path);
                             if let Some(next) =
-                                field_row(ui, field, &value, get_path(&app.defaults, &field.path))
+                                field_row(ui, field, &value, app.default_ref(&field.path))
                             {
                                 edits.push((field.path.clone(), next));
                             }
@@ -871,6 +922,11 @@ fn map_controls(app: &mut App, ui: &mut Ui, rect: egui::Rect) {
                 let o = &mut app.overlays;
                 for (flag, name, hint) in [
                     (&mut o.cells, "Grid", "Grid blocks of the floor"),
+                    (
+                        &mut o.height,
+                        "Height",
+                        "Tint rooms by their height, blue low to amber high",
+                    ),
                     (
                         &mut o.labels,
                         "Labels",

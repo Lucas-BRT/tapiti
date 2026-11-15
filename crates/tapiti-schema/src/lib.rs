@@ -305,6 +305,26 @@ pub fn groups() -> Vec<ParamGroup> {
             ],
         ),
         group(
+            "environment",
+            tx("Environment"),
+            tx("Layers laid over the floor. Each is off by default and never moves a room unless it is set to run before the layout."),
+            vec![
+                boolean("environment.height.enabled", tx("Height")),
+                choice(
+                    "environment.height.phase",
+                    tx("Height runs"),
+                    &[("after", tx("After the layout"))],
+                ),
+                choice(
+                    "environment.height.style",
+                    tx("Height style"),
+                    &[("hills", tx("Hills and hollows")), ("descent", tx("Going down"))],
+                ),
+                number("environment.height.relief", tx("Height relief"), 0.0, 100000.0, false),
+                number("environment.height.maxSlope", tx("Steepest corridor"), 0.001, 10.0, false),
+            ],
+        ),
+        group(
             "growth",
             tx("Growth"),
             tx("Used by the Growth layout: instead of one room per grid block, rooms grow one from another, in free positions. The grid only sets the size of the world."),
@@ -386,6 +406,11 @@ fn help(path: &str, label: &str) -> Text {
         "exitRoom" => tx("Marks a far room as the exit. It needs the entrance; the side-branch and independent-route requirements of the topology profiles also need both."),
         "zones.count" => tx("Number of zones, from two. Each strip stays at least two cells wide, so a small world holds fewer. Every zone favours one of the shape classes with a positive weight, in turn; turning zones on gives a mix of shapes when only rectangles were enabled."),
         "zones.bottleneck" => tx("Each pair of neighbouring zones is joined by exactly one corridor, so removing it splits the floor. Needs the Growth layout; Ring, Hub and wings and Spine with detours cross every boundary and cannot use it."),
+        "environment.height.enabled" => tx("Gives every room and junction an elevation, and every corridor a slope between the two. Heights always respect the steepest corridor you set."),
+        "environment.height.phase" => tx("After the layout reads the finished floor and moves nothing."),
+        "environment.height.style" => tx("Hills and hollows draws a height for each room between 0 and the relief. Going down lowers rooms with their distance from the entrance, down to minus the relief."),
+        "environment.height.relief" => tx("The span of the heights, in the units of the floor. The slope limit can keep rooms from reaching it."),
+        "environment.height.maxSlope" => tx("The steepest a corridor may be: rise divided by run. 0.25 climbs 25 units over 100."),
         "exitDoors" => tx("Maximum number of corridors that can enter the exit room."),
         "exitMinHops" => tx("Minimum number of links between the entrance and the exit, counted in rooms."),
         "topology.profile" => tx("Choose the exploration structure. Spine with detours plans the main route, returning wings and dead ends before filling the remaining space; it needs Growth, entrance and exit, and one island. Ring places rooms round an empty court and closes the loop, with the exit opposite the entrance; it needs Growth from the north border, entrance and exit, and one island. Hub and wings starts in a central hall and grows three or four wings of different depths, the longest ending at the exit; it needs Growth from the centre, entrance and exit, and one island."),
@@ -423,6 +448,7 @@ mod tests {
         // `minDetours` and `zones` are left out of the JSON while they are off, so older files keep their shape.
         params.topology.min_detours = 1;
         params.zones.count = 2;
+        params.environment.height.enabled = true;
         let lambda = serde_json::to_value(params).unwrap();
         for group in groups() {
             for field in &group.fields {

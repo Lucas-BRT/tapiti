@@ -7,6 +7,9 @@
 //! - a layer runs **after** the layout and only reads the finished floor, or **before** it and hands the generator limits to respect
 //!   ([`LayerPhase`]). A layer that runs before changes the floor when it is on, and only then.
 
+pub mod height;
+pub use height::{HeightField, HeightSpec, HeightStyle};
+
 use crate::{generate::Floor, params::Params, rng::Mulberry};
 use serde::{Deserialize, Serialize};
 
@@ -30,18 +33,12 @@ pub enum LayerPhase {
     Before,
 }
 
-/// The settings every layer has: whether it runs, and when.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(default, rename_all = "camelCase")]
-pub struct LayerSpec {
-    pub enabled: bool,
-    pub phase: LayerPhase,
-}
-
 /// The layers' settings in Λ. Left out of the JSON while every layer is off, so older files keep their shape.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
-pub struct EnvSpec {}
+pub struct EnvSpec {
+    pub height: HeightSpec,
+}
 
 impl EnvSpec {
     pub fn is_off(&self) -> bool {
@@ -52,7 +49,10 @@ impl EnvSpec {
 /// What the layers computed, carried by the floor. Left out of the JSON while no layer ran.
 #[derive(Clone, Debug, Default, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Environment {}
+pub struct Environment {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub height: Option<HeightField>,
+}
 
 /// The stream of a layer: a pure integer mix of the seed and the layer's tag (SplitMix32), so it is the same on every platform and
 /// no layer shares draws with the generator or with another layer.
@@ -76,8 +76,12 @@ pub trait Layer {
 }
 
 /// The layers `p` switches on, in the order they run (each reads only the layers before it).
-pub fn layers_of(_p: &Params) -> Vec<Box<dyn Layer>> {
-    Vec::new()
+pub fn layers_of(p: &Params) -> Vec<Box<dyn Layer>> {
+    let mut out: Vec<Box<dyn Layer>> = Vec::new();
+    if p.environment.height.enabled {
+        out.push(Box::new(height::HeightLayer(p.environment.height)));
+    }
+    out
 }
 
 /// Runs the layers that go before the rooms. `None` when none did.

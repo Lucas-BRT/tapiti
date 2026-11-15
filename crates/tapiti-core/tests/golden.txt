@@ -43,3 +43,9 @@ zones-growth-large seed 3: 1283ae10a2fb124e
 zones-bsp-large seed 1: 117dc2ec6d6584d5
 zones-bsp-large seed 2: 04506466a2c1abba
 zones-bsp-large seed 3: a5cc8428662127a1
+height-hills-grid-medium seed 1: 6126dfe7c79b36a5
+height-hills-grid-medium seed 2: 530c6ac61034d5cf
+height-hills-grid-medium seed 3: 10e23f21b39afd46
+height-descent-spine-medium seed 1: 00a7c2e26a2f1a1c
+height-descent-spine-medium seed 2: 246b1dfd806e0fb4
+height-descent-spine-medium seed 3: 86d2b0c4bfec53bf

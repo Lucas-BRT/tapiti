@@ -438,5 +438,10 @@ pub fn validate(d: &Floor) -> Vec<String> {
         }
     }
 
+    // E: the environment layers (E1 height).
+    if let Some(field) = d.environment.as_ref().and_then(|e| e.height.as_ref()) {
+        out.extend(crate::environment::height::check(d, field));
+    }
+
     out
 }

@@ -683,6 +683,11 @@ impl Params {
                 }
             }
         }
+        if self.environment.height.enabled {
+            if let Some(error) = self.environment.height.error() {
+                return Some(error);
+            }
+        }
         if self.topology.profile == TopologyProfile::HubAndWings
             && (self.layout != Layout::Growth
                 || self.growth.start != GrowthStart::Center
