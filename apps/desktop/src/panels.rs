@@ -756,7 +756,7 @@ fn environment_card(app: &mut App, ui: &mut Ui) {
     }
     if let Some(list) = new_events {
         app.params.environment.events.list = list;
-        app.params_edited();
+        app.environment_edited(false);
     }
 }
 

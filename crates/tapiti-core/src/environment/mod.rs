@@ -188,6 +188,17 @@ pub fn run_after(
     ran.then_some(out)
 }
 
+/// Runs the layers again on a finished floor, for a Λ that differs from the floor's only in the settings of the layers that run after
+/// the layout: the floor itself is not touched, so this is the same floor `generate` draws for that Λ, found without drawing the rooms
+/// again. A layer that runs before the layout (height before it) cannot be reevaluated: it changes the rooms, so the floor has to be
+/// generated again.
+pub fn reevaluate(floor: &mut Floor, p: &Params) {
+    floor.params = p.clone();
+    floor.environment = None;
+    let layers = layers_of(p);
+    floor.environment = run_after(&layers, floor.seed, floor, None);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

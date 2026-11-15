@@ -566,6 +566,34 @@ impl App {
             .collect();
     }
 
+    /// Call after only the settings of the environment layers changed: they run after the layout, so the floor on the screen is kept and
+    /// the layers run again on it, at once. Falls back to a regeneration when there is no floor, when a layer that runs before the
+    /// layout is involved (it changes the rooms), or when a generation is running.
+    pub fn environment_edited(&mut self, was_before: bool) {
+        let before_height =
+            |p: &Params| p.environment.height.phase == tapiti_core::environment::LayerPhase::Before;
+        let reuse = !self.busy
+            && !was_before
+            && !before_height(&self.params)
+            && self
+                .generated
+                .as_ref()
+                .is_some_and(|g| g.floor.params.levels == self.params.levels);
+        if !reuse {
+            self.params_edited();
+            return;
+        }
+        self.refresh_changed();
+        self.sync_json();
+        if let Some(g) = self.generated.as_mut() {
+            let floor = Arc::make_mut(&mut g.floor);
+            tapiti_core::environment::reevaluate(floor, &self.params);
+            g.violations = tapiti_core::validate::validate(floor);
+            g.metrics = metrics_of(floor);
+            self.status = "Environment layers updated on the floor on the screen.".into();
+        }
+    }
+
     /// Call after `params` changed from outside the JSON editor: refreshes derived state and schedules a regeneration.
     pub fn params_edited(&mut self) {
         self.refresh_changed();
@@ -717,6 +745,8 @@ impl App {
     }
 
     pub fn change_param(&mut self, path: &str, value: Value) {
+        let was_before =
+            self.params.environment.height.phase == tapiti_core::environment::LayerPhase::Before;
         let mut params = serde_json::to_value(&self.params).unwrap_or(Value::Null);
         set_path(&mut params, path, value);
         match serde_json::from_value::<Params>(params) {
@@ -732,7 +762,11 @@ impl App {
                     params.set_zones(params.zones.count, params.zones.bottleneck);
                 }
                 self.params = params;
-                self.params_edited();
+                if path.starts_with("environment.") {
+                    self.environment_edited(was_before);
+                } else {
+                    self.params_edited();
+                }
             }
             Err(error) => self.status = format!("Invalid parameter: {error}", error = error),
         }
