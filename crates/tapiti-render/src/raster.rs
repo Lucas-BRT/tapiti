@@ -209,8 +209,8 @@ fn fill(t: &mut Target, s: [[f32; 3]; 3], color: [f32; 3], blend: f32) {
                 t.depth[i] = inv_z;
                 t.rgb[i * 3..i * 3 + 3].copy_from_slice(&color);
             } else {
-                for k in 0..3 {
-                    t.rgb[i * 3 + k] += (color[k] - t.rgb[i * 3 + k]) * blend;
+                for (dst, src) in t.rgb[i * 3..i * 3 + 3].iter_mut().zip(color) {
+                    *dst += (src - *dst) * blend;
                 }
             }
         }
@@ -218,7 +218,7 @@ fn fill(t: &mut Target, s: [[f32; 3]; 3], color: [f32; 3], blend: f32) {
 }
 
 fn draw(t: &mut Target, view: &View, mesh: &Mesh, sun: [f32; 3], fog: [f32; 3], blend: f32) {
-    for tri in mesh.indices.chunks_exact(3) {
+    for tri in mesh.indices.as_chunks::<3>().0 {
         let i = [tri[0] as usize, tri[1] as usize, tri[2] as usize];
         let n = mesh.normals[i[0]];
         let c = mesh.colors[i[0]];
@@ -269,7 +269,7 @@ pub fn render(
         draw(&mut target, &view, &scene.water, sun, fog, 0.45);
     }
     let mut rgba = Vec::with_capacity(width * height * 4);
-    for px in rgb.chunks_exact(3) {
+    for px in rgb.as_chunks::<3>().0 {
         rgba.extend(px.iter().map(|v| (v.clamp(0.0, 1.0) * 255.0).round() as u8));
         rgba.push(255);
     }
@@ -395,13 +395,13 @@ mod tests {
         m.indices = vec![0, 1, 2];
         let f = render(&scene(m, Mesh::default()), &cam, 48, 48, [0, 0, 0]);
         assert!(
-            f.rgba.chunks_exact(4).any(|p| p[0] > 0),
+            f.rgba.as_chunks::<4>().0.iter().any(|p| p[0] > 0),
             "the part in front was not drawn"
         );
         let behind = quad(0.0, -50.0, 20.0, [255, 255, 255]);
         let f = render(&scene(behind, Mesh::default()), &cam, 48, 48, [0, 0, 0]);
         assert!(
-            f.rgba.chunks_exact(4).all(|p| p[0] == 0),
+            f.rgba.as_chunks::<4>().0.iter().all(|p| p[0] == 0),
             "something behind the eye was drawn"
         );
     }
