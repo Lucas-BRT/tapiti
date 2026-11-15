@@ -49,3 +49,9 @@ height-hills-grid-medium seed 3: 10e23f21b39afd46
 height-descent-spine-medium seed 1: 00a7c2e26a2f1a1c
 height-descent-spine-medium seed 2: 246b1dfd806e0fb4
 height-descent-spine-medium seed 3: 86d2b0c4bfec53bf
+height-before-hills-grid-medium seed 1: 857489a18eaf5f62
+height-before-hills-grid-medium seed 2: 967ac8a92d2d68c3
+height-before-hills-grid-medium seed 3: bd4c495837725069
+height-before-descent-growth-medium seed 1: 7e6b6a0f2ddb3c1d
+height-before-descent-growth-medium seed 2: 62136940755c672f
+height-before-descent-growth-medium seed 3: 9d1483240920b8b4

@@ -45,6 +45,8 @@ pub(super) struct Gen<'a> {
     pub(super) spine: Vec<usize>,
     pub(super) reserved_rooms: HashSet<usize>,
     /// The ring's rooms in order (entrance first), and the court inside it that stays empty.
+    /// The ground of a height layer that runs before the layout: a corridor must join heights its slope can climb.
+    pub(super) terrain: Option<crate::environment::Terrain>,
     pub(super) ring: Vec<usize>,
     pub(super) court: Option<(V, V)>,
     /// Broad phase over the regions of `statics`, to find the candidates near a corridor that changed.
@@ -194,6 +196,14 @@ impl<'a> Gen<'a> {
             || self.crosses_court(&c.pts)
         {
             return false;
+        }
+        if let Some(terrain) = &self.terrain {
+            let rise =
+                (terrain.at(self.rooms[c.a].center) - terrain.at(self.rooms[c.b].center)).abs();
+            let run = crate::environment::height::corridor_length(&c.pts);
+            if rise > self.p.environment.height.max_slope * run * (1.0 + 1e-9) {
+                return false;
+            }
         }
         self.edges
             .iter()

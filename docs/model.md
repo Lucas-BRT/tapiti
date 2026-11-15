@@ -370,7 +370,9 @@ $$
 
 $d$ being the distance along the corridors. It is always feasible, whatever the cycles, and it needs only sums and comparisons, so it is the same on every platform. Junctions draw no target. With the style *hills*, $t_i$ is uniform between $0$ and the relief; with *descent*, $t_i=-\mathrm{relief}\cdot k_i/k_{max}$ with $k_i$ the number of corridors from the entrance, so the floor goes down.
 
-The layer runs after the layout and moves no room: the floor with height on is the floor with it off, plus the heights. The validator checks the rule (E1) and the measures give the range and the steepest and the mean slope. With the layer off, nothing about it is in the Λ or in the floor.
+The layer runs by default after the layout and moves no room: the floor with height on is the floor with it off, plus the heights.
+
+Set to run before the layout, it first makes the ground, a function of the position alone, from integer hashes on a lattice two grid cells wide and a polynomial smoothstep (*hills*: between $0$ and the relief; *descent*: the ground falls from one end of the world to the other along its longer side). The generator then refuses any corridor between two rooms whose ground heights differ by more than $s\,\ell(e)$, so steep ground is a natural barrier and the floor changes. When the layout is done, the rooms stand at the ground height at their centres, and the same largest legal function below those targets lowers a room wherever a junction, or a corridor the generator did not check, would break the rule. The measures give the most a room was lowered (`lowered`). Corridors are straight ramps between the heights of their ends and ignore the ground in between. How often the floor stays valid depends on the layout, the relief and the slope: the corridors of the binary partition are forced, so a harsh ground fails it most. The validator checks the rule (E1) and the measures give the range and the steepest and the mean slope. With the layer off, nothing about it is in the Λ or in the floor.
 
 ### Zones
 

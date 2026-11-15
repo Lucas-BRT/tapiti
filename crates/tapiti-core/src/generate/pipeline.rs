@@ -68,6 +68,7 @@ pub(super) fn generate_inner(
         spine: Vec::new(),
         reserved_rooms: HashSet::new(),
         ring: Vec::new(),
+        terrain: None,
         court: None,
         static_index: SpatialHash::new(1.0),
         room_grid: SpatialHash::new(1.0),
@@ -100,7 +101,7 @@ pub(super) fn generate_inner(
         x1: grid_x[cols as usize],
         y1: grid_y[rows as usize],
     };
-    // Layers that go before the rooms hand the generator their limits; none exist yet, so nothing is read from it here.
+    // Layers that go before the rooms hand the generator their limits (the ground of the height layer).
     let env_layers = crate::environment::layers_of(p);
     let env_before = crate::environment::run_before(
         &env_layers,
@@ -112,6 +113,7 @@ pub(super) fn generate_inner(
             y1: world.y1,
         },
     );
+    g.terrain = env_before.as_ref().and_then(|e| e.terrain.clone());
     let island_of = build_rooms(
         &mut g,
         &blocks,

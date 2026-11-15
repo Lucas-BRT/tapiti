@@ -46,5 +46,15 @@ pub fn cases() -> Vec<(String, Params)> {
     descent.environment.height.enabled = true;
     descent.environment.height.style = tapiti_core::environment::HeightStyle::Descent;
     out.push(("height-descent-spine-medium".into(), descent));
+    let mut ground = rich_of_size(Size::Medium);
+    ground.environment.height.enabled = true;
+    ground.environment.height.phase = tapiti_core::environment::LayerPhase::Before;
+    out.push(("height-before-hills-grid-medium".into(), ground));
+    let mut slope = params_of_size(Size::Medium);
+    slope.layout = Layout::Growth;
+    slope.environment.height.enabled = true;
+    slope.environment.height.phase = tapiti_core::environment::LayerPhase::Before;
+    slope.environment.height.style = tapiti_core::environment::HeightStyle::Descent;
+    out.push(("height-before-descent-growth-medium".into(), slope));
     out
 }

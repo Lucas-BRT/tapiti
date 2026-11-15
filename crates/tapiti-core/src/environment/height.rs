@@ -4,8 +4,13 @@
 //! (rise over run) and $\ell(e)$ the length of the corridor. Heights are legal by construction: the layer draws a target for each
 //! room and takes the largest legal function below the targets, $h_i = \min_j\,(t_j + s\,d(i,j))$ with $d$ the distance along the
 //! corridors, so it is always feasible, whatever the cycles. It needs only sums and comparisons, so it is the same on every platform.
+//!
+//! Run **after** the layout, the targets are drawn per room and nothing moves. Run **before** it, the layer first makes a [`Terrain`],
+//! a ground height that is a pure function of the position, and the generator refuses a corridor whose ends stand at heights the slope
+//! cannot join. When the layout is done, the heights of the rooms are the terrain at their centres, lowered where a junction or a
+//! corridor the generator did not check makes the rule fail: `HeightField::lowered` says by how much.
 
-use super::{Environment, Layer, LayerPhase};
+use super::{Environment, Layer, LayerPhase, World};
 use crate::{
     generate::{Floor, Node},
     geom::{dist, V},
@@ -20,7 +25,8 @@ pub enum HeightStyle {
     /// Each room draws a height between 0 and the relief: hills and hollows.
     #[default]
     Hills,
-    /// Rooms are lower the farther they are from the entrance, down to minus the relief: a floor that goes down.
+    /// Rooms are lower the farther they are from the entrance, down to minus the relief: a floor that goes down. Run before the
+    /// layout, the ground falls from one end of the world to the other along its longer side.
     Descent,
 }
 
@@ -69,6 +75,68 @@ pub struct HeightField {
     pub nodes: Vec<f64>,
     pub min: f64,
     pub max: f64,
+    /// With the layer before the layout: the most a room was lowered below the terrain to keep the rule. Absent after the layout.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lowered: Option<f64>,
+}
+
+/// The ground before the rooms: a height that is a pure function of the position, from integer hashes on a lattice and a polynomial
+/// smoothstep, so it draws nothing while the generator runs (it is read in parallel) and is the same on every platform.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Terrain {
+    seed: u32,
+    style: HeightStyle,
+    relief: f64,
+    cell: f64,
+    world: World,
+}
+
+impl Terrain {
+    pub fn new(spec: &HeightSpec, seed: u32, cell: f64, world: World) -> Self {
+        Self {
+            seed,
+            style: spec.style,
+            relief: spec.relief,
+            cell: cell.max(1.0),
+            world,
+        }
+    }
+
+    fn corner(&self, ix: i64, iy: i64) -> f64 {
+        let mut z = self.seed
+            ^ (ix as u32).wrapping_mul(0x9e37_79b1)
+            ^ (iy as u32).wrapping_mul(0x85eb_ca77);
+        z = (z ^ (z >> 16)).wrapping_mul(0x85eb_ca6b);
+        z = (z ^ (z >> 13)).wrapping_mul(0xc2b2_ae35);
+        z ^= z >> 16;
+        f64::from(z >> 8) / 16_777_216.0
+    }
+
+    /// The ground height at `at`.
+    pub fn at(&self, at: V) -> f64 {
+        match self.style {
+            HeightStyle::Hills => {
+                let (fx, fy) = (at[0] / self.cell, at[1] / self.cell);
+                let (ix, iy) = (fx.floor(), fy.floor());
+                let smooth = |t: f64| t * t * (3.0 - 2.0 * t);
+                let (tx, ty) = (smooth(fx - ix), smooth(fy - iy));
+                let (ix, iy) = (ix as i64, iy as i64);
+                let top = self.corner(ix, iy) * (1.0 - tx) + self.corner(ix + 1, iy) * tx;
+                let bottom =
+                    self.corner(ix, iy + 1) * (1.0 - tx) + self.corner(ix + 1, iy + 1) * tx;
+                self.relief * (top * (1.0 - ty) + bottom * ty)
+            }
+            HeightStyle::Descent => {
+                let w = self.world;
+                let (along, span) = if w.x1 - w.x0 >= w.y1 - w.y0 {
+                    (at[0] - w.x0, w.x1 - w.x0)
+                } else {
+                    (at[1] - w.y0, w.y1 - w.y0)
+                };
+                -self.relief * (along / span.max(1.0)).clamp(0.0, 1.0)
+            }
+        }
+    }
 }
 
 /// The length of a corridor: the sum of its segments, in order. The layer, the validator and the measures all use this one.
@@ -135,8 +203,8 @@ pub fn check(d: &Floor, field: &HeightField) -> Vec<String> {
     out
 }
 
-/// The layer: it runs after the layout and only reads the floor.
-pub struct HeightLayer(pub HeightSpec);
+/// The layer: the settings, and the size of the lattice of its terrain (two cells of the grid).
+pub struct HeightLayer(pub HeightSpec, pub f64);
 
 impl HeightLayer {
     fn field(&self, floor: &Floor, rng: &mut Mulberry) -> HeightField {
@@ -176,9 +244,65 @@ impl HeightLayer {
             nodes,
             min: if min.is_finite() { min } else { 0.0 },
             max: if max.is_finite() { max } else { 0.0 },
+            lowered: None,
+        }
+    }
+
+    /// The heights once the layout is done, with the terrain as the targets of the rooms. The rooms the generator joined by checked
+    /// corridors stand on the terrain; where a junction or an unchecked corridor breaks the rule the repair lowers a room.
+    fn grounded(&self, floor: &Floor, terrain: &Terrain) -> HeightField {
+        let targets: Vec<f64> = floor
+            .nodes
+            .iter()
+            .map(|node| match node {
+                Node::Room { room } => terrain.at(floor.rooms[*room].center),
+                Node::Junction { .. } => f64::INFINITY,
+            })
+            .collect();
+        let edges: Vec<(usize, usize, f64)> = floor
+            .edges
+            .iter()
+            .map(|e| (e.u, e.v, corridor_length(&e.pts)))
+            .collect();
+        let nodes = legal_heights(&edges, targets.clone(), self.0.max_slope);
+        let lowered = nodes
+            .iter()
+            .zip(&targets)
+            .filter(|(_, t)| t.is_finite())
+            .map(|(h, t)| t - h)
+            .fold(0.0, f64::max);
+        let nodes: Vec<f64> = nodes
+            .into_iter()
+            .map(|h| if h.is_finite() { h } else { 0.0 })
+            .collect();
+        let min = nodes.iter().copied().fold(f64::INFINITY, f64::min);
+        let max = nodes.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+        HeightField {
+            nodes,
+            min: if min.is_finite() { min } else { 0.0 },
+            max: if max.is_finite() { max } else { 0.0 },
+            lowered: Some(lowered),
         }
     }
 }
+
+/// The ground of a Λ and a seed, to draw a continuous field: the terrain of a height layer that runs before the layout, `None`
+/// otherwise. After the layout the heights belong to the nodes of the floor and there is no ground between them.
+pub fn terrain_of(p: &crate::params::Params, seed: u32, world: World) -> Option<Terrain> {
+    let spec = p.environment.height;
+    (spec.enabled && spec.phase == LayerPhase::Before).then(|| {
+        let mut rng = super::layer_rng(seed, HEIGHT_TAG);
+        Terrain::new(
+            &spec,
+            (rng.next() * 4_294_967_296.0) as u32,
+            p.cell_w.max(p.cell_h) * 2.0,
+            world,
+        )
+    })
+}
+
+/// The tag of the layer's stream: "HEIG".
+pub const HEIGHT_TAG: u32 = 0x4845_4947;
 
 /// Hops over the corridors from the entrance (from the first node when the floor has none); a node nothing reaches is as far as the farthest.
 fn hops_from_entrance(floor: &Floor) -> Vec<usize> {
@@ -227,11 +351,19 @@ impl Layer for HeightLayer {
         "height"
     }
     fn tag(&self) -> u32 {
-        // "HEIG"
-        0x4845_4947
+        HEIGHT_TAG
     }
     fn phase(&self) -> LayerPhase {
-        LayerPhase::After
+        self.0.phase
+    }
+    fn before(&self, world: World, rng: &mut Mulberry, out: &mut Environment) {
+        let seed = (rng.next() * 4_294_967_296.0) as u32;
+        out.terrain = Some(Terrain::new(&self.0, seed, self.1, world));
+    }
+    fn finish(&self, floor: &Floor, out: &mut Environment) {
+        if let Some(terrain) = out.terrain.clone() {
+            out.height = Some(self.grounded(floor, &terrain));
+        }
     }
     fn after(&self, floor: &Floor, rng: &mut Mulberry, out: &mut Environment) {
         out.height = Some(self.field(floor, rng));

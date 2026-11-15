@@ -8,7 +8,7 @@
 //!   ([`LayerPhase`]). A layer that runs before changes the floor when it is on, and only then.
 
 pub mod height;
-pub use height::{HeightField, HeightSpec, HeightStyle};
+pub use height::{HeightField, HeightSpec, HeightStyle, Terrain};
 
 use crate::{generate::Floor, params::Params, rng::Mulberry};
 use serde::{Deserialize, Serialize};
@@ -52,6 +52,9 @@ impl EnvSpec {
 pub struct Environment {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub height: Option<HeightField>,
+    /// The ground the layers that run before the layout hand the generator; not part of the floor.
+    #[serde(skip)]
+    pub terrain: Option<height::Terrain>,
 }
 
 /// The stream of a layer: a pure integer mix of the seed and the layer's tag (SplitMix32), so it is the same on every platform and
@@ -73,13 +76,16 @@ pub trait Layer {
     fn before(&self, _world: World, _rng: &mut Mulberry, _out: &mut Environment) {}
     /// After the layout: reads the finished floor and fills `out`.
     fn after(&self, _floor: &Floor, _rng: &mut Mulberry, _out: &mut Environment) {}
+    /// For a layer that ran before the layout: once the layout is done, turns what it handed the generator into its data for the floor.
+    fn finish(&self, _floor: &Floor, _out: &mut Environment) {}
 }
 
 /// The layers `p` switches on, in the order they run (each reads only the layers before it).
 pub fn layers_of(p: &Params) -> Vec<Box<dyn Layer>> {
     let mut out: Vec<Box<dyn Layer>> = Vec::new();
     if p.environment.height.enabled {
-        out.push(Box::new(height::HeightLayer(p.environment.height)));
+        let cell = p.cell_w.max(p.cell_h) * 2.0;
+        out.push(Box::new(height::HeightLayer(p.environment.height, cell)));
     }
     out
 }
@@ -103,9 +109,12 @@ pub fn run_after(
     before: Option<Environment>,
 ) -> Option<Environment> {
     let mut out = before.unwrap_or_default();
-    let mut ran = !layers.is_empty();
-    for layer in layers.iter().filter(|l| l.phase() == LayerPhase::After) {
-        layer.after(floor, &mut layer_rng(seed, layer.tag()), &mut out);
+    let mut ran = false;
+    for layer in layers {
+        match layer.phase() {
+            LayerPhase::After => layer.after(floor, &mut layer_rng(seed, layer.tag()), &mut out),
+            LayerPhase::Before => layer.finish(floor, &mut out),
+        }
         ran = true;
     }
     ran.then_some(out)

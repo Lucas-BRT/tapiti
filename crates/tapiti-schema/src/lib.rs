@@ -313,7 +313,10 @@ pub fn groups() -> Vec<ParamGroup> {
                 choice(
                     "environment.height.phase",
                     tx("Height runs"),
-                    &[("after", tx("After the layout"))],
+                    &[
+                        ("after", tx("After the layout")),
+                        ("before", tx("Before the layout")),
+                    ],
                 ),
                 choice(
                     "environment.height.style",
@@ -407,7 +410,7 @@ fn help(path: &str, label: &str) -> Text {
         "zones.count" => tx("Number of zones, from two. Each strip stays at least two cells wide, so a small world holds fewer. Every zone favours one of the shape classes with a positive weight, in turn; turning zones on gives a mix of shapes when only rectangles were enabled."),
         "zones.bottleneck" => tx("Each pair of neighbouring zones is joined by exactly one corridor, so removing it splits the floor. Needs the Growth layout; Ring, Hub and wings and Spine with detours cross every boundary and cannot use it."),
         "environment.height.enabled" => tx("Gives every room and junction an elevation, and every corridor a slope between the two. Heights always respect the steepest corridor you set."),
-        "environment.height.phase" => tx("After the layout reads the finished floor and moves nothing."),
+        "environment.height.phase" => tx("After the layout reads the finished floor and moves nothing. Before the layout makes the ground first, and rooms are joined only where the slope can climb: steep ground becomes a natural barrier, so the floor changes and some layouts may fail more often."),
         "environment.height.style" => tx("Hills and hollows draws a height for each room between 0 and the relief. Going down lowers rooms with their distance from the entrance, down to minus the relief."),
         "environment.height.relief" => tx("The span of the heights, in the units of the floor. The slope limit can keep rooms from reaching it."),
         "environment.height.maxSlope" => tx("The steepest a corridor may be: rise divided by run. 0.25 climbs 25 units over 100."),

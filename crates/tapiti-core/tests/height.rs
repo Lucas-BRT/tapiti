@@ -138,3 +138,107 @@ fn bad_settings_are_named() {
     p.environment.height.relief = -1.0;
     assert!(p.intent_error().is_some());
 }
+
+use tapiti_core::environment::{height::terrain_of, LayerPhase, World};
+
+fn before(mut p: Params, style: HeightStyle) -> Params {
+    p = with_height(p, style);
+    p.environment.height.phase = LayerPhase::Before;
+    p
+}
+
+fn all_layouts() -> Vec<(&'static str, Params)> {
+    let mut out = lambdas();
+    let mut bsp = rich_of_size(Size::Medium);
+    bsp.layout = Layout::Bsp;
+    let mut hub = params_of_size(Size::Medium);
+    hub.apply_intent(TopologyProfile::HubAndWings);
+    let mut zones = params_of_size(Size::Large);
+    zones.layout = Layout::Growth;
+    zones.set_zones(3, true);
+    out.extend([("bsp", bsp), ("hub-and-wings", hub), ("zones", zones)]);
+    out
+}
+
+#[test]
+fn the_ground_is_a_pure_function_of_the_position() {
+    let p = before(params_of_size(Size::Medium), HeightStyle::Hills);
+    let world = World {
+        x0: 0.0,
+        y0: 0.0,
+        x1: 1620.0,
+        y1: 1150.0,
+    };
+    let a = terrain_of(&p, 7, world).unwrap();
+    let b = terrain_of(&p, 7, world).unwrap();
+    let other = terrain_of(&p, 8, world).unwrap();
+    let spots = [
+        [10.0, 10.0],
+        [800.5, 300.25],
+        [1600.0, 1100.0],
+        [-40.0, 90.0],
+    ];
+    for s in spots {
+        assert_eq!(a.at(s), b.at(s));
+        assert!((0.0..=p.environment.height.relief).contains(&a.at(s)));
+    }
+    assert!(spots.iter().any(|s| a.at(*s) != other.at(*s)));
+    assert!(terrain_of(&params_of_size(Size::Medium), 7, world).is_none());
+    let down = terrain_of(
+        &before(params_of_size(Size::Medium), HeightStyle::Descent),
+        7,
+        world,
+    )
+    .unwrap();
+    assert!(
+        down.at([0.0, 500.0]) > down.at([800.0, 500.0])
+            && down.at([800.0, 500.0]) > down.at([1620.0, 500.0])
+    );
+}
+
+#[test]
+fn height_before_the_layout_keeps_the_rule_and_says_how_far_it_lowered_a_room() {
+    for (name, plain) in all_layouts() {
+        for style in [HeightStyle::Hills, HeightStyle::Descent] {
+            let p = before(plain.clone(), style);
+            let mut lowest = 0.0f64;
+            for seed in 1..=8 {
+                let s = stage(seed, &p, 8);
+                let field =
+                    s.d.environment
+                        .as_ref()
+                        .and_then(|e| e.height.as_ref())
+                        .expect("a height field");
+                assert!(
+                    !s.violations.iter().any(|v| v.starts_with("E1")),
+                    "{name} {style:?} seed {seed}: {:?}",
+                    s.violations
+                );
+                lowest = lowest.max(
+                    field
+                        .lowered
+                        .expect("lowered is measured before the layout"),
+                );
+                assert_eq!(
+                    serde_json::to_value(generate(seed, &p).environment).unwrap(),
+                    serde_json::to_value(generate(seed, &p).environment).unwrap()
+                );
+            }
+            println!("before {name} {style:?}: rooms lowered by at most {lowest:.1}");
+        }
+    }
+}
+
+#[test]
+fn how_often_a_floor_stays_valid_with_the_ground_in_the_way() {
+    for (name, plain) in all_layouts() {
+        let p = before(plain.clone(), HeightStyle::Hills);
+        let valid = (1..=20)
+            .filter(|seed| stage(*seed, &p, 8).violations.is_empty())
+            .count();
+        let off = (1..=20)
+            .filter(|seed| stage(*seed, &plain, 8).violations.is_empty())
+            .count();
+        println!("height before, {name}: valid {valid}/20 (off: {off}/20)");
+    }
+}

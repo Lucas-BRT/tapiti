@@ -47,6 +47,9 @@ pub struct HeightMetrics {
     /// The steepest corridor, rise over run.
     pub max_slope: f64,
     pub mean_slope: f64,
+    /// With the layer before the layout: the most a room was lowered below the ground to keep the rule.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lowered: Option<f64>,
 }
 
 struct Tarjan<'a> {
@@ -281,6 +284,7 @@ pub fn metrics_of(d: &Floor) -> Metrics {
                     range: field.max - field.min,
                     max_slope: slopes.iter().copied().fold(0.0, f64::max),
                     mean_slope: slopes.iter().sum::<f64>() / slopes.len().max(1) as f64,
+                    lowered: field.lowered,
                 }
             }),
     }

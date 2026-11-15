@@ -608,6 +608,7 @@ fn environment_card(app: &mut App, ui: &mut Ui) {
             .show(ui, |ui| {
                 for path in [
                     "environment.height.enabled",
+                    "environment.height.phase",
                     "environment.height.style",
                     "environment.height.relief",
                     "environment.height.maxSlope",
