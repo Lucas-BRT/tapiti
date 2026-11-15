@@ -80,7 +80,7 @@ pub(super) fn add_cycles(
                     Action::Branch { h, .. } | Action::Cross { h, .. } => h,
                     _ => continue,
                 };
-                opt.weight *= (-(dist(center, h) / scale)).exp();
+                opt.weight *= (-(dist(center, h) / scale)).det_exp();
             }
         }
         let ws: Vec<f64> = opts.iter().map(|o| o.weight).collect();

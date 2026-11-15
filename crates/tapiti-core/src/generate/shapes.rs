@@ -107,9 +107,9 @@ pub(super) fn fit(
         ShapeClass::Oct => {
             // Vertices at 22.5° + k·45°: the edges face the 8 directions of the alphabet.
             let half = (w_.min(h_) / 2.0) * rng.range(0.8, 1.0);
-            let rho = half / (PI / 8.0).cos();
+            let rho = half / (PI / 8.0).det_cos();
             // Every edge must hold a door: |e| = 2ρ·sin(22.5°) ≥ 2ι.
-            if 2.0 * rho * (PI / 8.0).sin() < 2.0 * iota + 4.0 {
+            if 2.0 * rho * (PI / 8.0).det_sin() < 2.0 * iota + 4.0 {
                 return None;
             }
             let cx = b.x0 + half + rng.next() * (w_ - 2.0 * half);
@@ -117,7 +117,7 @@ pub(super) fn fit(
             let pts = (0..8)
                 .map(|i| {
                     let a = PI / 8.0 + i as f64 * PI / 4.0;
-                    add([cx, cy], mul([a.cos(), a.sin()], rho))
+                    add([cx, cy], mul([a.det_cos(), a.det_sin()], rho))
                 })
                 .collect();
             Some(poly(pts))
@@ -167,7 +167,10 @@ pub(super) fn fit(
             let floor = half + (tip - half) * 0.35 * sharp;
             let mut local: Vec<V> = Vec::new();
             for k in 0..4 {
-                let (c, s) = ((PI / 2.0 * k as f64).cos(), (PI / 2.0 * k as f64).sin());
+                let (c, s) = (
+                    (PI / 2.0 * k as f64).det_cos(),
+                    (PI / 2.0 * k as f64).det_sin(),
+                );
                 let turn = |q: V| [q[0] * c - q[1] * s, q[0] * s + q[1] * c];
                 // East notch (top end first), then the tip on the next diagonal.
                 local.push(turn([floor, -half]));

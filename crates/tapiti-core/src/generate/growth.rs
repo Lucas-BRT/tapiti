@@ -292,7 +292,7 @@ pub(super) fn grow_rooms(
                     {
                         0.0
                     } else {
-                        (p.growth.cluster * near[i]).clamp(-30.0, 30.0).exp()
+                        (p.growth.cluster * near[i]).clamp(-30.0, 30.0).det_exp()
                     }
                 })
                 .collect();
@@ -363,7 +363,7 @@ pub(super) fn grow_rooms(
                         p.min_len + (3.0 + 3.0 * g.rng.next()) * cell
                     } else {
                         let r = p.min_len
-                            + p.growth.reach.max(0.0) * 0.6 * cell * -(1.0 - g.rng.next()).ln();
+                            + p.growth.reach.max(0.0) * 0.6 * cell * -(1.0 - g.rng.next()).det_ln();
                         r.min(3.0 * cell)
                     };
                     let half = (bw * u[0].abs() + bh * u[1].abs()) / 2.0;
@@ -455,9 +455,9 @@ pub(super) fn grow_rooms(
                             .into_iter()
                             .map(|o| dist(g.rooms[o].center, room.center))
                             .fold(6.0 * cell, f64::min);
-                        (nearest / cell).exp()
+                        (nearest / cell).det_exp()
                     } else {
-                        (p.growth.cluster * here).clamp(-30.0, 30.0).exp()
+                        (p.growth.cluster * here).clamp(-30.0, 30.0).det_exp()
                     };
                     proposals.push((room, w));
                 }

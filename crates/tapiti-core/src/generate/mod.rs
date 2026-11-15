@@ -2,6 +2,7 @@
 //! constraints already fixed, so nothing is drawn and then thrown away whole. Deterministic: the same seed and Λ give the same stage.
 
 use crate::cancel::Cancel;
+use crate::detmath::DetMath;
 use crate::geom::*;
 use crate::par::{pflat_min, pmap_min};
 use crate::params::*;

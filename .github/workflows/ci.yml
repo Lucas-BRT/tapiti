@@ -119,6 +119,8 @@ jobs:
         with:
           node-version: 22
       - run: scripts/build-wasm.sh
+      - name: The module draws the floors the native build draws
+        run: scripts/wasm-parity.sh
       - run: node --check apps/site/assets/lab/lab.js && node --check apps/site/assets/lab/worker.js
       - run: node --check apps/site/assets/walk/build.js && node --check apps/site/assets/walk/scene.js && node --check apps/site/assets/walk/dungeon.js && node --check scripts/vendor-three.mjs
       - run: for f in scripts/*.mjs; do node --check "$f"; done

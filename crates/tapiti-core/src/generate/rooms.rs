@@ -51,7 +51,7 @@ pub(super) fn build_rooms(
                             * zoned(i, *c)
                             * (p.homophily
                                 * nb.iter().filter(|n| cls.get(n) == Some(&ci)).count() as f64)
-                                .exp()
+                                .det_exp()
                     })
                     .collect();
                 let k = g.pick_class(&ws);

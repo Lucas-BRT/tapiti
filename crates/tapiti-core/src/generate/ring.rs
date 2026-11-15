@@ -70,8 +70,8 @@ pub(super) fn build(
         // Clockwise from the north: the angle is measured from the top, so room 0 stands at the top of the ellipse.
         let theta = std::f64::consts::TAU * k as f64 / count as f64;
         let target = [
-            centre[0] + radii[0] * theta.sin(),
-            centre[1] - radii[1] * theta.cos(),
+            centre[0] + radii[0] * theta.det_sin(),
+            centre[1] - radii[1] * theta.det_cos(),
         ];
         let parent = g.ring[k - 1];
         let mut placed = false;

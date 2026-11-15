@@ -481,7 +481,7 @@ impl<'a> Gen<'a> {
                             .product();
                         let cost = pr.cost_len * t + pr.cost_bend;
                         out.push(Opt {
-                            weight: self.t_weight() * mix_w * (-cost).exp(),
+                            weight: self.t_weight() * mix_w * (-cost).det_exp(),
                             act: Action::Branch {
                                 room: r.id,
                                 port_i: pi,

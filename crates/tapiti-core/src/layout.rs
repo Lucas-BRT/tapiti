@@ -1,6 +1,7 @@
 //! How regular a floor's room layout looks: statistics of the room centers that are blind to how the layout was produced,
 //! so a grid scaffold and a grown layout can be compared on the same scale.
 
+use crate::detmath::DetMath;
 use crate::generate::Floor;
 use std::f64::consts::TAU;
 
@@ -34,8 +35,8 @@ pub fn layout_stats(d: &Floor) -> LayoutStats {
         let (mut s, mut co) = (0.0, 0.0);
         for p in &c {
             let a = TAU * (p[axis] / pitch).rem_euclid(1.0);
-            s += a.sin();
-            co += a.cos();
+            s += a.det_sin();
+            co += a.det_cos();
         }
         (s * s + co * co).sqrt() / nf
     };

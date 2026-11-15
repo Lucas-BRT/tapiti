@@ -236,7 +236,7 @@ pub(super) fn candidates_for_with_index(
                 pts,
                 kind,
                 cost,
-                weight: mix_of(pr, rooms, a, b) * type_weight(pr, kind) * (-cost).exp(),
+                weight: mix_of(pr, rooms, a, b) * type_weight(pr, kind) * (-cost).det_exp(),
                 region,
             });
         });
