@@ -58,9 +58,15 @@ pub(crate) fn map_object_at(
         if room.alive && view.is_none_or(|v| room.level == v) && point_in_shape(&room.shape, point)
         {
             let kind = if room.leaf { "leaf chamber" } else { "room" };
+            // What the environment layers say about this room, one line each.
+            let layers: String = tapiti_render::view::inspect(floor, room.id)
+                .into_iter()
+                .map(|(name, value)| format!("\n{name}: {value}"))
+                .collect();
             return format!(
-                "{kind} · {role}\nRoom #{id} · {class}\nArea: {area:.0} px²\nDoors used: {used} · possible: {possible}",
+                "{kind} · {role}\nRoom #{id} · {class}\nArea: {area:.0} px²\nDoors used: {used} · possible: {possible}{layers}",
                 kind = kind,
+                layers = layers,
                 role = role_label(room.role),
                 id = room.id,
                 class = class_label(room.cls.name()),

@@ -9,6 +9,7 @@ use tapiti_core::generate::{room_hops, Floor, Node, Role};
 use tapiti_core::geom::{dir_of, Shape, V};
 
 mod hatch;
+pub mod view;
 pub use hatch::{hatch, HatchMark};
 
 /// How colours reach the SVG.
@@ -140,8 +141,39 @@ pub fn view_box(d: &Floor, style: &Style) -> [f64; 4] {
     [x0 - m, y0 - m, w + 2.0 * m, h + 2.0 * m]
 }
 
+/// What a floor is drawn for besides the style: the level of a stacked floor (levels overlap in plan, so one is drawn) and a channel of
+/// the environment layers to tint the rooms by, with a scale under the floor. The default draws everything, in the colours of the
+/// classes.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct View {
+    /// The level to draw, counted from 0; `None` draws them all, and a floor with one level ignores it.
+    pub level: Option<usize>,
+    pub channel: Option<view::Channel>,
+}
+
 /// Renders `d` as a standalone `<svg>` element.
 pub fn floor_svg(d: &Floor, style: &Style) -> String {
+    floor_svg_view(d, style, &View::default())
+}
+
+/// Like [`floor_svg`], for one level and tinted by one channel (see [`View`]).
+pub fn floor_svg_view(d: &Floor, style: &Style, shown: &View) -> String {
+    let level_of = tapiti_core::environment::height::node_levels(d);
+    let on_level = |node: usize| {
+        shown
+            .level
+            .filter(|_| d.stack.is_some())
+            .is_none_or(|l| level_of[node] == l)
+    };
+    let on_room = |r: &tapiti_core::generate::Room| {
+        shown
+            .level
+            .filter(|_| d.stack.is_some())
+            .is_none_or(|l| r.level == l)
+    };
+    let tint = shown
+        .channel
+        .and_then(|c| view::scale(d, c).map(|s| (c, s, view::room_values(d, c))));
     let (x0, x1) = (
         d.grid_x.first().copied().unwrap_or(0.0),
         d.grid_x.last().copied().unwrap_or(1.0),
@@ -192,7 +224,7 @@ pub fn floor_svg(d: &Floor, style: &Style) -> String {
         out.push_str(r#""/>"#);
     }
     let width = d.params.width.max(2.0);
-    for e in &d.edges {
+    for e in d.edges.iter().filter(|e| !e.stair && on_level(e.u)) {
         let _ = write!(
             out,
             r#"<path class="corridor" style="--d:{}" fill="none" stroke-width="{}" stroke-linecap="round" stroke-linejoin="round" d="{}"/>"#,
@@ -201,7 +233,13 @@ pub fn floor_svg(d: &Floor, style: &Style) -> String {
             points(&e.pts)
         );
     }
-    for r in d.rooms.iter().filter(|r| r.alive) {
+    for r in d.rooms.iter().filter(|r| r.alive && on_room(r)) {
+        let fill = tint
+            .as_ref()
+            .and_then(|(c, s, values)| values[r.id].map(|v| view::color(*c, view::position(*s, v))))
+            .map_or(String::new(), |[red, green, blue]| {
+                format!(";fill:rgb({red},{green},{blue})")
+            });
         let class = format!(
             "room {} {}{}",
             class_class(r.cls.name()),
@@ -219,7 +257,7 @@ pub fn floor_svg(d: &Floor, style: &Style) -> String {
             Shape::Disc { c, r: radius } => {
                 let _ = write!(
                     out,
-                    r#"<circle class="{class}" style="--d:{d_attr}" fill-opacity="{opacity}" cx="{}" cy="{}" r="{}"/>"#,
+                    r#"<circle class="{class}" style="--d:{d_attr}{fill}" fill-opacity="{opacity}" cx="{}" cy="{}" r="{}"/>"#,
                     n(c[0]),
                     n(c[1]),
                     n(*radius)
@@ -228,7 +266,7 @@ pub fn floor_svg(d: &Floor, style: &Style) -> String {
             Shape::Poly { pts } => {
                 let _ = write!(
                     out,
-                    r#"<path class="{class}" style="--d:{d_attr}" fill-opacity="{opacity}" d="{}Z"/>"#,
+                    r#"<path class="{class}" style="--d:{d_attr}{fill}" fill-opacity="{opacity}" d="{}Z"/>"#,
                     points(pts)
                 );
             }
@@ -258,7 +296,7 @@ pub fn floor_svg(d: &Floor, style: &Style) -> String {
         }
         out.push_str("</g>");
     }
-    for r in d.rooms.iter().filter(|r| r.alive) {
+    for r in d.rooms.iter().filter(|r| r.alive && on_room(r)) {
         for port in &r.used {
             let k = dir_of(port.k);
             let _ = write!(
@@ -271,7 +309,13 @@ pub fn floor_svg(d: &Floor, style: &Style) -> String {
             );
         }
     }
-    for node in &d.nodes {
+    for node in d
+        .nodes
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| on_level(*i))
+        .map(|(_, n)| n)
+    {
         if let Node::Junction { p } = node {
             let _ = write!(
                 out,
@@ -283,7 +327,7 @@ pub fn floor_svg(d: &Floor, style: &Style) -> String {
     }
     if style.labels {
         let size = (w.max(h) / 60.0).max(10.0);
-        for r in d.rooms.iter().filter(|r| r.alive) {
+        for r in d.rooms.iter().filter(|r| r.alive && on_room(r)) {
             let _ = write!(
                 out,
                 r#"<text class="label" text-anchor="middle" dominant-baseline="central" font-size="{}" x="{}" y="{}">#{}</text>"#,
@@ -293,6 +337,40 @@ pub fn floor_svg(d: &Floor, style: &Style) -> String {
                 r.id
             );
         }
+    }
+    if let Some((c, (lo, hi), _)) = tint {
+        // A scale under the floor: the ramp of the channel from its low end to its high end, with both values.
+        let [vx, vy, vw, vh] = view_box(d, style);
+        let (bar_w, bar_h, y) = (vw * 0.3, vh * 0.012, vy + vh - vh * 0.035);
+        let _ = write!(
+            out,
+            r#"<g class="channel-scale" aria-label="{}"><defs><linearGradient id="channel-ramp">"#,
+            c.label()
+        );
+        for k in 0..=4 {
+            let [red, green, blue] = view::color(c, f64::from(k) / 4.0);
+            let _ = write!(
+                out,
+                r#"<stop offset="{}" stop-color="rgb({red},{green},{blue})"/>"#,
+                f64::from(k) / 4.0
+            );
+        }
+        let _ = write!(
+            out,
+            r#"</linearGradient></defs><rect x="{}" y="{}" width="{}" height="{}" fill="url(#channel-ramp)"/><text class="label" font-size="{}" x="{}" y="{}">{}</text><text class="label" font-size="{}" text-anchor="end" x="{}" y="{}">{}</text></g>"#,
+            n(vx + vw * 0.02),
+            n(y),
+            n(bar_w),
+            n(bar_h),
+            n(bar_h * 1.6),
+            n(vx + vw * 0.02),
+            n(y - bar_h * 0.4),
+            view::format_value(c, lo),
+            n(bar_h * 1.6),
+            n(vx + vw * 0.02 + bar_w),
+            n(y - bar_h * 0.4),
+            view::format_value(c, hi)
+        );
     }
     out.push_str("</svg>");
     out
@@ -398,5 +476,65 @@ mod tests {
                 assert!(CLASS_NAMES.contains(&c), "undocumented class {c}");
             }
         }
+    }
+
+    #[test]
+    fn a_view_picks_a_level_and_tints_by_a_channel() {
+        use tapiti_core::params::{rich_of_size, Layout, Size};
+        let mut p = rich_of_size(Size::Medium);
+        p.layout = Layout::Growth;
+        p.levels.count = 2;
+        p.environment.height.enabled = true;
+        p.environment.light.enabled = true;
+        let f = tapiti_core::generate::generate(3, &p);
+        let style = Style::default();
+        assert_eq!(
+            floor_svg(&f, &style),
+            floor_svg_view(&f, &style, &View::default())
+        );
+        let count = |svg: &str| svg.matches("class=\"room ").count();
+        let (a, b, all) = (
+            floor_svg_view(
+                &f,
+                &style,
+                &View {
+                    level: Some(0),
+                    channel: None,
+                },
+            ),
+            floor_svg_view(
+                &f,
+                &style,
+                &View {
+                    level: Some(1),
+                    channel: None,
+                },
+            ),
+            floor_svg(&f, &style),
+        );
+        let live = |l: usize| f.rooms.iter().filter(|r| r.alive && r.level == l).count();
+        assert_eq!(
+            (count(&a), count(&b), count(&all)),
+            (live(0), live(1), live(0) + live(1))
+        );
+        let tinted = floor_svg_view(
+            &f,
+            &style,
+            &View {
+                level: None,
+                channel: Some(view::Channel::Height),
+            },
+        );
+        assert!(tinted.contains(";fill:rgb(") && tinted.contains("channel-scale"));
+        // No layer for the channel: the floor is drawn as it is.
+        let none = floor_svg_view(
+            &f,
+            &style,
+            &View {
+                level: None,
+                channel: Some(view::Channel::Water),
+            },
+        );
+        assert_eq!(none, all);
     }
 }

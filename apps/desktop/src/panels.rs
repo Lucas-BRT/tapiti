@@ -1188,6 +1188,13 @@ pub fn central(app: &mut App, ui: &mut Ui) {
                         .map(|room| room.cls.name())
                         .collect();
                     map::legend(&painter, rect, &pal, ui.visuals().text_color(), &present);
+                    map::scales(
+                        &painter,
+                        rect,
+                        ui.visuals().text_color(),
+                        &generated.floor,
+                        app.overlays,
+                    );
                 }
             }
             map_controls(app, ui, rect);
