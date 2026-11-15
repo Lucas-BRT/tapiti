@@ -9,7 +9,10 @@ use tapiti_core::generate::{room_hops, Floor, Node, Role};
 use tapiti_core::geom::{dir_of, Shape, V};
 
 mod hatch;
+pub mod mesh;
+pub mod raster;
 pub mod view;
+pub mod walk;
 pub use hatch::{hatch, HatchMark};
 
 /// How colours reach the SVG.
