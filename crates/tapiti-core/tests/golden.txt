@@ -85,3 +85,6 @@ levels-3-growth-medium seed 3: 054975fc7cc55045
 levels-2-ring-all-layers-medium seed 1: 178dc592fc984e43
 levels-2-ring-all-layers-medium seed 2: f3444fcb38dcc2dc
 levels-2-ring-all-layers-medium seed 3: b608ba14e0082c2b
+events-conditions-growth-medium seed 1: 765b77d3cda01d3a
+events-conditions-growth-medium seed 2: db4ba8aed1485fad
+events-conditions-growth-medium seed 3: 82636ab605a5535b

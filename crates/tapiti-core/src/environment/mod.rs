@@ -14,7 +14,7 @@ pub mod light;
 pub mod placement;
 pub mod water;
 pub use climate::{Climate, ClimateField, ClimateSpec};
-pub use events::{EventKind, EventSpec, EventsField, EventsSpec};
+pub use events::{Condition, ConditionField, EventKind, EventSpec, EventsField, EventsSpec};
 pub use height::{HeightField, HeightSpec, HeightStyle, Terrain};
 pub use light::{LightField, LightSpec};
 pub use placement::Placement;

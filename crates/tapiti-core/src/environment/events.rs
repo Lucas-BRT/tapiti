@@ -15,6 +15,71 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
+/// What a condition looks at in a room.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ConditionField {
+    /// The height of the floor (needs the height layer).
+    Height,
+    /// The depth of the water over the floor, 0 where it is dry (needs the water layer).
+    WaterDepth,
+    /// The humidity from 0 to 1 (needs the water layer).
+    Humidity,
+    /// The temperature in degrees Celsius (needs the climate layer).
+    Temperature,
+    /// The light from 0 to 1 (needs the light layer).
+    Light,
+    /// The level, 1 for the first.
+    Level,
+}
+
+/// A limit on where an event may happen: the value of `field` in the room lies from `min` to `max`, either left open.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct Condition {
+    pub field: ConditionField,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub min: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max: Option<f64>,
+}
+
+impl Default for Condition {
+    fn default() -> Self {
+        Self {
+            field: ConditionField::Light,
+            min: None,
+            max: None,
+        }
+    }
+}
+
+impl Condition {
+    /// Whether `v` is in range.
+    pub fn holds(&self, v: f64) -> bool {
+        self.min.is_none_or(|m| v >= m) && self.max.is_none_or(|m| v <= m)
+    }
+}
+
+/// The value of a condition's field at a node, `None` when the layer it needs is off.
+fn value_at(floor: &Floor, env: &Environment, field: ConditionField, i: usize) -> Option<f64> {
+    match field {
+        ConditionField::Height => env.height.as_ref().map(|h| h.nodes[i]),
+        ConditionField::WaterDepth => env
+            .water
+            .as_ref()
+            .zip(env.height.as_ref())
+            .map(|(w, h)| (w.level[i] - h.nodes[i]).max(0.0)),
+        ConditionField::Humidity => env.water.as_ref().map(|w| w.humidity[i]),
+        ConditionField::Temperature => env.climate.as_ref().map(|c| c.celsius[i]),
+        ConditionField::Light => env.light.as_ref().map(|l| l.intensity[i]),
+        ConditionField::Level => match floor.nodes[i] {
+            Node::Room { room } => Some(floor.rooms[room].level as f64 + 1.0),
+            Node::Junction { .. } => None,
+        },
+    }
+}
+
 /// One kind of event.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
@@ -30,6 +95,9 @@ pub struct EventSpec {
     pub zone: Option<usize>,
     /// Keep off the entrance and the exit.
     pub avoid_entrance: bool,
+    /// Only rooms where every condition holds, on the layers that came before.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub conditions: Vec<Condition>,
 }
 
 impl Default for EventSpec {
@@ -41,6 +109,7 @@ impl Default for EventSpec {
             min_gap: 0,
             zone: None,
             avoid_entrance: true,
+            conditions: Vec::new(),
         }
     }
 }
@@ -81,6 +150,16 @@ impl EventsSpec {
             }
             if e.count > 256 || e.min_gap > 64 {
                 return Some("Events: at most 256 occurrences and a gap of 64 corridors.");
+            }
+            if e.conditions.len() > 8 {
+                return Some("Events: at most 8 conditions on a kind.");
+            }
+            if e.conditions.iter().any(|c| {
+                !c.min.is_none_or(f64::is_finite)
+                    || !c.max.is_none_or(f64::is_finite)
+                    || c.min.zip(c.max).is_some_and(|(lo, hi)| lo > hi)
+            }) {
+                return Some("Events: a condition needs finite limits with the least first.");
             }
         }
         None
@@ -181,6 +260,13 @@ impl Layer for EventsLayer {
             if let Some(zone) = event.zone {
                 base.extend((0..n).filter(|&i| zone_of_node(floor, i) != Some(zone)));
             }
+            // A room where a condition does not hold is out: the layers asked for are on, so they were computed before this one.
+            for c in &event.conditions {
+                base.extend(
+                    (0..n)
+                        .filter(|&i| value_at(floor, out, c.field, i).is_none_or(|v| !c.holds(v))),
+                );
+            }
             let mut nodes: Vec<usize> = Vec::new();
             for _ in 0..event.count {
                 let mut exclude = base.clone();
@@ -238,6 +324,16 @@ pub fn check(d: &Floor, field: &EventsField) -> Vec<String> {
             }
             if event.zone.is_some_and(|z| zone_of_node(d, i) != Some(z)) {
                 out.push(format!("{tag} stands outside its zone"));
+            }
+            if let Some(env) = d.environment.as_ref() {
+                for c in &event.conditions {
+                    if value_at(d, env, c.field, i).is_none_or(|v| !c.holds(v)) {
+                        out.push(format!(
+                            "{tag} at node {i} breaks a condition on {:?}",
+                            c.field
+                        ));
+                    }
+                }
             }
             if spec.exclusive && seen.contains(&i) {
                 out.push(format!("{tag} shares node {i} with another kind"));

@@ -760,6 +760,26 @@ impl Params {
             {
                 return Some("Events: a kind is limited to a zone the map does not have.");
             }
+            let env = &self.environment;
+            for c in self
+                .environment
+                .events
+                .list
+                .iter()
+                .flat_map(|e| &e.conditions)
+            {
+                use crate::environment::ConditionField as F;
+                let missing = match c.field {
+                    F::Height => !env.height.enabled,
+                    F::WaterDepth | F::Humidity => !env.water.enabled,
+                    F::Temperature => !env.climate.enabled,
+                    F::Light => !env.light.enabled,
+                    F::Level => false,
+                };
+                if missing {
+                    return Some("Events: a condition needs the layer it looks at turned on.");
+                }
+            }
         }
         if self.environment.climate.enabled {
             if !self.environment.height.enabled {

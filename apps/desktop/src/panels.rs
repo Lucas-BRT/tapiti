@@ -747,6 +747,7 @@ fn environment_card(app: &mut App, ui: &mut Ui) {
                 ui,
                 &app.params.environment.events.list,
                 app.params.zone_count(),
+                &app.params.environment,
             );
         }
     });
@@ -765,8 +766,18 @@ fn events_editor(
     ui: &mut Ui,
     list: &[tapiti_core::environment::EventSpec],
     zones: usize,
+    env: &tapiti_core::environment::EnvSpec,
 ) -> Option<Vec<tapiti_core::environment::EventSpec>> {
-    use tapiti_core::environment::{EventSpec, Placement};
+    use tapiti_core::environment::{Condition, ConditionField as F, EventSpec, Placement};
+    // What a condition can look at: the layers that are on (and the level, always).
+    let fields: Vec<(F, &str, bool)> = vec![
+        (F::Height, "height", env.height.enabled),
+        (F::WaterDepth, "water depth", env.water.enabled),
+        (F::Humidity, "humidity", env.water.enabled),
+        (F::Temperature, "temperature", env.climate.enabled),
+        (F::Light, "light", env.light.enabled),
+        (F::Level, "level", true),
+    ];
     let options = tapiti_schema::placement_options();
     let key = |p: Placement| {
         serde_json::to_value(p)
@@ -851,6 +862,59 @@ fn events_editor(
                 .checkbox(&mut event.avoid_entrance, "keep off the entrance and exit")
                 .changed();
         });
+        // Where the layers say it may happen: "only where the light is below 0.1".
+        let mut drop_condition = None;
+        for (c, cond) in event.conditions.iter_mut().enumerate() {
+            ui.horizontal(|ui| {
+                ui.label("only where");
+                let name = fields
+                    .iter()
+                    .find(|(f, _, _)| *f == cond.field)
+                    .map_or("?", |(_, n, _)| *n);
+                egui::ComboBox::from_id_salt(("event_condition", i, c))
+                    .selected_text(name)
+                    .show_ui(ui, |ui| {
+                        for (f, n, on) in &fields {
+                            if *on || *f == cond.field {
+                                changed |= ui.selectable_value(&mut cond.field, *f, *n).changed();
+                            }
+                        }
+                    });
+                for (limit, label) in [(&mut cond.min, "from"), (&mut cond.max, "to")] {
+                    let mut on = limit.is_some();
+                    if ui.checkbox(&mut on, label).changed() {
+                        *limit = on.then_some(limit.unwrap_or(0.0));
+                        changed = true;
+                    }
+                    if let Some(v) = limit {
+                        changed |= ui.add(egui::DragValue::new(v).speed(0.05)).changed();
+                    }
+                }
+                if ui
+                    .small_button("x")
+                    .on_hover_text("Remove this condition")
+                    .clicked()
+                {
+                    drop_condition = Some(c);
+                }
+            });
+        }
+        if let Some(c) = drop_condition {
+            event.conditions.remove(c);
+            changed = true;
+        }
+        if event.conditions.len() < 8 && ui.small_button("Add a condition").clicked() {
+            let first = fields
+                .iter()
+                .find(|(_, _, on)| *on)
+                .map_or(F::Level, |(f, _, _)| *f);
+            event.conditions.push(Condition {
+                field: first,
+                min: Some(0.0),
+                max: None,
+            });
+            changed = true;
+        }
     }
     ui.separator();
     if ui.button("Add an event").clicked() {

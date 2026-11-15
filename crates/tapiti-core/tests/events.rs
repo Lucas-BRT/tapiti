@@ -251,3 +251,158 @@ fn events_name_what_is_wrong() {
         assert!(q.intent_error().is_some());
     }
 }
+
+use tapiti_core::environment::{Condition, ConditionField};
+
+fn when(field: ConditionField, min: Option<f64>, max: Option<f64>) -> Vec<Condition> {
+    vec![Condition { field, min, max }]
+}
+
+fn node_room(f: &tapiti_core::generate::Floor, i: usize) -> &tapiti_core::generate::Room {
+    match f.nodes[i] {
+        Node::Room { room } => &f.rooms[room],
+        _ => panic!("an event on a junction"),
+    }
+}
+
+#[test]
+fn an_event_only_happens_where_its_conditions_hold() {
+    let mut base = rich_of_size(Size::Large);
+    base.layout = Layout::Growth;
+    base.environment.height.enabled = true;
+    base.environment.water.enabled = true;
+    base.environment.water.sources = 8;
+    base.environment.water.flow = 300.0;
+    base.environment.climate.enabled = true;
+    base.environment.climate.climate = tapiti_core::environment::Climate::Hot;
+    base.environment.climate.season = 1.0;
+    base.environment.light.enabled = true;
+    base.environment.light.time = 0.0;
+    base.environment.light.torches = 3;
+    let e = |name: &str, c: Vec<Condition>| EventSpec {
+        name: name.into(),
+        count: 6,
+        conditions: c,
+        ..EventSpec::default()
+    };
+    let p = with_events(
+        base,
+        vec![
+            e("dark", when(ConditionField::Light, None, Some(0.05))),
+            e("damp", when(ConditionField::Humidity, Some(0.5), None)),
+            e("hot", when(ConditionField::Temperature, Some(30.0), None)),
+            e("high", when(ConditionField::Height, Some(100.0), None)),
+            e("never", when(ConditionField::Light, Some(2.0), None)),
+        ],
+    );
+    assert!(p.intent_error().is_none());
+    let (mut dark, mut damp, mut hot, mut high) = (0, 0, 0, 0);
+    for seed in 1..=6 {
+        let s = stage(seed, &p, 1);
+        assert!(
+            !s.violations.iter().any(|v| v.starts_with("E5")),
+            "seed {seed}: {:?}",
+            s.violations
+        );
+        let env = s.d.environment.as_ref().unwrap();
+        let (light, water, climate, height) = (
+            env.light.as_ref().unwrap(),
+            env.water.as_ref().unwrap(),
+            env.climate.as_ref().unwrap(),
+            env.height.as_ref().unwrap(),
+        );
+        let kinds = &env.events.as_ref().unwrap().kinds;
+        for &i in &kinds[0].nodes {
+            assert!(light.intensity[i] <= 0.05, "seed {seed}");
+            dark += 1;
+        }
+        for &i in &kinds[1].nodes {
+            assert!(water.humidity[i] >= 0.5, "seed {seed}");
+            damp += 1;
+        }
+        for &i in &kinds[2].nodes {
+            assert!(climate.celsius[i] >= 30.0, "seed {seed}");
+            hot += 1;
+        }
+        for &i in &kinds[3].nodes {
+            assert!(height.nodes[i] >= 100.0, "seed {seed}");
+            high += 1;
+        }
+        assert!(
+            kinds[4].nodes.is_empty(),
+            "seed {seed}: a room with light of 2"
+        );
+        let m = metrics_of(&s.d).events.unwrap();
+        assert!(m.missing >= 6, "seed {seed}");
+        let _ = node_room(&s.d, kinds[0].nodes.first().copied().unwrap_or(0));
+    }
+    assert!(
+        dark > 0 && damp > 0 && hot > 0 && high > 0,
+        "a condition never found a room: {dark} {damp} {hot} {high}"
+    );
+}
+
+#[test]
+fn an_event_can_be_limited_to_a_level() {
+    let mut p = rich_of_size(Size::Medium);
+    p.layout = Layout::Growth;
+    p.levels.count = 3;
+    let mut e = event("lair", 4, Placement::Uniform);
+    e.conditions = when(ConditionField::Level, Some(2.0), Some(2.0));
+    let p = with_events(p, vec![e]);
+    let mut seen = 0;
+    for seed in 1..=6 {
+        let s = stage(seed, &p, 8);
+        // Three levels do not always find the overlaps their stairs need.
+        if !s.violations.is_empty() {
+            continue;
+        }
+        for &i in
+            &s.d.environment
+                .as_ref()
+                .unwrap()
+                .events
+                .as_ref()
+                .unwrap()
+                .kinds[0]
+                .nodes
+        {
+            assert_eq!(node_room(&s.d, i).level, 1, "seed {seed}");
+            seen += 1;
+        }
+    }
+    assert!(seen > 0);
+}
+
+#[test]
+fn conditions_need_their_layers_and_sane_limits_and_round_trip() {
+    let mut e = event("a", 1, Placement::Uniform);
+    e.conditions = when(ConditionField::Light, None, Some(0.1));
+    let p = with_events(params_of_size(Size::Small), vec![e.clone()]);
+    assert!(
+        p.intent_error().is_some(),
+        "light condition without the light layer"
+    );
+    let mut on = p.clone();
+    on.environment.light.enabled = true;
+    assert!(on.intent_error().is_none());
+    let mut backwards = on.clone();
+    backwards.environment.events.list[0].conditions =
+        when(ConditionField::Light, Some(0.5), Some(0.1));
+    assert!(backwards.intent_error().is_some());
+    let json = serde_json::to_value(&on).unwrap();
+    assert_eq!(
+        json["environment"]["events"]["list"][0]["conditions"][0]["field"],
+        "light"
+    );
+    let back: Params = serde_json::from_value(json).unwrap();
+    assert_eq!(back.environment, on.environment);
+    let plain = serde_json::to_value(with_events(
+        params_of_size(Size::Small),
+        vec![event("a", 1, Placement::Uniform)],
+    ))
+    .unwrap();
+    assert!(plain["environment"]["events"]["list"][0]
+        .get("conditions")
+        .is_none());
+}

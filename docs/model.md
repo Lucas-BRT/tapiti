@@ -422,6 +422,8 @@ The openings are the entrance and `openings` rooms more, drawn from the higher g
 
 The `environment.events` layer scatters kinds of event that you name over the floor, after the layout, moving nothing. It decides nothing about what an event is or does: it says in which rooms each one happens. A kind has a name, a count, a *placement* (the distribution of the previous section: anywhere, near or far from the entrance, on the main path, in dead ends, on high or low ground), and limits: a zone of the map (when zones are on), the fewest corridors between two occurrences of the kind (`minGap`), and keeping off the entrance and the exit. With `exclusive`, a room holds at most one event of any kind. Kinds are placed in the order of the list, each occurrence drawn from the stream of the layer among the rooms the placement and the limits leave; when none is left, fewer than the count are placed, and the measures say how many are missing.
 
+A kind can also carry *conditions*: limits on what the layers before it computed. A condition names a field (the height, the depth of the water, the humidity, the temperature, the light or the level, counted from 1) and a range from `min` to `max`, either left open, and the kind happens only in rooms where every condition holds ("dark rooms", "damp rooms", "the second level"). A condition on a layer that is off is refused by `Params::intent_error`.
+
 The validator checks (E5) that every occurrence is in a live room, within the count, that no kind repeats a room, keeps its gap and its zone, stays off the entrance and the exit when asked, and that no room holds two kinds when they are exclusive.
 
 ### Stacked levels
