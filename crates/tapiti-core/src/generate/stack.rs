@@ -36,6 +36,9 @@ pub(super) fn generate_stack(
     let q = level_params(p);
     let mut levels = Vec::new();
     for k in 0..p.levels.count {
+        if cancel.as_ref().is_some_and(Cancel::is_cancelled) {
+            return None;
+        }
         // Only level 0 is drawn while it is built: the edge ids of the others would overwrite its own.
         let reporter: Option<&mut dyn FnMut(GenerationEvent)> = if k == 0 {
             progress

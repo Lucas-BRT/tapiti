@@ -118,6 +118,9 @@ pub(super) fn build(
     let small = (cw.min(ch) - 2.0 * p.gap).max(1.0);
     let mut room_of = vec![usize::MAX; tree.len()];
     for &leaf in &leaves {
+        if g.stopped() {
+            return false;
+        }
         // A gap in from every side of its leaf, so rooms of neighbouring leaves stand two gaps apart.
         let r = Bx {
             x0: tree[leaf].rect.x0 + p.gap,
@@ -165,6 +168,9 @@ pub(super) fn build(
         let Some((a, b)) = tree[node].kids else {
             return Some(vec![room_of[node]]);
         };
+        if g.stopped() {
+            return None;
+        }
         let left = join(g, tree, room_of, a, make_room, progress)?;
         let right = join(g, tree, room_of, b, make_room, progress)?;
         let mut pairs: Vec<(f64, usize, usize)> = left
