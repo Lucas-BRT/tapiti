@@ -105,6 +105,8 @@ pub struct Overlays {
     pub temperature: bool,
     pub light: bool,
     pub events: bool,
+    /// The level of a stacked floor on show (0 is the first); a floor with one level ignores it.
+    pub level: Option<usize>,
     pub labels: bool,
     pub ports: bool,
     pub pairs: bool,
@@ -200,6 +202,7 @@ impl App {
                 temperature: false,
                 light: false,
                 events: true,
+                level: Some(0),
                 labels: true,
                 ports: false,
                 pairs: false,
@@ -261,6 +264,10 @@ impl App {
         }
         if std::env::var("TAPITI_HEIGHT").is_ok() {
             self.params.environment.height.enabled = true;
+        }
+        if let Ok(n) = std::env::var("TAPITI_LEVELS") {
+            self.params.levels.count = n.parse().unwrap_or(2);
+            self.params.levels.stairs = 2;
         }
         if std::env::var("TAPITI_EVENTS").is_ok() {
             use tapiti_core::environment::{EventSpec, Placement};
@@ -886,6 +893,7 @@ fn skipped_defaults() -> Value {
     serde_json::json!({
         "zones": tapiti_core::params::ZoneSpec::default(),
         "environment": tapiti_core::environment::EnvSpec::default(),
+        "levels": tapiti_core::params::LevelsSpec::default(),
         "topology": { "minDetours": 0 },
     })
 }

@@ -426,10 +426,14 @@ fn height_color(t: f32) -> Color32 {
 }
 
 pub fn draw_floor(painter: &Painter, xf: &Xf, floor: &Floor, overlays: Overlays, pal: &Palette) {
+    // A stacked floor is drawn one level at a time: levels overlap in plan, and drawn together they cannot be read.
+    let view = overlays.level.filter(|_| floor.stack.is_some());
+    let on = |room: &tapiti_core::generate::Room| view.is_none_or(|v| room.level == v);
+    let node_level = tapiti_core::environment::height::node_levels(floor);
     if overlays.cells {
         grid(painter, xf, &floor.grid_x, &floor.grid_y, pal.grid);
     }
-    if overlays.pairs {
+    if overlays.pairs && view.is_none_or(|v| v == 0) {
         for [a, b] in &floor.pairs {
             if let (Some(first), Some(second)) = (floor.rooms.get(*a), floor.rooms.get(*b)) {
                 painter.add(Draw::dashed_line(
@@ -441,7 +445,7 @@ pub fn draw_floor(painter: &Painter, xf: &Xf, floor: &Floor, overlays: Overlays,
             }
         }
     }
-    if overlays.candidates {
+    if overlays.candidates && view.is_none_or(|v| v == 0) {
         for candidate in &floor.candidates {
             polyline(
                 painter,
@@ -454,6 +458,12 @@ pub fn draw_floor(painter: &Painter, xf: &Xf, floor: &Floor, overlays: Overlays,
         }
     }
     for edge in &floor.edges {
+        if edge.stair {
+            continue;
+        }
+        if view.is_some_and(|v| node_level[edge.u] != v) {
+            continue;
+        }
         polyline(
             painter,
             xf,
@@ -483,7 +493,7 @@ pub fn draw_floor(painter: &Painter, xf: &Xf, floor: &Floor, overlays: Overlays,
     } else {
         Vec::new()
     };
-    for room in &floor.rooms {
+    for room in floor.rooms.iter().filter(|r| on(r)) {
         if room.alive {
             let alpha = if room.leaf { 0.65 } else { 0.92 };
             let mut fill = pal.shape(room.cls.name());
@@ -525,7 +535,7 @@ pub fn draw_floor(painter: &Painter, xf: &Xf, floor: &Floor, overlays: Overlays,
         }
     }
     if overlays.ports {
-        for room in &floor.rooms {
+        for room in floor.rooms.iter().filter(|r| on(r)) {
             for port in &room.ports {
                 let half = (4.0 * xf.scale).max(1.5);
                 painter.rect_filled(
@@ -536,7 +546,7 @@ pub fn draw_floor(painter: &Painter, xf: &Xf, floor: &Floor, overlays: Overlays,
             }
         }
     }
-    for room in &floor.rooms {
+    for room in floor.rooms.iter().filter(|r| on(r)) {
         for port in &room.used {
             let d = dir_of(port.k);
             polyline(
@@ -572,6 +582,9 @@ pub fn draw_floor(painter: &Painter, xf: &Xf, floor: &Floor, overlays: Overlays,
                     .map_or("?".to_string(), |c| c.to_uppercase().to_string());
                 for &i in &kind.nodes {
                     if let Node::Room { room } = &floor.nodes[i] {
+                        if !on(&floor.rooms[*room]) {
+                            continue;
+                        }
                         let r = &floor.rooms[*room];
                         let at = xf.pt([r.bounds.hi[0], r.bounds.lo[1]])
                             + eframe::egui::vec2(-9.0 - 15.0 * slot[*room] as f32, 9.0);
@@ -599,6 +612,9 @@ pub fn draw_floor(painter: &Painter, xf: &Xf, floor: &Floor, overlays: Overlays,
             ] {
                 for &i in nodes {
                     if let Node::Room { room } = &floor.nodes[i] {
+                        if !on(&floor.rooms[*room]) {
+                            continue;
+                        }
                         let at = xf.pt(floor.rooms[*room].bounds.lo) + eframe::egui::vec2(9.0, 9.0);
                         painter.circle_filled(at, 6.0, color);
                         painter.circle_stroke(at, 6.0, eframe::egui::Stroke::new(1.0, pal.ink));
@@ -608,7 +624,7 @@ pub fn draw_floor(painter: &Painter, xf: &Xf, floor: &Floor, overlays: Overlays,
         }
     }
     if overlays.labels {
-        for room in floor.rooms.iter().filter(|room| room.alive) {
+        for room in floor.rooms.iter().filter(|room| room.alive && on(room)) {
             let role = if room.role == Role::Plain {
                 String::new()
             } else {
@@ -616,6 +632,21 @@ pub fn draw_floor(painter: &Painter, xf: &Xf, floor: &Floor, overlays: Overlays,
             };
             let text = format!("#{} {}{}", room.id, class_label(room.cls.name()), role);
             label(painter, xf, &text, room.center, pal.on_room(), 18.0);
+        }
+    }
+    // The stairs, over the rooms: marks where the level goes up or down.
+    for edge in floor.edges.iter().filter(|e| e.stair) {
+        if view.is_none_or(|v| node_level[edge.u] == v || node_level[edge.v] == v) {
+            let at = xf.pt(edge.pts[0]);
+            painter.circle_filled(at, 9.0, pal.accent);
+            painter.circle_stroke(at, 9.0, eframe::egui::Stroke::new(1.0, pal.ink));
+            painter.text(
+                at,
+                eframe::egui::Align2::CENTER_CENTER,
+                "S",
+                eframe::egui::FontId::proportional(10.0),
+                Color32::WHITE,
+            );
         }
     }
 }

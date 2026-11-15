@@ -173,6 +173,7 @@ impl<'a> Gen<'a> {
             v,
             pts,
             ends,
+            stair: false,
             region,
         });
         self.edge_index.insert_region(id, &self.edges[id].region);
@@ -271,6 +272,7 @@ impl<'a> Gen<'a> {
             v: old_v,
             pts: second,
             ends: [None, old_end],
+            stair: false,
             region: tail_region,
         });
         self.edge_index.insert_region(e, &self.edges[e].region);

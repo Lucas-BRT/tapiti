@@ -144,6 +144,48 @@ pub fn corridor_length(pts: &[V]) -> f64 {
     pts.windows(2).map(|s| dist(s[0], s[1])).sum()
 }
 
+/// The length of a graph edge, the one every layer uses: a corridor's length; a stair's run, such that a whole storey is within the
+/// steepest slope (`storey / maxSlope`), so a stair is always legal for height and spreads humidity and light as the long way it is.
+pub fn edge_length(floor: &Floor, e: &crate::generate::Edge) -> f64 {
+    if e.stair {
+        floor.params.levels.storey / floor.params.environment.height.max_slope.max(1e-9)
+    } else {
+        corridor_length(&e.pts)
+    }
+}
+
+/// The level of every node: a room's own, a junction's the level of the rooms its corridors join.
+pub fn node_levels(floor: &Floor) -> Vec<usize> {
+    let mut level: Vec<Option<usize>> = floor
+        .nodes
+        .iter()
+        .map(|n| match n {
+            Node::Room { room } => Some(floor.rooms[*room].level),
+            Node::Junction { .. } => None,
+        })
+        .collect();
+    loop {
+        let mut changed = false;
+        for e in floor.edges.iter().filter(|e| !e.stair) {
+            match (level[e.u], level[e.v]) {
+                (Some(l), None) => {
+                    level[e.v] = Some(l);
+                    changed = true;
+                }
+                (None, Some(l)) => {
+                    level[e.u] = Some(l);
+                    changed = true;
+                }
+                _ => {}
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+    level.into_iter().map(|l| l.unwrap_or(0)).collect()
+}
+
 /// The largest function below `targets` that changes by at most `slope * length` along every edge `(u, v, length)`.
 /// A target of infinity means no preference. Bellman-Ford sweeps in the order of `edges`: sums and comparisons only.
 pub fn legal_heights(edges: &[(usize, usize, f64)], mut h: Vec<f64>, slope: f64) -> Vec<f64> {
@@ -172,7 +214,7 @@ pub fn edge_slopes(d: &Floor, field: &HeightField) -> Vec<f64> {
     d.edges
         .iter()
         .map(|e| {
-            let length = corridor_length(&e.pts);
+            let length = edge_length(d, e);
             let rise = (field.nodes[e.u] - field.nodes[e.v]).abs();
             if length > 0.0 {
                 rise / length
@@ -215,22 +257,33 @@ impl HeightLayer {
             HeightStyle::Hills => vec![0; n],
         };
         let farthest = hops.iter().copied().max().unwrap_or(0).max(1) as f64;
+        // A stacked floor stands each level one storey above the last.
+        let level = node_levels(floor);
+        let storey = floor.params.levels.storey;
         let targets: Vec<f64> = floor
             .nodes
             .iter()
             .enumerate()
             .map(|(i, node)| match node {
-                Node::Room { .. } => match spec.style {
-                    HeightStyle::Hills => spec.relief * rng.next(),
-                    HeightStyle::Descent => -spec.relief * hops[i] as f64 / farthest,
-                },
+                Node::Room { .. } => {
+                    let own = match spec.style {
+                        HeightStyle::Hills => spec.relief * rng.next(),
+                        HeightStyle::Descent => -spec.relief * hops[i] as f64 / farthest,
+                    };
+                    // Level 0 adds nothing, not even a zero that would turn a -0.0 into 0.0 in the JSON.
+                    if level[i] == 0 {
+                        own
+                    } else {
+                        level[i] as f64 * storey + own
+                    }
+                }
                 Node::Junction { .. } => f64::INFINITY,
             })
             .collect();
         let edges: Vec<(usize, usize, f64)> = floor
             .edges
             .iter()
-            .map(|e| (e.u, e.v, corridor_length(&e.pts)))
+            .map(|e| (e.u, e.v, edge_length(floor, e)))
             .collect();
         let mut nodes = legal_heights(&edges, targets, spec.max_slope);
         for h in &mut nodes {
@@ -262,7 +315,7 @@ impl HeightLayer {
         let edges: Vec<(usize, usize, f64)> = floor
             .edges
             .iter()
-            .map(|e| (e.u, e.v, corridor_length(&e.pts)))
+            .map(|e| (e.u, e.v, edge_length(floor, e)))
             .collect();
         let nodes = legal_heights(&edges, targets.clone(), self.0.max_slope);
         let lowered = nodes

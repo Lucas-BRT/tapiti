@@ -333,12 +333,20 @@ fn layout_card(app: &mut App, ui: &mut Ui) {
             .num_columns(3)
             .spacing([8.0, 6.0])
             .show(ui, |ui| {
-                let paths = std::iter::once("layout").chain(
-                    layout_fields(layout)
-                        .iter()
-                        .copied()
-                        .filter(|p| crate::relevance::applies(p, &app.params)),
-                );
+                let levels = app.params.levels.count > 1;
+                let paths = std::iter::once("layout")
+                    .chain(
+                        layout_fields(layout)
+                            .iter()
+                            .copied()
+                            .filter(|p| crate::relevance::applies(p, &app.params)),
+                    )
+                    .chain(["levels.count"])
+                    .chain(
+                        ["levels.stairs", "levels.storey"]
+                            .into_iter()
+                            .filter(|_| levels),
+                    );
                 for path in paths {
                     if let Some(field) = app
                         .groups
@@ -914,6 +922,7 @@ fn advanced_tab(app: &mut App, ui: &mut Ui) {
                     || (f.path != "topology.profile"
                         && !f.path.starts_with("zones.")
                         && !(f.path.starts_with("environment.") && in_environment_card(&f.path))
+                        && !f.path.starts_with("levels.")
                         && f.path != "layout"
                         && !layout_fields(app.params.layout).contains(&f.path.as_str())
                         && !intent_fields(app.params.topology.profile).contains(&f.path.as_str())
@@ -1130,7 +1139,12 @@ pub fn central(app: &mut App, ui: &mut Ui) {
 
             if response.hovered() && !response.dragged() && !app.showing_building() {
                 if let (Some(pos), Some(generated)) = (response.hover_pos(), &app.generated) {
-                    let info = map_object_at(&generated.floor, xf.to_world(pos), app.zoom);
+                    let info = map_object_at(
+                        &generated.floor,
+                        xf.to_world(pos),
+                        app.zoom,
+                        app.overlays.level,
+                    );
                     if !info.is_empty() {
                         response.on_hover_text_at_pointer(info);
                     }
@@ -1157,6 +1171,30 @@ fn zoom_at(app: &mut App, xf: &Xf, anchor: egui::Pos2, factor: f64) {
 /// What floats over the map: the layers at the top left, the zoom at the bottom right.
 fn map_controls(app: &mut App, ui: &mut Ui, rect: egui::Rect) {
     let margin = Vec2::splat(10.0);
+    // The level of a stacked floor on show.
+    let levels = app
+        .generated
+        .as_ref()
+        .and_then(|g| g.floor.stack.as_ref())
+        .map_or(0, |s| s.levels.len());
+    if levels > 1 {
+        egui::Area::new(ui.scope_id().with("map_levels"))
+            .fixed_pos(rect.left_top() + margin + Vec2::new(84.0, 0.0))
+            .show(ui.ctx(), |ui| {
+                let shown = app.overlays.level.unwrap_or(0).min(levels - 1);
+                egui::ComboBox::from_id_salt("map_level")
+                    .selected_text(format!("Level {}", shown + 1))
+                    .show_ui(ui, |ui| {
+                        for k in 0..levels {
+                            ui.selectable_value(
+                                &mut app.overlays.level,
+                                Some(k),
+                                format!("Level {}", k + 1),
+                            );
+                        }
+                    });
+            });
+    }
     egui::Area::new(ui.scope_id().with("map_layers"))
         .fixed_pos(rect.left_top() + margin)
         .show(ui.ctx(), |ui| {

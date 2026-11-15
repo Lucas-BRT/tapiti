@@ -424,6 +424,12 @@ The `environment.events` layer scatters kinds of event that you name over the fl
 
 The validator checks (E5) that every occurrence is in a live room, within the count, that no kind repeats a room, keeps its gap and its zone, stays off the entrance and the exit when asked, and that no room holds two kinds when they are exclusive.
 
+### Stacked levels
+
+`levels.count` stacks several levels in the same world: level 0 is the floor generated for the seed, and level $k$ the floor generated for an integer mix of the seed and $k$, each with the whole pipeline and the same Λ, so nothing leaks from one level to the next and one level is the floor as it always was. No level is moved, and rooms of different levels may overlap in plan. Between two consecutive levels, `levels.stairs` stairs are placed, each where a room of one level and a room of the next overlap most (at least two corridor widths each way, the lowest indices on a tie, no room twice, never an entrance, an exit or a leaf chamber). A stair is an edge of the graph with no doors and no geometry. The entrance is that of level 0 and the exit that of the last level, and the main path is the shortest walk between them over the stairs. Levels need an entrance and an exit; if two consecutive levels have no overlap big enough for a stair they stay unjoined, the validator fails (V7, and V1 over the whole) and `stage` draws again.
+
+The validator checks every level alone against all the rules of the floor (so a level's own entrance and exit, and the topology requirements, hold per level), the stairs (V7: they join consecutive levels, at overlapping rooms, none more than asked, one at least) and that every room is reached from the entrance over all of them (V1). The environment layers run once on the whole. A stair has the length $\ell=\text{storey}/s$, with $s$ the steepest slope, so a whole storey is always within the slope; with Height on, each level's targets stand one `storey` above the last. Height before the layout is not available with several levels.
+
 ### Zones
 
 The `zones` parameter cuts the world into $k$ strips along its longer side, $k$ being `zones.count` (two at least, and no more than half the longer side in cells, four at most, so each strip stays two cells wide or more). Zoning is independent of the layout and of the topology profile. The zone of a point is a pure function of the point and of Λ, so it draws nothing from the generator and a floor without zones draws what it always drew.

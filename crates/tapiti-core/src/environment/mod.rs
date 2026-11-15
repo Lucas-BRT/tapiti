@@ -90,7 +90,7 @@ pub fn fade_from(floor: &Floor, from: &[bool], reach: f64) -> Vec<f64> {
     let edges: Vec<(usize, usize, f64)> = floor
         .edges
         .iter()
-        .map(|e| (e.u, e.v, height::corridor_length(&e.pts)))
+        .map(|e| (e.u, e.v, height::edge_length(floor, e)))
         .collect();
     for _ in 0..=n {
         let mut changed = false;

@@ -45,6 +45,17 @@ pub struct Room {
     pub leaf: bool,
     pub alive: bool,
     pub role: Role,
+    /// The level of a stacked floor the room is on; left out of the JSON for level 0.
+    #[serde(skip_serializing_if = "is_level_zero")]
+    pub level: usize,
+}
+
+fn is_level_zero(level: &usize) -> bool {
+    *level == 0
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -63,6 +74,9 @@ pub struct Edge {
     pub v: usize,
     pub pts: Vec<V>,
     pub ends: [Option<Port>; 2],
+    /// A stair between two levels of a stacked floor, not a corridor: it has no doors and no geometry of its own.
+    #[serde(skip_serializing_if = "is_false")]
+    pub stair: bool,
     /// Collision geometry is kept in Rust for generation/validation but is not
     /// needed by the viewer's map representation.
     #[serde(skip)]
@@ -127,8 +141,34 @@ pub struct Floor {
     /// What the environment layers computed; absent while none ran.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub environment: Option<crate::environment::Environment>,
+    /// How a stacked floor is made of its levels; absent with one level.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stack: Option<StackInfo>,
     /// Milliseconds each phase of the generator took, in order (rooms, candidates, tree, β_max, cycles, leaf chambers).
     pub phases: Vec<(String, f64)>,
+}
+
+/// Where each level of a stacked floor starts in the ids of the whole, and the anchors of its own.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LevelInfo {
+    pub room_offset: usize,
+    pub rooms: usize,
+    pub node_offset: usize,
+    pub nodes: usize,
+    pub edge_offset: usize,
+    pub edges: usize,
+    /// The level's own entrance and exit (room ids of the whole), and its path between them (node ids of the whole).
+    pub entrance: Option<usize>,
+    pub exit: Option<usize>,
+    pub main_path: Vec<usize>,
+}
+
+/// A stacked floor: levels generated one by one in the same world, joined by stairs where rooms of consecutive levels overlap.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StackInfo {
+    pub levels: Vec<LevelInfo>,
 }
 
 /// A lightweight event stream for drawing a floor while it is being built.

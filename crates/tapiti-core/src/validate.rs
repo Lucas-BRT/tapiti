@@ -7,6 +7,9 @@ use crate::spatial::SpatialHash;
 use std::collections::{HashMap, HashSet};
 
 pub fn validate(d: &Floor) -> Vec<String> {
+    if d.stack.is_some() {
+        return crate::generate::validate_stack(d);
+    }
     let p = &d.params;
     let mut out: Vec<String> = Vec::new();
     if let Some(error) = p.intent_error() {
@@ -438,6 +441,14 @@ pub fn validate(d: &Floor) -> Vec<String> {
         }
     }
 
+    out.extend(environment_violations(d));
+
+    out
+}
+
+/// The checks of the environment layers (E1 to E5), on the floor as it stands.
+pub(crate) fn environment_violations(d: &Floor) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
     // E: the environment layers (E1 height).
     if let Some(field) = d.environment.as_ref().and_then(|e| e.height.as_ref()) {
         out.extend(crate::environment::height::check(d, field));

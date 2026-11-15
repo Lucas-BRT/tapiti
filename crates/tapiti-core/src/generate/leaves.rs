@@ -86,6 +86,7 @@ pub(super) fn add_leaf_chambers(
             leaf: true,
             alive: true,
             role: Role::Plain,
+            level: 0,
         };
         let center = room.center;
         g.rooms.push(room);

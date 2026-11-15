@@ -112,6 +112,7 @@ pub(super) fn grow_rooms(
             leaf: false,
             alive: true,
             role: Role::Plain,
+            level: 0,
         }
     };
 

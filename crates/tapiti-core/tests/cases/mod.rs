@@ -151,5 +151,22 @@ pub fn cases() -> Vec<(String, Params)> {
         },
     ];
     out.push(("events-zones-bsp-large".into(), zoned));
+    let mut tower = rich_of_size(Size::Medium);
+    tower.layout = Layout::Growth;
+    tower.levels = tapiti_core::params::LevelsSpec {
+        count: 3,
+        stairs: 2,
+        ..Default::default()
+    };
+    out.push(("levels-3-growth-medium".into(), tower));
+    let mut deep = params_of_size(Size::Medium);
+    deep.apply_intent(TopologyProfile::Ring);
+    deep.levels.count = 2;
+    deep.environment.height.enabled = true;
+    deep.environment.water.enabled = true;
+    deep.environment.climate.enabled = true;
+    deep.environment.light.enabled = true;
+    deep.environment.light.torches = 3;
+    out.push(("levels-2-ring-all-layers-medium".into(), deep));
     out
 }
