@@ -372,6 +372,116 @@ function junctionPillars(floor) {
   return Float32Array.from(out)
 }
 
+/* ---------------- Things lying about: bones, skulls, webs ---------------- */
+
+/** A small deterministic generator, so the same floor always gets the same bones. */
+function rng(seed) {
+  let a = (seed * 2654435761 + 1013904223) >>> 0
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0
+    let t = a
+    t = Math.imul(t ^ (t >>> 15), t | 1)
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
+
+function distToPath(points, x, y) {
+  let best = Infinity
+  for (let i = 1; i < points.length; i++) best = Math.min(best, pointSegment(x, y, points[i - 1][0], points[i - 1][1], points[i][0], points[i][1]))
+  return best
+}
+
+/** Bones and skulls inside rooms, kept off the pencilled route and away from the walls. [x, z, angle, scale] per piece. */
+function propsAt(floor, points) {
+  const bones = []
+  const skulls = []
+  for (const room of floor.rooms) {
+    if (!room.alive) continue
+    const rand = rng(room.id + 7)
+    const s = room.shape
+    const [x0, y0, x1, y1] =
+      s.kind === 'disc' ? [s.c[0] - s.r, s.c[1] - s.r, s.c[0] + s.r, s.c[1] + s.r] : s.pts.reduce((b, [x, y]) => [Math.min(b[0], x), Math.min(b[1], y), Math.max(b[2], x), Math.max(b[3], y)], [Infinity, Infinity, -Infinity, -Infinity])
+    const area = Math.min(((x1 - x0) * (y1 - y0)) / 9000, 6)
+    const piles = 1 + Math.floor(area * 0.8 + rand() * 2)
+    for (let n = 0, placed = 0; n < 40 && placed < piles; n++) {
+      const x = x0 + rand() * (x1 - x0)
+      const y = y0 + rand() * (y1 - y0)
+      if (shapeValue(s, x, y) < 22 || distToPath(points, x, y) < 30) continue
+      placed++
+      const kinds = 2 + Math.floor(rand() * 3)
+      for (let k = 0; k < kinds; k++) {
+        const px = x + (rand() - 0.5) * 22
+        const py = y + (rand() - 0.5) * 22
+        if (shapeValue(s, px, py) < 12 || distToPath(points, px, py) < 20) continue
+        bones.push(px, py, rand() * Math.PI * 2, 0.8 + rand() * 0.7)
+      }
+      if (rand() < 0.4) skulls.push(x + (rand() - 0.5) * 10, y + (rand() - 0.5) * 10, rand() * Math.PI * 2, 0.85 + rand() * 0.4)
+    }
+  }
+  return { bones: Float32Array.from(bones), skulls: Float32Array.from(skulls) }
+}
+
+/** Cobwebs in the upper corners of rooms: [x, z, dx1, dz1, dx2, dz2, size], the corner and the unit vectors along its two walls. */
+function websAt(floor, loops) {
+  const rooms = floor.rooms.filter((r) => r.alive)
+  const out = []
+  for (const loop of loops) {
+    for (let k = 0; k < loop.length; k++) {
+      const [ax, ay] = loop[(k + loop.length - 1) % loop.length]
+      const [bx, by] = loop[k]
+      const [cx, cy] = loop[(k + 1) % loop.length]
+      const l1 = sqrt((bx - ax) ** 2 + (by - ay) ** 2)
+      const l2 = sqrt((cx - bx) ** 2 + (cy - by) ** 2)
+      if (l1 < 14 || l2 < 14) continue
+      const d1x = (bx - ax) / l1
+      const d1y = (by - ay) / l1
+      const d2x = (cx - bx) / l2
+      const d2y = (cy - by) / l2
+      // The floor lies to the left of travel, so a left turn is a corner of a room, a right turn a pier jutting into it.
+      if (d1x * d2y - d1y * d2x < 0.5 || !onRoomWall(floor, rooms, bx, by) || nearDoor(floor, bx, by)) continue
+      out.push(bx, by, -d1x, -d1y, d2x, d2y, 16 + ((k * 37) % 9))
+    }
+  }
+  return Float32Array.from(out)
+}
+
+/** The route as a ribbon on the floor, `width` wide: positions and [distance along, across] per vertex, so the dashes stay sharp at any size. */
+function routeRibbon(points, lengths, width) {
+  const n = points.length
+  const positions = new Float32Array(n * 2 * 3)
+  const uvs = new Float32Array(n * 2 * 2)
+  const indices = []
+  for (let i = 0; i < n; i++) {
+    const [px, py] = points[Math.max(0, i - 1)]
+    const [nx, ny] = points[Math.min(n - 1, i + 1)]
+    const dx = nx - px
+    const dy = ny - py
+    const len = sqrt(dx * dx + dy * dy) || 1
+    // Averaged normal at a bend; its length is capped so a sharp corner does not spike.
+    const [ax, ay] = points[i]
+    const bx = ax - px
+    const by = ay - py
+    const cx = nx - ax
+    const cy = ny - ay
+    const lb = sqrt(bx * bx + by * by) || 1
+    const lc = sqrt(cx * cx + cy * cy) || 1
+    let mx = -(by / lb + cy / lc)
+    let my = bx / lb + cx / lc
+    const ml = sqrt(mx * mx + my * my)
+    if (ml < 0.4) { mx = -dy / len; my = dx / len } else { mx /= ml; my /= ml }
+    const [tx, ty] = [-dy / len, dx / len]
+    const scale = 1 / Math.max(0.5, mx * tx + my * ty)
+    for (const side of [-1, 1]) {
+      const v = i * 2 + (side < 0 ? 0 : 1)
+      positions.set([ax + mx * scale * width * side * 0.5, 0.2, ay + my * scale * width * side * 0.5], v * 3)
+      uvs.set([lengths[i], side], v * 2)
+    }
+    if (i) indices.push(i * 2 - 2, i * 2 - 1, i * 2, i * 2 - 1, i * 2 + 1, i * 2)
+  }
+  return { positions, uvs, indices: Uint32Array.from(indices) }
+}
+
 /* ---------------- The path and the stations ---------------- */
 
 function pathPoints(floor) {
@@ -416,6 +526,77 @@ function doorsAt(floor) {
   return Float32Array.from(out)
 }
 
+/** Rounds every bend of the walk: each corner is replaced by a quadratic curve that starts and ends `cut` units from it (less on short
+ *  stretches), so the head turns through the bend instead of snapping at it. `cutAt(i)` is the cut of vertex i: small in corridors (46 stays
+ *  inside a 44-wide one), large in a room, where the walk cuts across towards the way out instead of going to the middle first. */
+function smoothPath(points, cutAt) {
+  const out = [points[0]]
+  for (let i = 1; i < points.length - 1; i++) {
+    const [ax, ay] = points[i - 1]
+    const [bx, by] = points[i]
+    const [cx, cy] = points[i + 1]
+    const l1 = sqrt((ax - bx) ** 2 + (ay - by) ** 2)
+    const l2 = sqrt((cx - bx) ** 2 + (cy - by) ** 2)
+    const d = Math.min(cutAt(i), l1 / 2, l2 / 2)
+    const turn = ((bx - ax) * (cx - bx) + (by - ay) * (cy - by)) / (l1 * l2 || 1)
+    if (d < 2 || turn > 0.995) { out.push(points[i]); continue }
+    const p0 = [bx + ((ax - bx) / l1) * d, by + ((ay - by) / l1) * d]
+    const p2 = [bx + ((cx - bx) / l2) * d, by + ((cy - by) / l2) * d]
+    const steps = Math.max(4, Math.ceil(d / 4))
+    for (let k = 0; k <= steps; k++) {
+      const t = k / steps
+      const u = 1 - t
+      out.push([u * u * p0[0] + 2 * u * t * bx + t * t * p2[0], u * u * p0[1] + 2 * u * t * by + t * t * p2[1]])
+    }
+  }
+  out.push(points[points.length - 1])
+  return out
+}
+
+/** Inside a room the walk does not go to the middle and turn there: between the door it comes in by and the door it leaves by it follows one
+ *  cubic curve that leaves along the corridor it came from and arrives along the one it takes next. `rooms` holds the indices of the room
+ *  vertices to replace; the first and last room keep theirs (the walk starts and ends there). */
+function cutRooms(points, rooms) {
+  const out = []
+  const unit = (ax, ay, bx, by) => {
+    const l = sqrt((bx - ax) ** 2 + (by - ay) ** 2)
+    return l < 1 ? null : [(bx - ax) / l, (by - ay) / l]
+  }
+  for (let i = 0; i < points.length; i++) {
+    const a = points[i - 1]
+    const b = points[i + 1]
+    if (!rooms.has(i) || !a || !b || !points[i - 2] || !points[i + 2]) { out.push(points[i]); continue }
+    const tin = unit(...points[i - 2], ...a) ?? unit(...a, ...points[i])
+    const tout = unit(...b, ...points[i + 2]) ?? unit(...points[i], ...b)
+    const reach = 0.5 * sqrt((b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2)
+    const c1 = [a[0] + tin[0] * reach, a[1] + tin[1] * reach]
+    const c2 = [b[0] - tout[0] * reach, b[1] - tout[1] * reach]
+    for (let k = 1; k < 8; k++) {
+      const t = k / 8
+      const u = 1 - t
+      out.push([u * u * u * a[0] + 3 * u * u * t * c1[0] + 3 * u * t * t * c2[0] + t * t * t * b[0], u * u * u * a[1] + 3 * u * u * t * c1[1] + 3 * u * t * t * c2[1] + t * t * t * b[1]])
+    }
+  }
+  return out
+}
+
+/** Arc length along `points` (with cumulative `lengths`) of the point nearest to (x, y). */
+function arcAt(points, lengths, x, y) {
+  let best = Infinity
+  let at = 0
+  for (let i = 1; i < points.length; i++) {
+    const [ax, ay] = points[i - 1]
+    const [bx, by] = points[i]
+    const dx = bx - ax
+    const dy = by - ay
+    const len2 = dx * dx + dy * dy
+    const t = len2 ? Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / len2)) : 0
+    const d = (ax + t * dx - x) ** 2 + (ay + t * dy - y) ** 2
+    if (d < best) { best = d; at = lengths[i - 1] + t * (lengths[i] - lengths[i - 1]) }
+  }
+  return at
+}
+
 /** Where the walk starts: inside the first room, as far back from its way out as the room allows, so the camera looks at the way in. */
 function introPoint(field, points) {
   const [cx, cy] = points[0]
@@ -430,7 +611,10 @@ function introPoint(field, points) {
 
 /* ---------------- Everything ---------------- */
 
-export function build(floor) {
+/** `route` is an optional hand-made walk (see walk/route.json and walk/editor.js): `waypoints` [[x, z], ...] replace the generated path (the
+ *  first is where the walk starts) and `stations` [{x, z, rest}] say where the walk stops in each of the seven rooms and for how long
+ *  (`rest`, in screen heights). Anything left out is generated. */
+export function build(floor, route = null) {
   const field = sampleField(floor)
   const loops = contours(field)
     .map((loop) => simplifyLoop(oriented(field, loop), SIMPLIFY))
@@ -443,8 +627,10 @@ export function build(floor) {
 
   const walked = pathPoints(floor)
   const intro = introPoint(field, walked.points)
-  const points = [intro, ...walked.points]
-  const mark = walked.mark.map((m) => ({ ...m, at: m.at + 1 }))
+  const roomAt = walked.mark.filter((m) => floor.nodes[m.node].kind === 'room').map((m) => m.at + 1)
+  const raw = [intro, ...walked.points]
+  const edited = route?.waypoints?.length >= 2
+  const points = edited ? smoothPath(route.waypoints.map(([x, z]) => [x, z]), () => 46) : smoothPath(cutRooms(raw, new Set(roomAt.slice(1, -1))), () => 46)
   const lengths = new Float32Array(points.length)
   for (let i = 1; i < points.length; i++) {
     const dx = points[i][0] - points[i - 1][0]
@@ -452,13 +638,16 @@ export function build(floor) {
     lengths[i] = lengths[i - 1] + sqrt(dx * dx + dy * dy)
   }
   const total = lengths[lengths.length - 1] || 1
-  const roomMarks = mark.filter((m) => floor.nodes[m.node].kind === 'room')
+  const roomMarks = walked.mark.filter((m) => floor.nodes[m.node].kind === 'room')
   const stations = Array.from({ length: STATIONS }, (_, i) => {
     const m = roomMarks[Math.round((i * (roomMarks.length - 1)) / (STATIONS - 1))]
     const room = floor.nodes[m.node].room
     const [x, y] = floor.rooms[room].center
-    // The walk begins at the intro point, a little before the first room's centre: station 0 is that start.
-    return { room, x, y, u: i === 0 ? 0 : lengths[m.at] / total }
+    // The walk begins at the intro point, a little before the first room's centre: station 0 is that start. The others are where the
+    // rounded path passes closest to their room's centre.
+    const mine = route?.stations?.[i]
+    const [sx, sy] = mine && edited ? [mine.x, mine.z] : [x, y]
+    return { room, x: sx, y: sy, u: i === 0 ? 0 : arcAt(points, lengths, sx, sy) / total, rest: mine?.rest ?? 1.3 }
   })
 
   const leaf = floor.rooms.find((r) => r.alive && r.leaf)
@@ -475,12 +664,16 @@ export function build(floor) {
     bounds: field.bounds,
     mask: { data: mask, nx: field.nx, ny: field.ny, ox: field.ox, oy: field.oy, cell: CELL },
     walls: wallMesh(loops),
+    props: propsAt(floor, points),
+    webs: websAt(floor, loops),
+    route: routeRibbon(points, lengths, 1.6),
     torches: placeTorches(floor, loops),
     pillars: junctionPillars(floor),
     doors: doorsAt(floor),
     intro,
     path: { points: Float32Array.from(points.flatMap(([x, y]) => [x, 0, y])), lengths, total },
     stations,
+    waypoints: simplifyChain(points, 3),
     leafRoom: leaf ? { id: leaf.id, center: leaf.center, cls: leaf.cls } : null,
     stairs: { room: floor.exit, center: stairs.center, radius: stairsRadius },
     contours: loops.length,

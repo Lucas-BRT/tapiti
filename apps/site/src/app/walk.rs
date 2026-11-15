@@ -83,6 +83,8 @@ pub async fn scene_backdrop(
                 data-three=(asset!("assets/vendor/three-subset.min.js"))
                 data-build=(asset!("assets/walk/build.js"))
                 data-paper=(asset!("assets/walk/paper.js"))
+                data-route=(include_str!("../../assets/walk/route.json"))
+                data-editor=(asset!("assets/walk/editor.js"))
                 data-seed=(floor::WALK_SEED.to_string())
                 data-size=(floor::WALK_SIZE_INDEX.to_string())
             }

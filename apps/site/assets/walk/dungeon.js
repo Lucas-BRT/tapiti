@@ -19,7 +19,7 @@ const lerp = (a, b, t) => a + (b - a) * t
 /** Human scale: a corridor is 44 units wide, about 2.5 m, so a metre is 17.6 units. */
 const EYE = 29
 const WALL = 60
-const LOOK = 90
+const LOOK = 60
 
 function hasWebGL2() {
   try {
@@ -38,58 +38,23 @@ function remember(key, value, store = localStorage) {
   }
 }
 
-/** Paper flags and the pencilled route, clipped by the floor mask. */
-function flagTexture(THREE, scene, size) {
+/** The floor's outline as the alpha of a texture, one texel per grid cell: everything else on the floor is drawn per pixel by the shaders. */
+function outlineTexture(THREE, scene) {
   const [x0, y0, x1, y1] = scene.bounds
-  const W = size
-  const H = Math.round((size * (y1 - y0)) / (x1 - x0))
-  const sx = W / (x1 - x0)
-  const sy = H / (y1 - y0)
-  const canvas = document.createElement('canvas')
-  canvas.width = W
-  canvas.height = H
-  const c = canvas.getContext('2d')
   const m = scene.mask
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.ceil((x1 - x0) / m.cell)
+  canvas.height = Math.ceil((y1 - y0) / m.cell)
   const small = document.createElement('canvas')
   small.width = m.nx
   small.height = m.ny
-  const image = small.getContext('2d').createImageData(m.nx, m.ny)
+  const context = small.getContext('2d')
+  const image = context.createImageData(m.nx, m.ny)
   for (let i = 0; i < m.data.length; i++) { image.data[i * 4] = image.data[i * 4 + 1] = image.data[i * 4 + 2] = 255; image.data[i * 4 + 3] = m.data[i] }
-  small.getContext('2d').putImageData(image, 0, 0)
-  c.imageSmoothingEnabled = true
-  c.drawImage(small, (m.ox - x0 + m.cell / 2) * sx, (m.oy - y0 + m.cell / 2) * sy, m.nx * m.cell * sx, m.ny * m.cell * sy)
-  c.globalCompositeOperation = 'source-in'
-  c.fillStyle = css('--scene-floor')
-  c.fillRect(0, 0, W, H)
-  c.globalCompositeOperation = 'source-atop'
-  const flagW = 28 * sx
-  const flagH = 28 * sy
-  c.globalAlpha = 0.2
-  c.strokeStyle = css('--scene-ink')
-  c.lineWidth = 0.8
-  for (let row = 0, y = 0; y < H; row++, y += flagH) {
-    c.beginPath()
-    c.moveTo(0, y)
-    c.lineTo(W, y)
-    for (let x = -((row * 0.5 + 0.3) % 1) * flagW; x < W; x += flagW) { c.moveTo(x, y); c.lineTo(x, y + flagH) }
-    c.stroke()
-  }
-  c.globalAlpha = 1
-  c.strokeStyle = css('--scene-route')
-  c.lineWidth = 1.8 * sx
-  c.setLineDash([8 * sx, 6 * sx])
-  c.beginPath()
-  const points = scene.path.points
-  for (let i = 0; i < points.length; i += 3) {
-    const x = (points[i] - x0) * sx, y = (points[i + 2] - y0) * sy
-    if (i) c.lineTo(x, y)
-    else c.moveTo(x, y)
-  }
-  c.stroke()
-  c.setLineDash([])
+  context.putImageData(image, 0, 0)
+  canvas.getContext('2d').drawImage(small, (m.ox - x0) / m.cell - 0.5, (m.oy - y0) / m.cell - 0.5)
   const texture = new THREE.CanvasTexture(canvas)
   texture.colorSpace = THREE.SRGBColorSpace
-  texture.anisotropy = 8
   return texture
 }
 
@@ -117,23 +82,64 @@ export function mount({ THREE, paper, canvas, floor, scene: built, page }) {
   const wallMaterial = paper.wallMaterial(THREE, css('--scene-wall'), css('--scene-ink'))
   scene.add(new THREE.Mesh(wallGeometry, wallMaterial))
 
-  /* The paper floor keeps the real outline; the untouched page is the sky. */
+  /* The paper floor keeps the real outline; the untouched page is the sky. The ceiling is the same outline at wall height. */
   const [bx0, by0, bx1, by1] = built.bounds
-  const texture = flagTexture(THREE, built, 2048)
+  const texture = outlineTexture(THREE, built)
   const plane = new THREE.PlaneGeometry(bx1 - bx0, by1 - by0)
-  const floorMaterial = new THREE.MeshBasicMaterial({ map: texture, alphaTest: 0.5 })
   // Keep the stairwell open in the floor plane.
   const wellSide = Math.min(built.stairs.radius * 1.1, 110)
   const well = [built.stairs.center[0] - wellSide / 2, built.stairs.center[1] - wellSide / 2, built.stairs.center[0] + wellSide / 2, built.stairs.center[1] + wellSide / 2]
-  floorMaterial.onBeforeCompile = (shader) => {
-    shader.uniforms.uWell = { value: Float32Array.from(well) }
-    shader.vertexShader = shader.vertexShader.replace('void main() {', 'varying vec3 vFloorPos;\nvoid main() {').replace('#include <begin_vertex>', '#include <begin_vertex>\nvFloorPos = (modelMatrix * vec4(position, 1.0)).xyz;')
-    shader.fragmentShader = shader.fragmentShader.replace('void main() {', 'uniform vec4 uWell;\nvarying vec3 vFloorPos;\nvoid main() {\n  if (vFloorPos.x > uWell.x && vFloorPos.x < uWell.z && vFloorPos.z > uWell.y && vFloorPos.z < uWell.w) discard;')
+  const aoStep = [16 / (bx1 - bx0), 16 / (by1 - by0)]
+  const floorMaterial = paper.slabMaterial(THREE, { color: css('--scene-floor'), ink: css('--scene-ink'), map: texture, well, aoStep })
+  const ceilingMaterial = paper.slabMaterial(THREE, { color: css('--scene-ceiling'), ink: css('--scene-ink'), map: texture, well: [0, 0, 0, 0], ceiling: true, aoStep })
+  for (const [material, y] of [[floorMaterial, 0], [ceilingMaterial, WALL]]) {
+    const slab = new THREE.Mesh(plane, material)
+    slab.rotation.x = -Math.PI / 2
+    slab.position.set((bx0 + bx1) / 2, y, (by0 + by1) / 2)
+    scene.add(slab)
   }
-  const ground = new THREE.Mesh(plane, floorMaterial)
-  ground.rotation.x = -Math.PI / 2
-  ground.position.set((bx0 + bx1) / 2, 0, (by0 + by1) / 2)
-  scene.add(ground)
+  /* The route, as a ribbon with sharp dashes. */
+  const routeGeometry = new THREE.BufferGeometry()
+  routeGeometry.setAttribute('position', new THREE.BufferAttribute(built.route.positions, 3))
+  routeGeometry.setAttribute('uv', new THREE.BufferAttribute(built.route.uvs, 2))
+  routeGeometry.setIndex(new THREE.BufferAttribute(built.route.indices, 1))
+  const routeMaterial = paper.routeMaterial(THREE, { color: css('--scene-route'), well })
+  const route = new THREE.Mesh(routeGeometry, routeMaterial)
+  route.renderOrder = 1
+  scene.add(route)
+  /* Cobwebs in the upper corners of the rooms. */
+  const webGeometry = paper.webGeometry(THREE, built.webs, WALL - 0.4)
+  const webMaterial = paper.webMaterial(THREE, css('--scene-ink'))
+  const webs = new THREE.Mesh(webGeometry, webMaterial)
+  webs.renderOrder = 2
+  scene.add(webs)
+  /* Bones and skulls on the floors of the rooms, each with an inked outline (the same shape, larger, drawn from the back). */
+  const shapes = paper.propGeometries(THREE)
+  const propMaterials = []
+  const addProps = (geometry, data, color) => {
+    const n = data.length / 4
+    if (!n) return
+    const body = new THREE.MeshBasicMaterial({ color, vertexColors: true })
+    const rim = new THREE.MeshBasicMaterial({ color: css('--scene-ink'), side: 1, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 })
+    const meshes = [new THREE.InstancedMesh(geometry, body, n), new THREE.InstancedMesh(geometry, rim, n)]
+    const mat = new THREE.Matrix4()
+    const q = new THREE.Quaternion()
+    const pos = new THREE.Vector3()
+    const sc = new THREE.Vector3()
+    for (let i = 0; i < n; i++) {
+      const [x, z, angle, size] = data.subarray(i * 4, i * 4 + 4)
+      q.setFromAxisAngle(up, angle)
+      pos.set(x, 0, z)
+      meshes[0].setMatrixAt(i, mat.compose(pos, q, sc.set(size, size, size)))
+      pos.y = 0.12
+      meshes[1].setMatrixAt(i, mat.compose(pos, q, sc.set(size * 1.12, size * 1.2, size * 1.12)))
+    }
+    scene.add(...meshes)
+    propMaterials.push(body, rim)
+  }
+  const up = new THREE.Vector3(0, 1, 0)
+  addProps(shapes.bone, built.props.bones, css('--scene-bone'))
+  addProps(shapes.skull, built.props.skulls, css('--scene-bone'))
   /* Corner pillars at the junctions hide the seams where corridors cross. */
   const pillars = built.pillars.length / 2
   const pillarMaterial = paper.wallMaterial(THREE, css('--scene-wall'), css('--scene-ink'))
@@ -165,7 +171,6 @@ export function mount({ THREE, paper, canvas, floor, scene: built, page }) {
   const dq = new THREE.Quaternion()
   const dpos = new THREE.Vector3()
   const dscale = new THREE.Vector3(1, 1, 1)
-  const up = new THREE.Vector3(0, 1, 0)
   for (let i = 0; i < doors; i++) {
     const [x, z, dx, dz] = built.doors.subarray(i * 4, i * 4 + 4)
     // The box's x axis lies across the corridor, its z along it.
@@ -314,7 +319,7 @@ export function mount({ THREE, paper, canvas, floor, scene: built, page }) {
       sign.el.style.pointerEvents = opacity > 0.6 ? 'auto' : 'none'
       sign.el.inert = opacity <= 0.6
       // The sign turns most of the way to face the walker, so it never reads at a steep angle while the walk goes round a bend.
-      let turn = yaw + look.yaw + Math.PI - sign.yaw
+      let turn = yaw + Math.PI - sign.yaw
       turn -= Math.round(turn / (2 * Math.PI)) * 2 * Math.PI
       quat.setFromAxisAngle(upAxis, sign.yaw + turn * 0.75)
       // And it stays on the screen: past its edges the sign slides along the view, so it is never cut by the window.
@@ -346,15 +351,6 @@ export function mount({ THREE, paper, canvas, floor, scene: built, page }) {
     for (const sign of signs) rig.append(sign.el)
   }
 
-  /* Looking around: the pointer turns the head a little, so the sign and the stone move against each other. */
-  const look = { x: 0, y: 0, yaw: 0, pitch: 0 }
-  addEventListener('pointermove', (event) => {
-    if (reduced()) return
-    look.x = event.clientX / innerWidth - 0.5
-    look.y = event.clientY / innerHeight - 0.5
-    wake()
-  }, { passive: true })
-
   /* Scroll to walk position */
   const sections = page ? [...page.querySelectorAll('[data-station]')] : []
   const footer = document.querySelector('.site-footer')
@@ -363,12 +359,13 @@ export function mount({ THREE, paper, canvas, floor, scene: built, page }) {
   // Scrolling is walking: every metre of corridor costs the same amount of scroll, so the walk has one speed whatever the room. A room's
   // section is a rest (the walk stands in the room, its sign in view) and then the stretch to the next room, as long as that stretch is.
   const PX_PER_UNIT = 1.4
-  const restPx = () => innerHeight * 0.55
+  // Long enough to read the whole sign before the walk moves on (the sign stays at full strength for 10 units of path either side).
+  const restPx = (i) => innerHeight * (built.stations[i]?.rest ?? 1.3)
   const measure = () => {
     sections.forEach((el, i) => {
       const last = i === sections.length - 1
       const stretch = last ? 0 : (stationU[i + 1] - stationU[i]) * total * PX_PER_UNIT
-      el.style.height = `${Math.round(last ? innerHeight : restPx() + stretch)}px`
+      el.style.height = `${Math.round(last ? innerHeight : restPx(i) + stretch)}px`
     })
     const base = scrollY
     tops = sections.map((el) => el.getBoundingClientRect().top + base)
@@ -381,7 +378,7 @@ export function mount({ THREE, paper, canvas, floor, scene: built, page }) {
     let i = 0
     for (let k = 0; k < sections.length; k++) if (tops[k] <= y) i = k
     const local = y - tops[i]
-    const rest = restPx()
+    const rest = restPx(i)
     let u = stationU[i]
     let station = i
     if (i < stationU.length - 1 && local > rest) {
@@ -396,6 +393,17 @@ export function mount({ THREE, paper, canvas, floor, scene: built, page }) {
     }
     return { u, dive, station }
   }
+
+  /* Keys walk the way a game does: up, W and the right arrow go forward, down, S and the left arrow go back (the page itself scrolls the other way round). */
+  const KEYS = { ArrowUp: 1, w: 1, W: 1, ArrowRight: 1, ArrowDown: -1, s: -1, S: -1, ArrowLeft: -1 }
+  addEventListener('keydown', (event) => {
+    const dir = KEYS[event.key]
+    if (!dir || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || !document.documentElement.classList.contains('walk-on') || document.documentElement.classList.contains('walk-editing')) return
+    const target = event.target
+    if (target instanceof Element && target.closest('input, textarea, select, [contenteditable], a, button, summary')) return
+    event.preventDefault()
+    scrollBy({ top: dir * innerHeight * 0.18, behavior: 'instant' })
+  })
 
   /* State */
   let state = { u: 0, dive: 0, station: -1 }
@@ -449,13 +457,10 @@ export function mount({ THREE, paper, canvas, floor, scene: built, page }) {
     else {
       let delta = p.yaw - yaw
       delta -= Math.round(delta / (2 * Math.PI)) * 2 * Math.PI
-      yaw += delta * (1 - Math.exp(-Math.min(dt, 100) / 1000 / 0.22))
+      yaw += delta * (1 - Math.exp(-Math.min(dt, 100) / 1000 / 0.2))
     }
-    const k = 1 - Math.exp(-Math.min(dt, 100) / 1000 / 0.15)
-    look.yaw += (-look.x * 0.2 - look.yaw) * k
-    look.pitch += (-look.y * 0.1 - look.pitch) * k
-    const yawNow = yaw + look.yaw
-    const pitchNow = p.pitch + look.pitch
+    const yawNow = yaw
+    const pitchNow = p.pitch
     camera.position.set(p.px, p.py, p.pz)
     forward.set(Math.sin(yawNow) * Math.cos(pitchNow), Math.sin(pitchNow), Math.cos(yawNow) * Math.cos(pitchNow))
     camera.lookAt(p.px + forward.x * 10, p.py + forward.y * 10, p.pz + forward.z * 10)
@@ -562,7 +567,7 @@ export function mount({ THREE, paper, canvas, floor, scene: built, page }) {
       removeEventListener('scroll', onScroll)
       removeEventListener('resize', onResize)
       layer.remove()
-      for (const o of [wallGeometry, plane, pillarGeometry, jambGeometry, lintelGeometry, doorMaterial, bracketGeometry, flameGeometry, stepGeometry, texture, wallMaterial, pillarMaterial, floorMaterial, stepMaterial, bracketMaterial, flames.material]) o.dispose()
+      for (const o of [wallGeometry, plane, pillarGeometry, jambGeometry, lintelGeometry, doorMaterial, bracketGeometry, flameGeometry, stepGeometry, texture, routeGeometry, routeMaterial, webGeometry, webMaterial, ceilingMaterial, ...Object.values(shapes), ...propMaterials, wallMaterial, pillarMaterial, floorMaterial, stepMaterial, bracketMaterial, flames.material]) o.dispose()
       renderer.dispose()
       renderer.forceContextLoss()
       window.__walk = null
@@ -575,14 +580,23 @@ export function mount({ THREE, paper, canvas, floor, scene: built, page }) {
 async function boot() {
   if (!root || params.get('scene') === 'off' || saveData() || matchMedia('(forced-colors: active)').matches || !hasWebGL2()) return
   const canvas = root.querySelector('canvas')
-  const seed = Number(root.dataset.seed)
-  const size = Number(root.dataset.size)
+  // A hand-made walk (walk/route.json, or the editor's draft with ?draft) replaces the generated one, and carries its own seed and size.
+  let route = null
+  try {
+    route = JSON.parse((params.has('draft') && localStorage.getItem('tapiti.walk.draft')) || root.dataset.route || 'null')
+  } catch {}
+  const seed = Number(route?.seed ?? root.dataset.seed)
+  const size = Number(route?.size ?? root.dataset.size)
   const [wasm, build, THREE, paper] = await Promise.all([import('/lab/pkg/tapiti.js'), import(root.dataset.build), import(root.dataset.three), import(root.dataset.paper)])
   await wasm.default()
-  const answer = JSON.parse(wasm.stage_json(seed, wasm.rich_params(size)))
-  const floor = answer.floor
-  const built = build.build(floor)
+  const floor = JSON.parse(wasm.stage_json(seed, wasm.rich_params(size))).floor
+  const built = build.build(floor, route)
   const handle = mount({ THREE, paper, canvas, floor, scene: built, page: document.querySelector('.rooms') })
+
+  if (params.has('edit') && root.dataset.editor) {
+    const editor = await import(root.dataset.editor)
+    editor.open({ wasm, build, seed, size, route })
+  }
 
   const toggle = document.querySelector('.route-pause')
   if (toggle) {

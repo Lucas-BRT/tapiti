@@ -88,12 +88,10 @@ mod tests {
     use tapiti_core::{generate::Node, validate::validate};
     use tapiti_render::view_box;
 
-    /// A room of the walk where the page stops, with where it sits on the SVG (world units and percentages of the view box).
+    /// A room of the walk where the page stops, with where it sits on the SVG (percentages of the view box).
     #[derive(Clone, Copy, Debug)]
     pub struct Station {
         pub room: usize,
-        pub x: f64,
-        pub y: f64,
         pub left_pct: f64,
         pub top_pct: f64,
     }
@@ -121,8 +119,6 @@ mod tests {
             let [x, y] = floor.rooms[room].center;
             Station {
                 room,
-                x,
-                y,
                 left_pct: (x - vx) / vw * 100.0,
                 top_pct: (y - vy) / vh * 100.0,
             }

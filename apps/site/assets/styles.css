@@ -37,6 +37,8 @@
     /* Read by the scene: graphite on paper, with restrained watercolour washes. */
     --scene-wall: #ece6d8;
     --scene-floor: #f5efdf;
+    --scene-ceiling: #e4dccb;
+    --scene-bone: #e6d9b6;
     --scene-door: #b8c5c2;
     --scene-step: #c8bcaa;
     --scene-ink: #655f55;

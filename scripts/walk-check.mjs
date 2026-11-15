@@ -9,7 +9,7 @@ import { resolve } from 'node:path'
 
 const WALK_SEED = 279
 const WALK_SIZE_INDEX = 2
-const STATION_ROOMS = [6, 7, 1, 14, 11, 12, 0] // floor.rs: stations()[i].room
+const STATION_ROOMS = [6, 8, 1, 15, 14, 12, 0] // floor.rs: stations()[i].room
 
 const root = resolve(import.meta.dirname, '..')
 const wasm = await import(pathToFileURL(resolve(root, 'apps/site/pkg/tapiti.js')).href)
