@@ -8,7 +8,9 @@
 //!   ([`LayerPhase`]). A layer that runs before changes the floor when it is on, and only then.
 
 pub mod height;
+pub mod water;
 pub use height::{HeightField, HeightSpec, HeightStyle, Terrain};
+pub use water::{WaterField, WaterSpec};
 
 use crate::{generate::Floor, params::Params, rng::Mulberry};
 use serde::{Deserialize, Serialize};
@@ -38,6 +40,7 @@ pub enum LayerPhase {
 #[serde(default, rename_all = "camelCase")]
 pub struct EnvSpec {
     pub height: HeightSpec,
+    pub water: WaterSpec,
 }
 
 impl EnvSpec {
@@ -52,6 +55,8 @@ impl EnvSpec {
 pub struct Environment {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub height: Option<HeightField>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub water: Option<WaterField>,
     /// The ground the layers that run before the layout hand the generator; not part of the floor.
     #[serde(skip)]
     pub terrain: Option<height::Terrain>,
@@ -86,6 +91,9 @@ pub fn layers_of(p: &Params) -> Vec<Box<dyn Layer>> {
     if p.environment.height.enabled {
         let cell = p.cell_w.max(p.cell_h) * 2.0;
         out.push(Box::new(height::HeightLayer(p.environment.height, cell)));
+    }
+    if p.environment.water.enabled {
+        out.push(Box::new(water::WaterLayer(p.environment.water)));
     }
     out
 }

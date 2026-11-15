@@ -117,6 +117,29 @@ pub fn analysis_tab(app: &mut App, ui: &mut Ui) {
         });
     }
 
+    // ---- water ----
+    if let Some(w) = &m.water {
+        card(ui, "Water", |ui| {
+            ui.columns(2, |cols| {
+                tile(
+                    &mut cols[0],
+                    w.wet_rooms.to_string(),
+                    "Rooms under water",
+                    &format!(
+                        "{} sources pour; the deepest pool is {:.0}",
+                        w.sources, w.deepest
+                    ),
+                );
+                tile(
+                    &mut cols[1],
+                    format!("{:.0}%", 100.0 * w.mean_humidity),
+                    "Humidity",
+                    "The average over the rooms, falling with the distance to water",
+                );
+            });
+        });
+    }
+
     // ---- at a glance ----
     card(ui, "At a glance", |ui| {
         ui.columns(2, |cols| {

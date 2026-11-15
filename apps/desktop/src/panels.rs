@@ -629,6 +629,34 @@ fn environment_card(app: &mut App, ui: &mut Ui) {
                     }
                 }
             });
+        ui.add_space(4.0);
+        let water_on = app.params.environment.water.enabled;
+        Grid::new("environment_water")
+            .num_columns(3)
+            .spacing([8.0, 6.0])
+            .show(ui, |ui| {
+                for path in [
+                    "environment.water.enabled",
+                    "environment.water.sources",
+                    "environment.water.flow",
+                    "environment.water.reach",
+                ] {
+                    if path != "environment.water.enabled" && !water_on {
+                        continue;
+                    }
+                    if let Some(field) = app
+                        .groups
+                        .iter()
+                        .flat_map(|g| &g.fields)
+                        .find(|f| f.path == path)
+                    {
+                        let value = value_of(app, &current, path);
+                        if let Some(next) = field_row(ui, field, &value, app.default_ref(path)) {
+                            edits.push((field.path.clone(), next));
+                        }
+                    }
+                }
+            });
     });
     for (path, value) in edits {
         app.change_param(&path, value);
@@ -927,6 +955,11 @@ fn map_controls(app: &mut App, ui: &mut Ui, rect: egui::Rect) {
                         &mut o.height,
                         "Height",
                         "Tint rooms by their height, blue low to amber high",
+                    ),
+                    (
+                        &mut o.water,
+                        "Water",
+                        "Rooms with water over their floor, deeper in a stronger blue",
                     ),
                     (
                         &mut o.labels,

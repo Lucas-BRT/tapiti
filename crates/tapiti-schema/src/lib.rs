@@ -325,6 +325,10 @@ pub fn groups() -> Vec<ParamGroup> {
                 ),
                 number("environment.height.relief", tx("Height relief"), 0.0, 100000.0, false),
                 number("environment.height.maxSlope", tx("Steepest corridor"), 0.001, 10.0, false),
+                boolean("environment.water.enabled", tx("Water")),
+                number("environment.water.sources", tx("Water sources"), 1.0, 64.0, true),
+                number("environment.water.flow", tx("Water per source"), 0.0, 100000.0, false),
+                number("environment.water.reach", tx("Humidity reach"), 1.0, 1000000.0, false),
             ],
         ),
         group(
@@ -414,6 +418,10 @@ fn help(path: &str, label: &str) -> Text {
         "environment.height.style" => tx("Hills and hollows draws a height for each room between 0 and the relief. Going down lowers rooms with their distance from the entrance, down to minus the relief."),
         "environment.height.relief" => tx("The span of the heights, in the units of the floor. The slope limit can keep rooms from reaching it."),
         "environment.height.maxSlope" => tx("The steepest a corridor may be: rise divided by run. 0.25 climbs 25 units over 100."),
+        "environment.water.enabled" => tx("Water runs downhill along the corridors and pools where it cannot go lower, over a floor that has Height. Humidity follows the water. It runs after the layout and moves nothing."),
+        "environment.water.sources" => tx("How many rooms pour water, drawn from the higher ground."),
+        "environment.water.flow" => tx("What each source pours, as a depth of water over an average room. A pool is deeper the smaller its basin."),
+        "environment.water.reach" => tx("How far along the corridors humidity spreads from the water: 1 under water, falling to 0 at this distance."),
         "exitDoors" => tx("Maximum number of corridors that can enter the exit room."),
         "exitMinHops" => tx("Minimum number of links between the entrance and the exit, counted in rooms."),
         "topology.profile" => tx("Choose the exploration structure. Spine with detours plans the main route, returning wings and dead ends before filling the remaining space; it needs Growth, entrance and exit, and one island. Ring places rooms round an empty court and closes the loop, with the exit opposite the entrance; it needs Growth from the north border, entrance and exit, and one island. Hub and wings starts in a central hall and grows three or four wings of different depths, the longest ending at the exit; it needs Growth from the centre, entrance and exit, and one island."),
@@ -452,6 +460,7 @@ mod tests {
         params.topology.min_detours = 1;
         params.zones.count = 2;
         params.environment.height.enabled = true;
+        params.environment.water.enabled = true;
         let lambda = serde_json::to_value(params).unwrap();
         for group in groups() {
             for field in &group.fields {

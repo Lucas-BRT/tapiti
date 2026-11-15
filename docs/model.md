@@ -374,6 +374,20 @@ The layer runs by default after the layout and moves no room: the floor with hei
 
 Set to run before the layout, it first makes the ground, a function of the position alone, from integer hashes on a lattice two grid cells wide and a polynomial smoothstep (*hills*: between $0$ and the relief; *descent*: the ground falls from one end of the world to the other along its longer side). The generator then refuses any corridor between two rooms whose ground heights differ by more than $s\,\ell(e)$, so steep ground is a natural barrier and the floor changes. When the layout is done, the rooms stand at the ground height at their centres, and the same largest legal function below those targets lowers a room wherever a junction, or a corridor the generator did not check, would break the rule. The measures give the most a room was lowered (`lowered`). Corridors are straight ramps between the heights of their ends and ignore the ground in between. How often the floor stays valid depends on the layout, the relief and the slope: the corridors of the binary partition are forced, so a harsh ground fails it most. The validator checks the rule (E1) and the measures give the range and the steepest and the mean slope. With the layer off, nothing about it is in the Λ or in the floor.
 
+### Water and humidity
+
+The `environment.water` layer needs the height layer and runs after the layout, so it moves no room and changes no height. Every node of $H$ drains to its lowest strictly lower neighbour (the lowest index on a tie). A node with none is a *sink*, and the nodes that drain to a sink are its *basin*. `sources` rooms, drawn from a stream of their own and weighted toward high ground, each pour a volume $q=\text{flow}\cdot\bar a$ into the basin they stand in, with $\bar a$ the mean area of a room.
+
+A basin holds water up to its lowest saddle, $S=\min\max(h_u,h_v)$ over the corridors $\{u,v\}$ that leave it. For a set of nodes sorted by height, the water of volume $V$ stands at the level $L$ where
+
+$$
+V=\sum_{h_i<L} a_i\,(L-h_i),
+$$
+
+with $a_i$ the area of node $i$ (a room's area, a junction's corridor width squared); it is solved with prefix sums and one division. What a basin cannot hold crosses its saddle into the next basin. If that basin already stands as high as the saddle, the two merge into one and a single level is solved for both. The surface at a node is $\max(h_i,L)$. Nothing is lost: the water held equals the water poured.
+
+Humidity is a number from $0$ to $1$ per node: $1$ at a node under water, then $\max\bigl(0,\,1-d/\text{reach}\bigr)$ with $d$ the distance along the corridors to the nearest wet node. It comes from the water alone; the depth of the floor plays no part. The validator checks (E2) that no surface lies below its floor, that the water held is the water poured, and that a wet node's surface is never above a neighbour's. The water runs only after the layout: a pool as an obstacle for the rooms would need the water on the continuous ground, and is not implemented.
+
 ### Zones
 
 The `zones` parameter cuts the world into $k$ strips along its longer side, $k$ being `zones.count` (two at least, and no more than half the longer side in cells, four at most, so each strip stays two cells wide or more). Zoning is independent of the layout and of the topology profile. The zone of a point is a pure function of the point and of Λ, so it draws nothing from the generator and a floor without zones draws what it always drew.

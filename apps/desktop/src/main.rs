@@ -101,6 +101,7 @@ pub enum Tab {
 pub struct Overlays {
     pub cells: bool,
     pub height: bool,
+    pub water: bool,
     pub labels: bool,
     pub ports: bool,
     pub pairs: bool,
@@ -192,6 +193,7 @@ impl App {
             overlays: Overlays {
                 cells: true,
                 height: true,
+                water: true,
                 labels: true,
                 ports: false,
                 pairs: false,
@@ -253,6 +255,10 @@ impl App {
         }
         if std::env::var("TAPITI_HEIGHT").is_ok() {
             self.params.environment.height.enabled = true;
+        }
+        if std::env::var("TAPITI_WATER").is_ok() {
+            self.params.environment.height.enabled = true;
+            self.params.environment.water.enabled = true;
         }
         match std::env::var("TAPITI_THEME").as_deref() {
             Ok("light") => self.ctx.set_theme(egui::ThemePreference::Light),
@@ -665,6 +671,10 @@ impl App {
         match serde_json::from_value::<Params>(params) {
             Ok(mut params) => {
                 // Turning zones on also gives rectangle-only weights a mix, so the zones can look different.
+                // Water runs down the ground, so turning it on turns Height on.
+                if path == "environment.water.enabled" && params.environment.water.enabled {
+                    params.environment.height.enabled = true;
+                }
                 if path == "zones.count" && self.params.zones.count < 2 && params.zones.count >= 2 {
                     params.set_zones(params.zones.count, params.zones.bottleneck);
                 }

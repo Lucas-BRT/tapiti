@@ -56,5 +56,18 @@ pub fn cases() -> Vec<(String, Params)> {
     slope.environment.height.phase = tapiti_core::environment::LayerPhase::Before;
     slope.environment.height.style = tapiti_core::environment::HeightStyle::Descent;
     out.push(("height-before-descent-growth-medium".into(), slope));
+    let mut wet = rich_of_size(Size::Medium);
+    wet.layout = Layout::Growth;
+    wet.environment.height.enabled = true;
+    wet.environment.water.enabled = true;
+    out.push(("water-after-growth-medium".into(), wet));
+    let mut flood = params_of_size(Size::Medium);
+    flood.apply_intent(TopologyProfile::SpineWithDetours);
+    flood.environment.height.enabled = true;
+    flood.environment.height.phase = tapiti_core::environment::LayerPhase::Before;
+    flood.environment.water.enabled = true;
+    flood.environment.water.sources = 6;
+    flood.environment.water.flow = 400.0;
+    out.push(("water-flood-before-height-spine-medium".into(), flood));
     out
 }

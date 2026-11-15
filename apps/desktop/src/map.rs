@@ -334,6 +334,30 @@ fn room_heights(floor: &Floor) -> Vec<Option<f32>> {
     out
 }
 
+/// The depth of the water in each room as a fraction of the deepest pool; `None` for a dry room, empty without a water layer.
+fn room_depths(floor: &Floor) -> Vec<Option<f32>> {
+    let Some(env) = floor.environment.as_ref() else {
+        return Vec::new();
+    };
+    let (Some(water), Some(height)) = (env.water.as_ref(), env.height.as_ref()) else {
+        return Vec::new();
+    };
+    let depth = |i: usize| (water.level[i] - height.nodes[i]).max(0.0);
+    let deepest = (0..water.level.len())
+        .map(depth)
+        .fold(0.0, f64::max)
+        .max(1e-9);
+    let mut out = vec![None; floor.rooms.len()];
+    for (i, node) in floor.nodes.iter().enumerate() {
+        if let Node::Room { room } = node {
+            if depth(i) > 1e-9 {
+                out[*room] = Some((depth(i) / deepest) as f32);
+            }
+        }
+    }
+    out
+}
+
 /// Blue for low ground, amber for high.
 fn height_color(t: f32) -> Color32 {
     Color32::from_rgb(0x3f, 0x6f, 0xa8)
@@ -383,12 +407,20 @@ pub fn draw_floor(painter: &Painter, xf: &Xf, floor: &Floor, overlays: Overlays,
     } else {
         Vec::new()
     };
+    let depths = if overlays.water {
+        room_depths(floor)
+    } else {
+        Vec::new()
+    };
     for room in &floor.rooms {
         if room.alive {
             let alpha = if room.leaf { 0.65 } else { 0.92 };
             let mut fill = pal.shape(room.cls.name());
             if let Some(Some(t)) = heights.get(room.id) {
                 fill = fill.lerp_to_gamma(height_color(*t), 0.55);
+            }
+            if let Some(Some(depth)) = depths.get(room.id) {
+                fill = fill.lerp_to_gamma(Color32::from_rgb(0x1f, 0x7f, 0xc9), 0.35 + 0.5 * depth);
             }
             room_shape(
                 painter,

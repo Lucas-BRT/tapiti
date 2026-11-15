@@ -688,6 +688,14 @@ impl Params {
                 return Some(error);
             }
         }
+        if self.environment.water.enabled {
+            if !self.environment.height.enabled {
+                return Some("Water runs down the ground: turn Height on too.");
+            }
+            if let Some(error) = self.environment.water.error() {
+                return Some(error);
+            }
+        }
         if self.topology.profile == TopologyProfile::HubAndWings
             && (self.layout != Layout::Growth
                 || self.growth.start != GrowthStart::Center

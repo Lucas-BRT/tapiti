@@ -35,6 +35,22 @@ pub struct Metrics {
     /// The measures of the height layer; absent while it is off.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub height: Option<HeightMetrics>,
+    /// The measures of the water layer; absent while it is off.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub water: Option<WaterMetrics>,
+}
+
+/// What the water did to the floor.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WaterMetrics {
+    pub sources: usize,
+    /// Rooms with water over their floor.
+    pub wet_rooms: usize,
+    pub deepest: f64,
+    pub volume: f64,
+    /// The mean humidity of the rooms, 0 to 1.
+    pub mean_humidity: f64,
 }
 
 /// What the height layer made of the floor.
@@ -285,6 +301,28 @@ pub fn metrics_of(d: &Floor) -> Metrics {
                     max_slope: slopes.iter().copied().fold(0.0, f64::max),
                     mean_slope: slopes.iter().sum::<f64>() / slopes.len().max(1) as f64,
                     lowered: field.lowered,
+                }
+            }),
+        water: d
+            .environment
+            .as_ref()
+            .and_then(|e| e.water.as_ref().zip(e.height.as_ref()))
+            .map(|(water, height)| {
+                let rooms: Vec<usize> = d
+                    .nodes
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, n)| matches!(n, Node::Room { room } if d.rooms[*room].alive))
+                    .map(|(i, _)| i)
+                    .collect();
+                let depth = |i: usize| (water.level[i] - height.nodes[i]).max(0.0);
+                WaterMetrics {
+                    sources: water.sources.len(),
+                    wet_rooms: rooms.iter().filter(|&&i| depth(i) > 1e-9).count(),
+                    deepest: (0..water.level.len()).map(depth).fold(0.0, f64::max),
+                    volume: water.volume,
+                    mean_humidity: rooms.iter().map(|&i| water.humidity[i]).sum::<f64>()
+                        / rooms.len().max(1) as f64,
                 }
             }),
     }
