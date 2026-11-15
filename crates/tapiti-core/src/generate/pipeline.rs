@@ -100,6 +100,18 @@ pub(super) fn generate_inner(
         x1: grid_x[cols as usize],
         y1: grid_y[rows as usize],
     };
+    // Layers that go before the rooms hand the generator their limits; none exist yet, so nothing is read from it here.
+    let env_layers = crate::environment::layers_of(p);
+    let env_before = crate::environment::run_before(
+        &env_layers,
+        seed,
+        crate::environment::World {
+            x0: world.x0,
+            y0: world.y0,
+            x1: world.x1,
+            y1: world.y1,
+        },
+    );
     let island_of = build_rooms(
         &mut g,
         &blocks,
@@ -316,7 +328,7 @@ pub(super) fn generate_inner(
             kind: c.kind,
         })
         .collect();
-    Some(Floor {
+    let mut floor = Floor {
         params: p.clone(),
         seed,
         rooms: g.rooms,
@@ -333,6 +345,9 @@ pub(super) fn generate_inner(
         pairs: all_pairs,
         dropped: dropped_centers,
         log: g.log,
+        environment: None,
         phases,
-    })
+    };
+    floor.environment = crate::environment::run_after(&env_layers, seed, &floor, env_before);
+    Some(floor)
 }

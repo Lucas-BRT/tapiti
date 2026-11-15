@@ -409,6 +409,9 @@ pub struct Params {
     pub growth: GrowthSpec,
     #[serde(default, skip_serializing_if = "ZoneSpec::is_off")]
     pub zones: ZoneSpec,
+    /// The environment layers; left out of the JSON while all are off.
+    #[serde(default, skip_serializing_if = "crate::environment::EnvSpec::is_off")]
+    pub environment: crate::environment::EnvSpec,
 }
 
 /// The pair key of the mixing matrix, the same whatever the order.
@@ -480,6 +483,7 @@ fn base() -> Params {
         topology: TopologySpec::default(),
         growth: GrowthSpec::default(),
         zones: ZoneSpec::default(),
+        environment: Default::default(),
     }
 }
 
