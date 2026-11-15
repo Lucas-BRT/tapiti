@@ -1173,6 +1173,22 @@ pub fn central(app: &mut App, ui: &mut Ui) {
                 app.pan[1] -= f64::from(delta.y) / scale;
                 xf = Xf::new(rect, min, max, app.zoom, app.pan);
             }
+            if response.hovered() && app.view_mode == crate::ViewMode::Iso {
+                // The arrow keys turn and tilt the oblique view, for those without a right button.
+                let (turn, tilt, dt) = ctx.input(|i| {
+                    let key = |k: egui::Key| f64::from(u8::from(i.key_down(k)));
+                    (
+                        key(egui::Key::ArrowRight) - key(egui::Key::ArrowLeft),
+                        key(egui::Key::ArrowDown) - key(egui::Key::ArrowUp),
+                        f64::from(i.stable_dt).min(0.1),
+                    )
+                });
+                if turn != 0.0 || tilt != 0.0 {
+                    app.iso.yaw = (app.iso.yaw + turn * dt * 90.0).rem_euclid(360.0);
+                    app.iso.tilt = (app.iso.tilt + tilt * dt * 60.0).clamp(15.0, 90.0);
+                    ctx.request_repaint();
+                }
+            }
             if response.hovered() {
                 ctx.set_cursor_icon(if response.dragged() {
                     CursorIcon::Grabbing
@@ -1194,7 +1210,16 @@ pub fn central(app: &mut App, ui: &mut Ui) {
             } else if let Some(floor) = app.generated.as_ref().map(|g| g.floor.clone()) {
                 match app.view_mode {
                     crate::ViewMode::Solid => {
-                        app.solid.show(ui, rect, &response, &floor, overlays, &pal);
+                        if let Some(id) =
+                            app.solid.show(ui, rect, &response, &floor, overlays, &pal)
+                        {
+                            let room = &floor.rooms[id];
+                            let info =
+                                map_object_at(&floor, room.center, app.zoom, Some(room.level));
+                            if !info.is_empty() {
+                                response.clone().on_hover_text_at_pointer(info);
+                            }
+                        }
                     }
                     crate::ViewMode::Iso => {
                         crate::iso::draw(&painter, &xf, &floor, &app.iso, overlays, &pal);
@@ -1222,6 +1247,17 @@ pub fn central(app: &mut App, ui: &mut Ui) {
                 }
             }
             map_controls(app, ui, rect);
+            if app.view_mode != app.saved_view {
+                app.saved_view = app.view_mode;
+                crate::prefs::save(
+                    "view",
+                    match app.view_mode {
+                        crate::ViewMode::Plan => "plan",
+                        crate::ViewMode::Iso => "iso",
+                        crate::ViewMode::Solid => "solid",
+                    },
+                );
+            }
             if app.busy {
                 painter.text(
                     rect.right_top() + Vec2::new(-14.0, 16.0),

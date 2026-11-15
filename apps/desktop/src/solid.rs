@@ -158,7 +158,8 @@ impl Solid {
         (self.yaw, self.pitch, self.zoom) = (d.yaw, d.pitch, d.zoom);
     }
 
-    /// Draws the floor in the area `rect` and handles the mouse and the keys over it.
+    /// Draws the floor in the area `rect` and handles the mouse and the keys over it. Returns the room under the pointer when circling
+    /// the floor, to describe it.
     pub fn show(
         &mut self,
         ui: &mut Ui,
@@ -167,7 +168,7 @@ impl Solid {
         floor: &Arc<Floor>,
         overlays: Overlays,
         pal: &Palette,
-    ) {
+    ) -> Option<usize> {
         self.ensure(floor, overlays);
         let ctx = ui.ctx().clone();
         let dt = ctx.input(|i| i.stable_dt).min(0.1);
@@ -181,6 +182,22 @@ impl Solid {
                     moved = true;
                 }
                 if response.hovered() {
+                    // The arrow keys turn the view and plus and minus come near or go far, for those without a mouse wheel.
+                    let (turn, tilt, near) = ctx.input(|i| {
+                        let key = |k: Key| f32::from(u8::from(i.key_down(k)));
+                        (
+                            key(Key::ArrowRight) - key(Key::ArrowLeft),
+                            key(Key::ArrowDown) - key(Key::ArrowUp),
+                            key(Key::Minus) - key(Key::Plus) - key(Key::Equals),
+                        )
+                    });
+                    if turn != 0.0 || tilt != 0.0 || near != 0.0 {
+                        self.yaw -= turn * dt * 1.5;
+                        self.pitch = (self.pitch + tilt * dt * 1.2).clamp(0.05, 1.5);
+                        self.zoom = (self.zoom * (near * dt * 1.5).exp()).clamp(0.08, 4.0);
+                        moved = true;
+                        ctx.request_repaint();
+                    }
                     let scroll = ctx.input(|i| i.smooth_scroll_delta.y);
                     if scroll != 0.0 {
                         self.zoom = (self.zoom * (-scroll * 0.0015).exp()).clamp(0.08, 4.0);
@@ -225,7 +242,7 @@ impl Solid {
                 }
             }
         }
-        let Some(b) = self.built.as_ref() else { return };
+        let b = self.built.as_ref()?;
         let size = [
             ((rect.width() * self.quality) as usize).clamp(64, 2400),
             ((rect.height() * self.quality) as usize).clamp(64, 1600),
@@ -294,6 +311,24 @@ impl Solid {
                 Color32::WHITE,
             );
         }
+        // The room under the pointer, from the ray through its pixel.
+        let hovered = (self.mode == Mode::Orbit && !response.dragged())
+            .then(|| response.hover_pos())
+            .flatten()
+            .and_then(|pos| {
+                let (u, v) = (
+                    (pos.x - rect.min.x) / rect.width(),
+                    (pos.y - rect.min.y) / rect.height(),
+                );
+                tapiti_render::raster::pick(
+                    &b.scene,
+                    &camera,
+                    size[0],
+                    size[1],
+                    u * size[0] as f32,
+                    v * size[1] as f32,
+                )
+            });
         if self.mode == Mode::Walk {
             let c = rect.center();
             let ink = Color32::from_white_alpha(170);
@@ -307,5 +342,6 @@ impl Solid {
                 egui::Stroke::new(1.5, ink),
             );
         }
+        hovered
     }
 }

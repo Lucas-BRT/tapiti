@@ -14,6 +14,7 @@ mod map;
 mod panels;
 mod params_ui;
 mod pick;
+mod prefs;
 mod relevance;
 mod solid;
 mod theme;
@@ -159,6 +160,8 @@ pub struct App {
     pub overlays: Overlays,
     pub zoom: f64,
     pub view_mode: ViewMode,
+    /// The view mode last written to the preferences.
+    saved_view: ViewMode,
     pub iso: iso::IsoCamera,
     pub solid: solid::Solid,
     pub pan: [f64; 2],
@@ -194,6 +197,11 @@ impl App {
     fn new(cc: &eframe::CreationContext<'_>) -> Self {
         let (tx, rx) = channel();
         let params = params_of_size(Size::Small);
+        let loaded_view = match prefs::load("view").as_deref() {
+            Some("iso") => ViewMode::Iso,
+            Some("solid") => ViewMode::Solid,
+            _ => ViewMode::Plan,
+        };
         let mut app = Self {
             ctx: cc.egui_ctx.clone(),
             tx,
@@ -226,7 +234,8 @@ impl App {
                 legend: true,
             },
             zoom: 1.0,
-            view_mode: ViewMode::Plan,
+            view_mode: loaded_view,
+            saved_view: loaded_view,
             iso: iso::IsoCamera::default(),
             solid: solid::Solid::default(),
             pan: [0.0, 0.0],
