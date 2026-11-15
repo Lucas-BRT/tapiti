@@ -59,6 +59,8 @@ fn main() {
         ("hub", TopologyProfile::Hub),
         ("redundantExit", TopologyProfile::RedundantExit),
         ("longLoop", TopologyProfile::LongLoop),
+        ("ring", TopologyProfile::Ring),
+        ("hubAndWings", TopologyProfile::HubAndWings),
     ] {
         let mut p = params::rich_of_size(params::Size::Medium);
         p.layout = Layout::Growth;

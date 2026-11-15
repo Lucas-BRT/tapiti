@@ -65,6 +65,10 @@ pub(super) fn generate_inner(
         no_fit: Vec::new(),
         no_cross: Vec::new(),
         exit_room: usize::MAX,
+        spine: Vec::new(),
+        reserved_rooms: HashSet::new(),
+        ring: Vec::new(),
+        court: None,
         static_index: SpatialHash::new(1.0),
         room_grid: SpatialHash::new(1.0),
         edge_index: SpatialHash::new(1.0),
@@ -87,7 +91,7 @@ pub(super) fn generate_inner(
     };
     let live: Vec<usize> = (0..blocks.len()).filter(|i| alive[*i]).collect();
     let dropped: Vec<usize> = (0..blocks.len())
-        .filter(|i| !alive[*i] && p.layout != Layout::Growth)
+        .filter(|i| !alive[*i] && !p.layout.places_freely())
         .collect();
 
     let world = Bx {
@@ -129,7 +133,7 @@ pub(super) fn generate_inner(
         g.edge_index.insert_region(e.id, &e.region);
     }
     /* §7.5.1 The spanning tree: Prim from the start, weighted by ω; the proximity graph relaxed when it gets stuck. */
-    let start_room = if p.layout == Layout::Growth {
+    let start_room = if p.layout.places_freely() {
         0
     } else {
         (g.rng.next() * g.rooms.len() as f64).floor() as usize
@@ -181,23 +185,31 @@ pub(super) fn generate_inner(
     }
     let beta_target = (p.delta * beta_max as f64).round() as i32;
 
-    add_cycles(
-        &mut g,
-        exit_room.map(|e| (start_room, e)),
-        beta_target,
-        &mut progress,
-    );
+    // The ring is the floor's one cycle: more corridors would cut across its court and shorten the way round.
+    if g.ring.is_empty() && p.topology.profile != TopologyProfile::HubAndWings {
+        add_cycles(
+            &mut g,
+            exit_room.map(|e| (start_room, e)),
+            beta_target,
+            &mut progress,
+        );
+    }
 
     lap("cycles");
     if g.stopped() {
         return None;
     }
-    if let (Layout::Growth, true, Some(exit)) =
-        (p.layout, topology_req.min_exit_routes <= 1, exit_room)
-    {
+    if let (true, true, Some(exit)) = (
+        p.layout.places_freely(),
+        topology_req.min_exit_routes <= 1,
+        exit_room,
+    ) {
         // A grown tree is shallow, so the cycles can bring the exit under `exitMinHops` of the entrance: move it to a room that is still far enough.
         let h = room_hops(&g.nodes, &g.edges, g.node_of_room[start_room]);
-        if h[g.node_of_room[exit]] < p.exit_min_hops as f64 {
+        if g.spine.is_empty()
+            && g.ring.is_empty()
+            && h[g.node_of_room[exit]] < p.exit_min_hops as f64
+        {
             let far: Vec<usize> = g
                 .rooms
                 .iter()
@@ -219,7 +231,7 @@ pub(super) fn generate_inner(
             }
         }
     }
-    let (main_path, _) = exit_room
+    let (mut main_path, _) = exit_room
         .and_then(|exit| {
             crate::topology::shortest_path(
                 g.nodes.len(),
@@ -229,11 +241,14 @@ pub(super) fn generate_inner(
             )
         })
         .unwrap_or_default();
+    if !g.spine.is_empty() {
+        main_path = g.spine.iter().map(|r| g.node_of_room[*r]).collect();
+    }
     let main_path_rooms = path_rooms(&g.nodes, &main_path);
     // The spots for leaf chambers: the grid's dropped cells; a grown layout drops none, so they are the boxes of one cell
     // beyond a free door of a room (two reaches each), inside the world and clear of every room (`add_leaf_chambers`
     // still refuses what overlaps a room or a corridor). At most 160 of them, spread over the list.
-    let spot_boxes: Vec<Bx> = if p.layout == Layout::Growth {
+    let spot_boxes: Vec<Bx> = if p.layout.places_freely() {
         let (cw, ch) = (p.cell_w.max(1.0), p.cell_h.max(1.0));
         let (bw, bh) = (cw - 2.0 * p.gap, ch - 2.0 * p.gap);
         let mut all: Vec<Bx> = Vec::new();
@@ -260,7 +275,7 @@ pub(super) fn generate_inner(
                             let rb = g.rooms[o].bounds;
                             box_gap_raw(rb.lo, rb.hi, [b.x0, b.y0], [b.x1, b.y1]) >= 2.0 * p.gap
                         });
-                    if clear {
+                    if clear && !g.box_in_court(&b) {
                         all.push(b);
                     }
                 }

@@ -9,6 +9,9 @@ use std::collections::{HashMap, HashSet};
 pub fn validate(d: &Floor) -> Vec<String> {
     let p = &d.params;
     let mut out: Vec<String> = Vec::new();
+    if let Some(error) = p.intent_error() {
+        out.push(format!("T6 {error}"));
+    }
     let rooms: Vec<&Room> = d.rooms.iter().filter(|r| r.alive).collect();
     let spatial_cell = [p.cell_w, p.cell_h]
         .into_iter()
@@ -376,6 +379,15 @@ pub fn validate(d: &Floor) -> Vec<String> {
     }
 
     let req = p.topology_requirements();
+    if req.min_detours > 0 {
+        let detours = crate::topology::returning_detours(&d.nodes, &d.edges, &d.main_path);
+        if detours < req.min_detours {
+            out.push(format!(
+                "T6 profile requires {} returning detours; found {detours}",
+                req.min_detours
+            ));
+        }
+    }
     if req.min_branches > 0 || req.min_branch_depth > 0 {
         let (branches, branch_depth) =
             crate::topology::side_branch_stats(&d.nodes, &d.edges, &d.main_path);

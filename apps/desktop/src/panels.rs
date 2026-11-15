@@ -12,7 +12,7 @@ use eframe::egui::{
 };
 use serde_json::Value;
 use tapiti_core::par;
-use tapiti_core::params::Size;
+use tapiti_core::params::{Size, TopologyProfile};
 
 pub(crate) fn muted(ui: &Ui, text: impl Into<String>) -> RichText {
     RichText::new(text)
@@ -94,14 +94,11 @@ pub fn menu_bar(app: &mut App, ui: &mut Ui) {
                 });
                 ui.menu_button("Edit", |ui| {
                     if ui
-                        .add_enabled(
-                            !app.changed.is_empty(),
-                            Button::new("Reset all to the size"),
-                        )
-                        .on_hover_text("Back to the defaults of the current size")
+                        .add_enabled(!app.changed.is_empty(), Button::new("Reset all settings"))
+                        .on_hover_text("Restore Classic and the defaults of the current size")
                         .clicked()
                     {
-                        app.set_size(app.size);
+                        app.reset_all();
                         ui.close();
                     }
                 });
@@ -114,7 +111,7 @@ pub fn menu_bar(app: &mut App, ui: &mut Ui) {
                     ] {
                         ui.radio_value(&mut theme, value, name);
                     }
-                    ui.ctx().set_theme(theme);
+                    theme::set_preference(ui.ctx(), theme);
                 });
                 ui.menu_button("Tools", |ui| {
                     ui.label(muted(ui, "Guided experiments"));
@@ -171,7 +168,7 @@ pub fn top_bar(app: &mut App, ui: &mut Ui) {
             ui.horizontal(|ui| {
                 ui.heading("Tapiti");
                 ui.separator();
-                layout_and_size(app, ui);
+                size_picker(app, ui);
                 ui.separator();
                 ui.label("Seed");
                 if ui
@@ -216,7 +213,10 @@ pub fn top_bar(app: &mut App, ui: &mut Ui) {
                         app.cancel_generation();
                     }
                 } else if ui
-                    .add_enabled(!app.busy, primary(ui, "Generate"))
+                    .add_enabled(
+                        !app.busy && app.params.intent_error().is_none(),
+                        primary(ui, "Generate"),
+                    )
                     .on_hover_text("Generate again with the current Λ")
                     .clicked()
                 {
@@ -225,6 +225,21 @@ pub fn top_bar(app: &mut App, ui: &mut Ui) {
                 if app.busy {
                     ui.spinner();
                 }
+                ui.with_layout(egui::Layout::right_to_left(Align::Center), |ui| {
+                    let dark = ui.visuals().dark_mode;
+                    if ui
+                        .button(if dark { "Light" } else { "Dark" })
+                        .on_hover_text("Switch between the paper theme and the dark theme")
+                        .clicked()
+                    {
+                        let next = if dark {
+                            egui::ThemePreference::Light
+                        } else {
+                            egui::ThemePreference::Dark
+                        };
+                        theme::set_preference(ui.ctx(), next);
+                    }
+                });
             });
             ui.add_space(4.0);
         });
@@ -242,10 +257,10 @@ pub fn bottom_bar(app: &mut App, ui: &mut Ui) {
                         ui.separator();
                         if ui
                             .small_button("Reset")
-                            .on_hover_text("Back to the defaults of the current size")
+                            .on_hover_text("Restore Classic and the defaults of the current size")
                             .clicked()
                         {
-                            app.set_size(app.size);
+                            app.reset_all();
                         }
                         ui.label(muted(ui, format!("{} changed", app.changed.len())));
                     }
@@ -254,39 +269,9 @@ pub fn bottom_bar(app: &mut App, ui: &mut Ui) {
         });
 }
 
-/// The layout and the size, side by side in the top bar: the choices that decide what the rest of the settings mean. Columns, rows,
-/// leaf chambers and the growth settings live in their group of the side panel.
-fn layout_and_size(app: &mut App, ui: &mut Ui) {
-    let mut layout = None;
+/// Size changes keep the exploration intent; geometry remains in the side panel.
+fn size_picker(app: &mut App, ui: &mut Ui) {
     let mut size = None;
-    ui.label(RichText::new("Layout").strong());
-    if let Some(field) = app
-        .groups
-        .iter()
-        .flat_map(|g| &g.fields)
-        .find(|f| f.path == "layout")
-    {
-        if let FieldKind::Choice(options) = &field.kind {
-            let current = get_path(
-                &serde_json::to_value(&app.params).unwrap_or(Value::Null),
-                "layout",
-            )
-            .and_then(Value::as_str)
-            .unwrap_or("grid")
-            .to_string();
-            for (value, name) in options {
-                if ui
-                    .selectable_label(*value == current, name.as_str())
-                    .on_hover_text(field.help.as_str())
-                    .clicked()
-                    && *value != current
-                {
-                    layout = Some(Value::String(value.clone()));
-                }
-            }
-        }
-    }
-    ui.separator();
     ui.label(RichText::new("Size").strong());
     for (n, s) in Size::ALL.into_iter().enumerate() {
         let hint = format!("{}\nAlt+{}", size_description(s), n + 1);
@@ -300,8 +285,229 @@ fn layout_and_size(app: &mut App, ui: &mut Ui) {
     }
     if let Some(s) = size {
         app.set_size(s);
-    } else if let Some(value) = layout {
-        app.change_param("layout", value);
+    }
+}
+
+fn intent_description(profile: TopologyProfile) -> &'static str {
+    profile.guide().makes
+}
+
+fn intent_fields(profile: TopologyProfile) -> &'static [&'static str] {
+    match profile {
+        TopologyProfile::SpineWithDetours => &[
+            "exitMinHops",
+            "topology.minBranches",
+            "topology.minBranchDepth",
+            "topology.minDetours",
+        ],
+        TopologyProfile::HubAndWings => &["exitMinHops", "topology.minHubDegree"],
+        TopologyProfile::Ring => &["exitMinHops"],
+        TopologyProfile::Backbone => &[
+            "exitMinHops",
+            "topology.minBranches",
+            "topology.minBranchDepth",
+        ],
+        TopologyProfile::Hub => &["topology.minHubDegree"],
+        TopologyProfile::RedundantExit => &["exitMinHops", "topology.minExitRoutes"],
+        TopologyProfile::LongLoop => &["topology.minCycleLength"],
+        TopologyProfile::Classic => &["exitMinHops", "delta"],
+    }
+}
+
+/// The settings the layout card lists, as the schema paths; the rest stay in the advanced groups.
+fn layout_fields(layout: tapiti_core::params::Layout) -> &'static [&'static str] {
+    match layout {
+        tapiti_core::params::Layout::Grid => &["layoutJitter", "drop"],
+        tapiti_core::params::Layout::Growth => &["growth.rooms", "growth.start"],
+        tapiti_core::params::Layout::Bsp => &["growth.rooms"],
+    }
+}
+
+/// The layout is the first choice: it decides how rooms are placed, and some intents only work with one of them.
+fn layout_card(app: &mut App, ui: &mut Ui) {
+    let current = serde_json::to_value(&app.params).unwrap_or(Value::Null);
+    let layout = app.params.layout;
+    let mut edits = Vec::new();
+    card(ui, "Layout", |ui| {
+        Grid::new("layout_controls")
+            .num_columns(3)
+            .spacing([8.0, 6.0])
+            .show(ui, |ui| {
+                let paths = std::iter::once("layout").chain(
+                    layout_fields(layout)
+                        .iter()
+                        .copied()
+                        .filter(|p| crate::relevance::applies(p, &app.params)),
+                );
+                for path in paths {
+                    if let Some(field) = app
+                        .groups
+                        .iter()
+                        .flat_map(|g| &g.fields)
+                        .find(|f| f.path == path)
+                    {
+                        let value = get_path(&current, path).cloned().unwrap_or(Value::from(0));
+                        let default = get_path(&app.defaults, path);
+                        if let Some(next) = field_row(ui, field, &value, default) {
+                            edits.push((field.path.clone(), next));
+                        }
+                    }
+                }
+            });
+        ui.label(muted(ui, layout.guide()));
+    });
+    for (path, value) in edits {
+        app.change_param(&path, value);
+    }
+    // Leaving Growth drops an intent that only Growth can run.
+    if !app.params.layout.allows(app.params.topology.profile) {
+        app.set_intent(TopologyProfile::Classic);
+    }
+}
+
+fn intent_card(app: &mut App, ui: &mut Ui) {
+    let profile = app.params.topology.profile;
+    let current = serde_json::to_value(&app.params).unwrap_or(Value::Null);
+    let mut selected = None;
+    let mut edits = Vec::new();
+    card(ui, "Exploration intent", |ui| {
+        if let Some(field) = app
+            .groups
+            .iter()
+            .flat_map(|g| &g.fields)
+            .find(|f| f.path == "topology.profile")
+        {
+            if let FieldKind::Choice(options) = &field.kind {
+                let value = get_path(&current, &field.path)
+                    .and_then(Value::as_str)
+                    .unwrap_or("classic");
+                let name = options
+                    .iter()
+                    .find(|(key, _)| key == value)
+                    .map_or(value, |(_, label)| label.as_str());
+                egui::ComboBox::from_id_salt("exploration_intent")
+                    .width(ui.available_width())
+                    .selected_text(RichText::new(name).strong())
+                    .show_ui(ui, |ui| {
+                        for (key, label) in options {
+                            if let Ok(option) = serde_json::from_value::<TopologyProfile>(
+                                Value::String(key.clone()),
+                            ) {
+                                // A layout other than Growth cannot run an intent that plans its own rooms.
+                                if !app.params.layout.allows(option) {
+                                    continue;
+                                }
+                                if ui
+                                    .selectable_label(profile == option, label)
+                                    .on_hover_text(intent_description(option))
+                                    .clicked()
+                                    && profile != option
+                                {
+                                    selected = Some(option);
+                                }
+                            }
+                        }
+                    });
+            }
+        }
+        let guide = profile.guide();
+        ui.label(muted(ui, guide.makes));
+        ui.add_space(4.0);
+        for (title, text) in [
+            ("Needs", guide.needs),
+            ("Sets for you", guide.sets),
+            ("With zones", guide.zones),
+        ] {
+            ui.horizontal_wrapped(|ui| {
+                ui.spacing_mut().item_spacing.x = 4.0;
+                ui.label(RichText::new(format!("{title}:")).small().strong());
+                ui.label(RichText::new(text).small());
+            });
+        }
+        ui.add_space(theme::GAP);
+        Grid::new("intent_controls")
+            .num_columns(3)
+            .spacing([8.0, 6.0])
+            .show(ui, |ui| {
+                for path in intent_fields(profile) {
+                    if let Some(field) = app
+                        .groups
+                        .iter()
+                        .flat_map(|g| &g.fields)
+                        .find(|f| f.path == *path)
+                    {
+                        let value = get_path(&current, path).cloned().unwrap_or(Value::from(0));
+                        if let Some(next) = field_row(ui, field, &value, None) {
+                            edits.push((field.path.clone(), next));
+                        }
+                    }
+                }
+            });
+        ui.add_space(theme::GAP);
+        ui.label(RichText::new("Zones").strong());
+        let blocker = app.params.zone_bottleneck_blocker();
+        Grid::new("zone_controls")
+            .num_columns(3)
+            .spacing([8.0, 6.0])
+            .show(ui, |ui| {
+                for path in ["zones.count", "zones.bottleneck"] {
+                    let shown =
+                        path == "zones.count" || (app.params.zone_count() > 1 && blocker.is_none());
+                    if !shown {
+                        continue;
+                    }
+                    if let Some(field) = app
+                        .groups
+                        .iter()
+                        .flat_map(|g| &g.fields)
+                        .find(|f| f.path == path)
+                    {
+                        let value = get_path(&current, path).cloned().unwrap_or(Value::from(0));
+                        if let Some(next) = field_row(ui, field, &value, None) {
+                            edits.push((field.path.clone(), next));
+                        }
+                    }
+                }
+            });
+        if app.params.zone_count() > 1 {
+            if let Some(reason) = blocker {
+                ui.label(muted(ui, reason));
+            }
+        }
+        if let Some(error) = app.params.intent_error() {
+            ui.add_space(theme::GAP);
+            ui.colored_label(theme::of(ui).error, error);
+        } else if let Some(map) = app
+            .generated
+            .as_ref()
+            .filter(|m| m.floor.params.topology.profile == profile)
+        {
+            ui.separator();
+            ui.label(muted(ui, "Last generated floor"));
+            ui.horizontal_wrapped(|ui| {
+                ui.label(format!(
+                    "{} steps to exit",
+                    map.metrics
+                        .hops_to_exit
+                        .map_or("—".to_string(), |h| format!("{h:.0}"))
+                ));
+                ui.label(format!("{} side branches", map.metrics.side_branches));
+                ui.label(format!("Depth {}", map.metrics.deepest_branch));
+            });
+            if !map.violations.is_empty() {
+                ui.colored_label(
+                    theme::of(ui).error,
+                    "Some requirements did not fit. See Analysis.",
+                );
+            }
+        }
+    });
+    if let Some(profile) = selected {
+        app.set_intent(profile);
+    } else {
+        for (path, value) in edits {
+            app.change_param(&path, value);
+        }
     }
 }
 
@@ -317,12 +523,15 @@ pub fn side_panel(app: &mut App, ui: &mut Ui) {
         .size_range(340.0..=600.0)
         .show(ui, |ui| {
             ui.add_space(4.0);
-            // Four tabs that fit one row: the parameters are one list of collapsible groups, not a tab each.
+            // Intent and tuning share one panel; analysis keeps the generated result.
             ui.scope(|ui| {
                 ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
                 ui.horizontal(|ui| {
-                    for (tab, title) in [(Tab::Settings, "Parameters"), (Tab::Analysis, "Analysis")]
-                    {
+                    for (tab, title) in [
+                        (Tab::Settings, "Design"),
+                        (Tab::Advanced, "Advanced"),
+                        (Tab::Analysis, "Analysis"),
+                    ] {
                         if theme::tab(ui, title, app.tab == tab).clicked() {
                             app.tab = tab;
                         }
@@ -334,7 +543,7 @@ pub fn side_panel(app: &mut App, ui: &mut Ui) {
             // a few pixels too wide, and in a side panel (which grows to fit its content) that made the panel widen at every repaint.
             // (Inside a `horizontal`, so the right-to-left layout takes the height of one row, not what is left of the panel.)
             // The search is for the parameters only.
-            if app.tab == Tab::Settings {
+            if app.tab == Tab::Advanced {
                 ui.horizontal(|ui| {
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         if ui
@@ -364,7 +573,8 @@ pub fn side_panel(app: &mut App, ui: &mut Ui) {
                 }
             }
             area.show(ui, |ui| match app.tab {
-                Tab::Settings => settings_tab(app, ui),
+                Tab::Settings => design_tab(app, ui),
+                Tab::Advanced => advanced_tab(app, ui),
                 Tab::Analysis => analysis_tab(app, ui),
             });
         });
@@ -372,23 +582,48 @@ pub fn side_panel(app: &mut App, ui: &mut Ui) {
 
 // ---- Settings: one list of collapsible groups --------------------------------------------------
 
-/// The parameters as one list of collapsible groups: Grid and size and Room shapes open, the others closed, a count of the changed
-/// ones in each title. A search opens every group that has a match and hides the rest.
-fn settings_tab(app: &mut App, ui: &mut Ui) {
+/// Intent comes first; advanced groups open only on demand or when a search matches them.
+fn design_tab(app: &mut App, ui: &mut Ui) {
+    layout_card(app, ui);
+    intent_card(app, ui);
+    ui.add_space(theme::GAP);
+    ui.label(muted(
+        ui,
+        "Everything else that shapes the space, rooms and connections is in the Advanced tab.",
+    ));
+}
+
+/// Every parameter group the Design tab does not already show, collapsed; the search finds any parameter, shown elsewhere or not.
+fn advanced_tab(app: &mut App, ui: &mut Ui) {
+    let needle = app.filter.trim().to_lowercase();
+    if needle.is_empty() {
+        ui.label(muted(ui, "Shape the space, rooms and connections."));
+        ui.add_space(theme::GAP);
+    }
     let groups = std::mem::take(&mut app.groups);
     let current = serde_json::to_value(&app.params).unwrap_or(Value::Null);
-    let needle = app.filter.trim().to_lowercase();
     let layout = app.params.layout;
     let focus = app.focus_group.take();
     let mut edits: Vec<(String, Value)> = Vec::new();
     let mut reset = None;
     let mut shown = 0;
-    for group in groups.iter().filter(|g| group_applies(&g.id, layout)) {
-        // The layout is chosen in the top bar.
+    for group in groups
+        .iter()
+        .filter(|g| !needle.is_empty() || group_applies(&g.id, layout))
+    {
+        // Search includes controls already shown in the intent card, and inactive layout settings.
         let fields: Vec<&ParamField> = group
             .fields
             .iter()
-            .filter(|f| f.path != "layout")
+            .filter(|f| {
+                !needle.is_empty()
+                    || (f.path != "topology.profile"
+                        && !f.path.starts_with("zones.")
+                        && f.path != "layout"
+                        && !layout_fields(app.params.layout).contains(&f.path.as_str())
+                        && !intent_fields(app.params.topology.profile).contains(&f.path.as_str())
+                        && crate::relevance::applies(&f.path, &app.params))
+            })
             .filter(|f| {
                 needle.is_empty()
                     || f.label.as_str().to_lowercase().contains(&needle)
@@ -402,7 +637,9 @@ fn settings_tab(app: &mut App, ui: &mut Ui) {
         let changed = group
             .fields
             .iter()
-            .filter(|f| f.path != "layout" && app.changed.contains(&f.path))
+            .filter(|f| {
+                fields.iter().any(|shown| shown.path == f.path) && app.changed.contains(&f.path)
+            })
             .count();
         let title = if changed > 0 {
             format!("{} · {changed}", group.title.as_str())
@@ -412,8 +649,8 @@ fn settings_tab(app: &mut App, ui: &mut Ui) {
         let focused = focus.as_deref() == Some(group.id.as_str());
         let forced = (focused || !needle.is_empty()).then_some(true);
         let response = egui::CollapsingHeader::new(RichText::new(title).strong())
-            .id_salt(("group", &group.id))
-            .default_open(matches!(group.id.as_str(), "scaffold" | "shapes"))
+            .id_salt(("advanced_group", &group.id))
+            .default_open(false)
             .open(forced)
             .show(ui, |ui| {
                 ui.label(muted(ui, group.intro.as_str()));
@@ -453,10 +690,16 @@ fn settings_tab(app: &mut App, ui: &mut Ui) {
         for (path, next) in edits {
             set_path(&mut value, &path, next);
         }
-        match serde_json::from_value(value) {
+        match serde_json::from_value::<tapiti_core::params::Params>(value) {
             Ok(params) => {
-                app.params = params;
-                app.params_edited();
+                if params.topology.profile != app.params.topology.profile {
+                    let profile = params.topology.profile;
+                    app.params = params;
+                    app.set_intent(profile);
+                } else {
+                    app.params = params;
+                    app.params_edited();
+                }
             }
             Err(error) => app.status = format!("Invalid parameter: {error}", error = error),
         }

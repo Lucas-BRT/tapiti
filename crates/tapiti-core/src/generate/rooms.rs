@@ -23,10 +23,18 @@ pub(super) fn build_rooms(
             p.weights.get(c).max(0.0)
         }
     };
+    // The style of the zone a block stands in (1 for every class without zoning).
+    let zoned = |i: usize, c: ShapeClass| {
+        let b = box_of(&blocks[i]);
+        zones::factor(p, [(b.x0 + b.x1) / 2.0, (b.y0 + b.y1) / 2.0], c)
+    };
     let mut cls: HashMap<usize, usize> = HashMap::new();
     for &i in live {
         let cells = blocks[i].w * blocks[i].h;
-        let ws: Vec<f64> = CLASSES.iter().map(|c| weight_of(*c, cells)).collect();
+        let ws: Vec<f64> = CLASSES
+            .iter()
+            .map(|c| weight_of(*c, cells) * zoned(i, *c))
+            .collect();
         let k = g.pick_class(&ws);
         cls.insert(i, k);
     }
@@ -40,6 +48,7 @@ pub(super) fn build_rooms(
                     .enumerate()
                     .map(|(ci, c)| {
                         weight_of(*c, cells)
+                            * zoned(i, *c)
                             * (p.homophily
                                 * nb.iter().filter(|n| cls.get(n) == Some(&ci)).count() as f64)
                                 .exp()
@@ -104,7 +113,7 @@ pub(super) fn build_rooms(
     }
 
     /* Rooms: each block's shape, fitted (a rectangle when its class can't fit). */
-    for &i in live.iter().filter(|_| p.layout != Layout::Growth) {
+    for &i in live.iter().filter(|_| !p.layout.places_freely()) {
         let b = blocks[i];
         let bx = box_of(&b);
         let mut c = CLASSES[cls[&i]];
@@ -150,7 +159,7 @@ pub(super) fn build_rooms(
     g.node_of_room = g.rooms.iter().map(|r| r.id).collect();
 
     let mut island_of: Vec<usize> = Vec::new();
-    if p.layout == Layout::Growth {
+    if p.layout.places_freely() {
         let target = if p.growth.rooms > 0 {
             p.growth.rooms as usize
         } else {

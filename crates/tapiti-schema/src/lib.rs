@@ -85,7 +85,7 @@ fn class_fields(prefix: &str, title: Text, range: (f64, f64), integer: bool) -> 
         ("disc", tx("circular")),
         ("oct", tx("octagonal")),
         ("L", tx("L-shaped")),
-        ("star", tx("truncated star")),
+        ("star", tx("star")),
     ]
     .into_iter()
     .map(|(class, label)| {
@@ -167,7 +167,7 @@ pub fn groups() -> Vec<ParamGroup> {
         ("disc", tx("circular")),
         ("oct", tx("octagonal")),
         ("L", tx("L-shaped")),
-        ("star", tx("truncated star")),
+        ("star", tx("star")),
     ];
     let mut mix = Vec::new();
     for (i, (a, a_label)) in classes.iter().enumerate() {
@@ -205,7 +205,11 @@ pub fn groups() -> Vec<ParamGroup> {
                 choice(
                     "layout",
                     tx("Layout"),
-                    &[("grid", tx("Grid")), ("growth", tx("Growth"))],
+                    &[
+                        ("grid", tx("Grid")),
+                        ("growth", tx("Growth")),
+                        ("bsp", tx("Binary partition")),
+                    ],
                 ),
                 number("cols", tx("Columns"), 1.0, 64.0, true),
                 number("rows", tx("Rows"), 1.0, 64.0, true),
@@ -278,6 +282,9 @@ pub fn groups() -> Vec<ParamGroup> {
                         ("hub", tx("Hub")),
                         ("redundantExit", tx("Redundant exit")),
                         ("longLoop", tx("Long loop")),
+                        ("spineWithDetours", tx("Spine with detours")),
+                        ("ring", tx("Ring")),
+                        ("hubAndWings", tx("Hub and wings")),
                     ],
                 ),
                 number("topology.minBranches", tx("Minimum side branches"), 0.0, 1000.0, true),
@@ -285,6 +292,16 @@ pub fn groups() -> Vec<ParamGroup> {
                 number("topology.minExitRoutes", tx("Independent routes to the exit"), 0.0, 1000.0, true),
                 number("topology.minCycleLength", tx("Minimum cycle length"), 0.0, 1000.0, true),
                 number("topology.minHubDegree", tx("Minimum hub degree"), 0.0, 1000.0, true),
+                number("topology.minDetours", tx("Returning detours"), 0.0, 1000.0, true),
+            ],
+        ),
+        group(
+            "zones",
+            tx("Zones"),
+            tx("Cut the world into strips along its longer side, each leaning toward a shape class of its own. Any layout takes the styles; the single-corridor joins need Growth."),
+            vec![
+                number("zones.count", tx("Zones (0 = none)"), 0.0, 4.0, true),
+                boolean("zones.bottleneck", tx("Join zones by one corridor")),
             ],
         ),
         group(
@@ -367,15 +384,18 @@ fn help(path: &str, label: &str) -> Text {
         "delta" => tx("Fraction of the cycle reference the generator tries to reach. Higher values favor shortcuts and alternative routes."),
         "entrance" => tx("Marks one room as the entrance. Turn it off for a floor with no entry point; the exit and the profiles that need a path then have nothing to measure."),
         "exitRoom" => tx("Marks a far room as the exit. It needs the entrance; the side-branch and independent-route requirements of the topology profiles also need both."),
+        "zones.count" => tx("Number of zones, from two. Each strip stays at least two cells wide, so a small world holds fewer. Every zone favours one of the shape classes with a positive weight, in turn; turning zones on gives a mix of shapes when only rectangles were enabled."),
+        "zones.bottleneck" => tx("Each pair of neighbouring zones is joined by exactly one corridor, so removing it splits the floor. Needs the Growth layout; Ring, Hub and wings and Spine with detours cross every boundary and cannot use it."),
         "exitDoors" => tx("Maximum number of corridors that can enter the exit room."),
         "exitMinHops" => tx("Minimum number of links between the entrance and the exit, counted in rooms."),
-        "topology.profile" => tx("Classic keeps the base behavior; other profiles require branches, a hub, redundant routes or long cycles."),
+        "topology.profile" => tx("Choose the exploration structure. Spine with detours plans the main route, returning wings and dead ends before filling the remaining space; it needs Growth, entrance and exit, and one island. Ring places rooms round an empty court and closes the loop, with the exit opposite the entrance; it needs Growth from the north border, entrance and exit, and one island. Hub and wings starts in a central hall and grows three or four wings of different depths, the longest ending at the exit; it needs Growth from the centre, entrance and exit, and one island."),
         "topology.minBranches" => tx("Minimum number of side components linked to the main path by a single passage."),
         "topology.minBranchDepth" => tx("Minimum number of rooms in a branch from the main path."),
         "topology.minExitRoutes" => tx("Minimum number of independent paths between the entrance and the exit."),
         "topology.minCycleLength" => tx("Minimum number of segments in the shortest cycle. Zero imposes no such requirement."),
         "topology.minHubDegree" => tx("Minimum number of arms at a central point. Zero does not require a hub."),
-        "layout" => tx("Grid puts one room in each grid block. Growth grows rooms one from another off a parent's door, in free space; isolated chambers are not generated in that mode."),
+        "topology.minDetours" => tx("Minimum number of off-route room groups that return to a different point of the main route. Spine with detours reserves these before ordinary growth; its minimum is one."),
+        "layout" => tx("Grid puts one room in each grid block. Growth grows rooms one from another off a parent's door, in free space. Binary partition cuts the world into leaves of varied proportions with one room in each and joins sibling halves. The intents that plan their own rooms (Spine with detours, Ring, Hub and wings) need Growth."),
         "growth.start" => tx("Where the first room, the entrance when there is one, stands: the middle of the world or against a border (north is the top of the map). Growing from a border makes a deeper floor."),
         "growth.rooms" => tx("Number of rooms to grow. Zero uses the number of live blocks the grid would give, less the leaf chambers asked for, which are placed in the room that is left."),
         "growth.branch" => tx("Each room spawns from 1 up to this many children before the draw picks another parent."),
@@ -399,10 +419,11 @@ mod tests {
 
     #[test]
     fn every_field_path_exists_in_lambda() {
-        let lambda = serde_json::to_value(tapiti_core::params::rich_of_size(
-            tapiti_core::params::Size::Medium,
-        ))
-        .unwrap();
+        let mut params = tapiti_core::params::rich_of_size(tapiti_core::params::Size::Medium);
+        // `minDetours` and `zones` are left out of the JSON while they are off, so older files keep their shape.
+        params.topology.min_detours = 1;
+        params.zones.count = 2;
+        let lambda = serde_json::to_value(params).unwrap();
         for group in groups() {
             for field in &group.fields {
                 let found = field.path.split('.').try_fold(&lambda, |v, k| v.get(k));

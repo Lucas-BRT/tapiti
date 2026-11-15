@@ -39,7 +39,7 @@ pub(super) fn add_cycles(
             break;
         }
         let mut opts = g.options();
-        if let (Layout::Growth, Some((start, exit))) = (p.layout, anchors) {
+        if let (true, Some((start, exit))) = (p.layout.places_freely(), anchors) {
             keep_exit_far(g, &mut opts, start, exit);
         }
         // Every cycle must keep at least `min_cycle_length` edges (the validator checks the girth), so once the profile asks for long

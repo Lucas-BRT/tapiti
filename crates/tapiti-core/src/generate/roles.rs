@@ -13,6 +13,11 @@ pub(super) fn assign_entrance_and_exit(
     if !with_exit {
         return None;
     }
+    if let Some(&exit) = g.spine.last().or(g.ring.get(g.ring.len() / 2)) {
+        g.rooms[exit].role = Role::Exit;
+        g.exit_room = exit;
+        return Some(exit);
+    }
     let h0 = room_hops(&g.nodes, &g.edges, g.node_of_room[start_room]);
     let leaves: Vec<usize> = g
         .rooms
@@ -36,7 +41,7 @@ pub(super) fn assign_entrance_and_exit(
             exit_room = r;
         }
     }
-    if p.layout == Layout::Growth {
+    if p.layout.places_freely() {
         // The cycles added later shorten walks, so the pick keeps a margin over `exitMinHops` when the tree is deep enough for one.
         let pick = |g: &Gen<'_>, wanted: f64| -> Vec<usize> {
             g.rooms

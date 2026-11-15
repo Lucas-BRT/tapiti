@@ -272,6 +272,45 @@ pub fn max_degree(node_count: usize, edges: &[Edge]) -> usize {
     degree.into_iter().max().unwrap_or(0)
 }
 
+/// Off-path room components that join two distinct points of the designated main route.
+pub fn returning_detours(nodes: &[Node], edges: &[Edge], main_path: &[usize]) -> usize {
+    let mut on_path = vec![false; nodes.len()];
+    for &node in main_path {
+        if node < nodes.len() {
+            on_path[node] = true;
+        }
+    }
+    let mut adj = vec![Vec::new(); nodes.len()];
+    for edge in edges {
+        adj[edge.u].push(edge.v);
+        adj[edge.v].push(edge.u);
+    }
+    let mut seen = on_path.clone();
+    let mut count = 0;
+    for root in 0..nodes.len() {
+        if seen[root] {
+            continue;
+        }
+        seen[root] = true;
+        let mut todo = vec![root];
+        let mut anchors = std::collections::BTreeSet::new();
+        let mut has_room = false;
+        while let Some(u) = todo.pop() {
+            has_room |= matches!(nodes[u], Node::Room { .. });
+            for &v in &adj[u] {
+                if on_path[v] {
+                    anchors.insert(v);
+                } else if !seen[v] {
+                    seen[v] = true;
+                    todo.push(v);
+                }
+            }
+        }
+        count += usize::from(has_room && anchors.len() >= 2);
+    }
+    count
+}
+
 pub fn cycle_girth(node_count: usize, edges: &[Edge]) -> Option<usize> {
     let mut best = usize::MAX;
     let mut adj = vec![Vec::<(usize, usize)>::new(); node_count];

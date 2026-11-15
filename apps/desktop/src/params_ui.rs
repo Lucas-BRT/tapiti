@@ -14,7 +14,7 @@ pub fn field_row(
     let differs = default.is_some_and(|d| d != current);
     let label = RichText::new(field.label.as_str());
     let label = if differs {
-        label.color(ui.visuals().selection.bg_fill).strong()
+        label.color(crate::theme::of(ui).accent).strong()
     } else {
         label
     };

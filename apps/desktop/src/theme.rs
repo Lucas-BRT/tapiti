@@ -221,6 +221,43 @@ pub fn tab(ui: &mut egui::Ui, label: &str, selected: bool) -> egui::Response {
     response
 }
 
+fn preference_file() -> Option<std::path::PathBuf> {
+    let base = std::env::var_os("XDG_CONFIG_HOME")
+        .map(std::path::PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| std::path::Path::new(&h).join(".config")))?;
+    Some(base.join("tapiti").join("theme"))
+}
+
+/// The theme chosen last time (`light`, `dark` or `system`); light when none was saved.
+pub fn saved_preference() -> egui::ThemePreference {
+    match preference_file()
+        .and_then(|f| std::fs::read_to_string(f).ok())
+        .as_deref()
+        .map(str::trim)
+    {
+        Some("dark") => egui::ThemePreference::Dark,
+        Some("system") => egui::ThemePreference::System,
+        _ => egui::ThemePreference::Light,
+    }
+}
+
+/// Changes the theme and remembers it; a file that cannot be written only means the choice is not kept.
+pub fn set_preference(ctx: &egui::Context, pref: egui::ThemePreference) {
+    if ctx.options(|o| o.theme_preference) == pref {
+        return;
+    }
+    ctx.set_theme(pref);
+    let name = match pref {
+        egui::ThemePreference::Dark => "dark",
+        egui::ThemePreference::Light => "light",
+        egui::ThemePreference::System => "system",
+    };
+    if let Some(file) = preference_file() {
+        let _ = file.parent().map(std::fs::create_dir_all);
+        let _ = std::fs::write(file, name);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

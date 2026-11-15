@@ -13,6 +13,7 @@ mod map;
 mod panels;
 mod params_ui;
 mod pick;
+mod relevance;
 mod theme;
 
 use eframe::egui::{self, Key, Modifiers};
@@ -27,7 +28,7 @@ use tapiti_core::generate::{Floor, GenerationEvent, Role};
 use tapiti_core::geom::Shape;
 use tapiti_core::metrics::{metrics_of, Metrics};
 use tapiti_core::par;
-use tapiti_core::params::{params_of_size, Params, Size};
+use tapiti_core::params::{params_of_size, Params, Size, TopologyProfile, TopologySpec};
 use tapiti_core::stage;
 
 const APP_ID: &str = "dev.lucasbrt.Tapiti";
@@ -89,8 +90,10 @@ pub enum BenchmarkKind {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Tab {
-    /// The groups of parameters: Grid and size, Room shapes…
+    /// The layout and the exploration intent.
     Settings,
+    /// Every other parameter group, with the search.
+    Advanced,
     Analysis,
 }
 
@@ -233,8 +236,15 @@ impl App {
                 self.defaults = serde_json::to_value(&self.params).unwrap_or(Value::Null);
             }
         }
-        if std::env::var("TAPITI_LAYOUT").is_ok_and(|v| v == "growth") {
-            self.params.layout = tapiti_core::params::Layout::Growth;
+        match std::env::var("TAPITI_LAYOUT").as_deref() {
+            Ok("growth") => self.params.layout = tapiti_core::params::Layout::Growth,
+            Ok("bsp") => self.params.layout = tapiti_core::params::Layout::Bsp,
+            _ => {}
+        }
+        if let Ok(intent) = std::env::var("TAPITI_INTENT") {
+            if let Ok(profile) = serde_json::from_value(Value::String(intent)) {
+                self.params.apply_intent(profile);
+            }
         }
         match std::env::var("TAPITI_THEME").as_deref() {
             Ok("light") => self.ctx.set_theme(egui::ThemePreference::Light),
@@ -250,9 +260,10 @@ impl App {
         if let Ok(tab) = std::env::var("TAPITI_TAB") {
             match tab.as_str() {
                 "floor" | "analysis" => self.tab = Tab::Analysis,
-                "advanced" | "parameters" => self.tab = Tab::Settings,
+                "design" => self.tab = Tab::Settings,
+                "advanced" | "parameters" => self.tab = Tab::Advanced,
                 id => {
-                    self.tab = Tab::Settings;
+                    self.tab = Tab::Advanced;
                     self.focus_group = Some(id.to_string());
                 }
             }
@@ -293,6 +304,11 @@ impl App {
     }
 
     fn launch_generate(&mut self) {
+        if let Err(error) = validate_params(&self.params) {
+            self.queued = false;
+            self.status = error;
+            return;
+        }
         self.busy = true;
         self.queued = false;
         self.work_id = self.work_id.wrapping_add(1);
@@ -491,14 +507,28 @@ impl App {
     }
 
     pub fn set_size(&mut self, size: Size) {
+        let profile = self.params.topology.profile;
         self.size = size;
         self.params = params_of_size(self.size);
         self.defaults = serde_json::to_value(&self.params).unwrap_or(Value::Null);
+        self.params.apply_intent(profile);
         self.refresh_changed();
         self.sync_json();
         self.zoom = 1.0;
         self.pan = [0.0, 0.0];
         self.request_generate();
+    }
+
+    pub fn set_intent(&mut self, profile: TopologyProfile) {
+        self.params.topology = TopologySpec::default();
+        self.params.apply_intent(profile);
+        self.params.topology = self.params.topology.requirements();
+        self.params_edited();
+    }
+
+    pub fn reset_all(&mut self) {
+        self.params.topology.profile = TopologyProfile::Classic;
+        self.set_size(self.size);
     }
 
     /// The size, the seed and the Λ as the JSON that File > Save and Copy JSON write.
@@ -618,7 +648,11 @@ impl App {
         let mut params = serde_json::to_value(&self.params).unwrap_or(Value::Null);
         set_path(&mut params, path, value);
         match serde_json::from_value::<Params>(params) {
-            Ok(params) => {
+            Ok(mut params) => {
+                // Turning zones on also gives rectangle-only weights a mix, so the zones can look different.
+                if path == "zones.count" && self.params.zones.count < 2 && params.zones.count >= 2 {
+                    params.set_zones(params.zones.count, params.zones.bottleneck);
+                }
                 self.params = params;
                 self.params_edited();
             }
@@ -631,14 +665,20 @@ impl App {
             return;
         };
         let mut value = serde_json::to_value(&self.params).unwrap_or(Value::Null);
-        // The layout has its own strip: a tab's reset does not switch it back.
-        for field in group.fields.iter().filter(|f| f.path != "layout") {
-            if let Some(default) = get_path(&self.defaults, &field.path).cloned() {
+        // Reset tuning without changing the selected exploration intent.
+        for field in group.fields.iter().filter(|f| f.path != "topology.profile") {
+            if let Some(default) = get_path(&self.defaults, &field.path)
+                .cloned()
+                .or_else(|| (field.path == "topology.minDetours").then(|| Value::from(0)))
+                .or_else(|| (field.path == "zones.count").then(|| Value::from(0)))
+                .or_else(|| (field.path == "zones.bottleneck").then(|| Value::from(false)))
+            {
                 set_path(&mut value, &field.path, default);
             }
         }
         let title = group.title.as_str().to_string();
-        if let Ok(params) = serde_json::from_value(value) {
+        if let Ok(mut params) = serde_json::from_value::<Params>(value) {
+            params.apply_intent(self.params.topology.profile);
             self.params = params;
             self.params_edited();
             self.status = format!("{title} parameters restored.", title = title);
@@ -775,7 +815,7 @@ impl eframe::App for App {
 }
 
 fn setup_style(ctx: &egui::Context) {
-    ctx.set_theme(egui::ThemePreference::Light);
+    ctx.set_theme(theme::saved_preference());
     theme::apply(ctx);
 }
 
@@ -812,7 +852,7 @@ pub fn translate_violation(message: &str) -> String {
             "V3" => "doors",
             "V4" => "corridor geometry",
             "V5" => "entrance and exit",
-            "T1" | "T2" | "T3" | "T4" | "T5" => "topology requirement",
+            "T1" | "T2" | "T3" | "T4" | "T5" | "T6" => "topology requirement",
             _ => "model rule",
         };
         format!("{meaning}: {detail}")
@@ -1155,6 +1195,10 @@ fn validate_params(p: &Params) -> Result<(), String> {
     count("topology.minExitRoutes", p.topology.min_exit_routes, 1000)?;
     count("topology.minCycleLength", p.topology.min_cycle_length, 1000)?;
     count("topology.minHubDegree", p.topology.min_hub_degree, 1000)?;
+    count("topology.minDetours", p.topology.min_detours, 1000)?;
+    if let Some(error) = p.intent_error() {
+        return Err(error.into());
+    }
     Ok(())
 }
 
@@ -1173,7 +1217,46 @@ fn size_label(size: Size) -> &'static str {
 fn size_description(size: Size) -> String {
     let (cols, rows) = size.grid();
     format!(
-        "{} grid of {cols} × {rows} blocks. Every other parameter keeps its default.",
+        "{} world of {cols} × {rows} cells. Keeps the intent and resets its tuning.",
         size_label(size)
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn spine_intent_defaults_pass_desktop_validation_in_every_size() {
+        for size in Size::ALL {
+            let mut p = params_of_size(size);
+            p.apply_intent(TopologyProfile::SpineWithDetours);
+            assert!(validate_params(&p).is_ok(), "{}", size.name());
+            p.entrance = false;
+            assert!(validate_params(&p).is_err());
+        }
+    }
+
+    #[test]
+    fn ring_intent_defaults_pass_desktop_validation_in_every_size() {
+        for size in Size::ALL {
+            let mut p = params_of_size(size);
+            p.apply_intent(TopologyProfile::Ring);
+            assert!(validate_params(&p).is_ok(), "{}", size.name());
+            p.growth.start = tapiti_core::params::GrowthStart::Center;
+            assert!(validate_params(&p).is_err());
+        }
+    }
+
+    #[test]
+    fn imported_detour_counts_are_bounded_before_generation() {
+        let mut p = params_of_size(Size::Medium);
+        p.apply_intent(TopologyProfile::SpineWithDetours);
+        let mut value = serde_json::to_value(p).unwrap();
+        set_path(&mut value, "topology.minDetours", Value::from(1001));
+        let imported = serde_json::from_value(value).unwrap();
+        assert!(validate_params(&imported)
+            .unwrap_err()
+            .contains("topology.minDetours"));
+    }
 }

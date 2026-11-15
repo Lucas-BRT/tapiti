@@ -71,13 +71,15 @@ fn yes() -> bool {
     true
 }
 
-/// How the rooms are laid out: one per grid block, or grown one from another off a parent's door.
+/// How the rooms are laid out: one per grid block, grown one from another off a parent's door, or one per leaf of a binary
+/// partition of the world.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Layout {
     #[default]
     Grid,
     Growth,
+    Bsp,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -89,6 +91,130 @@ pub enum TopologyProfile {
     Hub,
     RedundantExit,
     LongLoop,
+    SpineWithDetours,
+    Ring,
+    HubAndWings,
+}
+
+/// Zoning: the world cut into strips along its longer side, each with a shape class of its own, and optionally joined by single corridors.
+/// Fewer than two zones means no zoning; the settings are then left out of the JSON, so older files keep their shape.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct ZoneSpec {
+    pub count: usize,
+    /// Zones are joined by one corridor each, so removing it splits the floor. Needs the Growth layout.
+    pub bottleneck: bool,
+}
+
+impl ZoneSpec {
+    fn is_off(&self) -> bool {
+        *self == Self::default()
+    }
+}
+
+impl Layout {
+    /// Whether the layout places rooms in free space, joining them as it goes (Growth and the binary partition), not one per grid block.
+    pub fn places_freely(self) -> bool {
+        self != Self::Grid
+    }
+
+    /// Whether the layout can run the intent: the intents that plan their own rooms (the route, the ring, the hub) work inside Growth.
+    pub fn allows(self, profile: TopologyProfile) -> bool {
+        self == Self::Growth || !profile.needs_growth()
+    }
+
+    /// How the layout places rooms, in words for the apps.
+    pub fn guide(self) -> &'static str {
+        match self {
+            Self::Grid => "Rooms sit in a grid of blocks, one per block (some merged into large blocks, some left empty). A spanning tree joins them, then cycles are added.",
+            Self::Growth => "Rooms grow one from another off free doors, so positions are less aligned. The grid only sets the size of the world.",
+            Self::Bsp => "The world is cut into leaves of varied proportions with one room in each, joined sibling to sibling, like a planned building.",
+        }
+    }
+}
+
+impl TopologyProfile {
+    /// Whether the intent plans its own rooms inside the Growth layout, so no other layout can run it.
+    pub fn needs_growth(self) -> bool {
+        matches!(
+            self,
+            Self::SpineWithDetours | Self::Ring | Self::HubAndWings
+        )
+    }
+}
+
+/// What an intent builds, what it needs to work and what choosing it changes in Λ, in words for the apps. Kept beside
+/// `apply_intent` and `intent_error` so the text follows what they do.
+#[derive(Clone, Copy, Debug)]
+pub struct IntentGuide {
+    pub makes: &'static str,
+    pub needs: &'static str,
+    pub sets: &'static str,
+    pub zones: &'static str,
+}
+
+impl TopologyProfile {
+    pub fn guide(self) -> IntentGuide {
+        const JOINS: &str =
+            "Can be joined by single corridors (Growth or Binary partition layout).";
+        const STYLE: &str = "Shapes only: this intent crosses every zone boundary.";
+        let (makes, needs, sets, zones) = match self {
+            Self::Classic => (
+                "An open-ended floor: rooms and corridors shape it, then cycles are added up to the density δ.",
+                "Nothing in particular.",
+                "Nothing: every setting stays as it is.",
+                JOINS,
+            ),
+            Self::Backbone => (
+                "A route from the entrance to the exit with side branches to explore.",
+                "An entrance and an exit.",
+                "Nothing: at least two side branches are required and checked once the floor is built.",
+                JOINS,
+            ),
+            Self::Hub => (
+                "A crossroads: at least one room with three ways out.",
+                "Nothing in particular.",
+                "Nothing: the requirement is checked once the floor is built.",
+                JOINS,
+            ),
+            Self::RedundantExit => (
+                "Two independent routes to the exit, so no single corridor cuts it off.",
+                "An entrance, an exit, one island, and a door on the exit for each route.",
+                "Turns on the entrance and the exit, one island and at least two doors on the exit.",
+                "Shapes only: a single-corridor join would leave one route.",
+            ),
+            Self::LongLoop => (
+                "Only long cycles, of four rooms or more: no small loops.",
+                "Nothing in particular.",
+                "Nothing: the requirement is checked once the floor is built.",
+                JOINS,
+            ),
+            Self::SpineWithDetours => (
+                "A main route is built first, then dead-end branches and detours that rejoin it farther on.",
+                "Growth, an entrance and an exit, one island.",
+                "Turns on Growth, the entrance and the exit, one island, and a growth depth that reaches the exit.",
+                STYLE,
+            ),
+            Self::Ring => (
+                "Rooms round an empty court: two ways round to an exit opposite the entrance.",
+                "Growth from the north border, an entrance and an exit, one island, and a world big enough for the ring.",
+                "Turns on Growth from the north, the entrance and the exit, one island and two doors on the exit.",
+                STYLE,
+            ),
+            Self::HubAndWings => (
+                "A central hall that is the entrance, with three or four wings of different depths; the longest ends at the exit.",
+                "Growth from the centre, an entrance and an exit, one island.",
+                "Turns on Growth from the middle, the entrance and the exit, one island and a hub degree of three.",
+                STYLE,
+            ),
+        };
+        IntentGuide {
+            makes,
+            needs,
+            sets,
+            zones,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
@@ -100,6 +226,12 @@ pub struct TopologySpec {
     pub min_exit_routes: usize,
     pub min_cycle_length: usize,
     pub min_hub_degree: usize,
+    #[serde(skip_serializing_if = "is_zero")]
+    pub min_detours: usize,
+}
+
+fn is_zero(value: &usize) -> bool {
+    *value == 0
 }
 
 impl Default for TopologySpec {
@@ -111,6 +243,7 @@ impl Default for TopologySpec {
             min_exit_routes: 1,
             min_cycle_length: 0,
             min_hub_degree: 0,
+            min_detours: 0,
         }
     }
 }
@@ -124,6 +257,7 @@ impl TopologySpec {
             out.min_branches = 0;
             out.min_branch_depth = 0;
             out.min_exit_routes = 1;
+            out.min_detours = 0;
         }
         out
     }
@@ -142,6 +276,16 @@ impl TopologySpec {
             TopologyProfile::Hub => out.min_hub_degree = out.min_hub_degree.max(3),
             TopologyProfile::RedundantExit => out.min_exit_routes = out.min_exit_routes.max(2),
             TopologyProfile::LongLoop => out.min_cycle_length = out.min_cycle_length.max(4),
+            TopologyProfile::HubAndWings => out.min_hub_degree = out.min_hub_degree.max(3),
+            TopologyProfile::Ring => {
+                out.min_exit_routes = out.min_exit_routes.max(2);
+                out.min_cycle_length = out.min_cycle_length.max(4);
+            }
+            TopologyProfile::SpineWithDetours => {
+                out.min_branches = out.min_branches.max(1);
+                out.min_branch_depth = out.min_branch_depth.max(1);
+                out.min_detours = out.min_detours.max(1);
+            }
         }
         out
     }
@@ -263,6 +407,8 @@ pub struct Params {
     pub topology: TopologySpec,
     #[serde(default)]
     pub growth: GrowthSpec,
+    #[serde(default, skip_serializing_if = "ZoneSpec::is_off")]
+    pub zones: ZoneSpec,
 }
 
 /// The pair key of the mixing matrix, the same whatever the order.
@@ -333,17 +479,248 @@ fn base() -> Params {
         junction: None,
         topology: TopologySpec::default(),
         growth: GrowthSpec::default(),
+        zones: ZoneSpec::default(),
     }
 }
 
 impl Params {
+    /// Apply an explicitly chosen intent and the settings it needs; importing JSON never calls this.
+    pub fn apply_intent(&mut self, profile: TopologyProfile) {
+        self.topology.profile = profile;
+        if profile == TopologyProfile::SpineWithDetours {
+            self.layout = Layout::Growth;
+            self.entrance = true;
+            self.exit_room = true;
+            self.growth.islands = 1;
+            let req = self.topology.requirements();
+            self.topology.min_branches = req.min_branches;
+            self.topology.min_branch_depth = req.min_branch_depth;
+            self.topology.min_detours = req.min_detours;
+            self.growth.depth = self
+                .growth
+                .depth
+                .max(self.exit_min_hops + req.min_branch_depth as i32);
+        }
+        if profile == TopologyProfile::HubAndWings {
+            self.layout = Layout::Growth;
+            self.growth.start = GrowthStart::Center;
+            self.entrance = true;
+            self.exit_room = true;
+            self.growth.islands = 1;
+            self.topology.min_hub_degree = self.topology.requirements().min_hub_degree.min(4);
+            self.growth.depth = self.growth.depth.max(self.exit_min_hops + 1);
+        }
+        if profile == TopologyProfile::Ring {
+            self.layout = Layout::Growth;
+            self.growth.start = GrowthStart::North;
+            self.entrance = true;
+            self.exit_room = true;
+            self.growth.islands = 1;
+            self.exit_doors = self.exit_doors.max(2);
+            self.growth.depth = self.growth.depth.max(self.ring_rooms() as i32 / 2 + 1);
+        }
+        if profile == TopologyProfile::RedundantExit {
+            self.entrance = true;
+            self.exit_room = true;
+            self.growth.islands = 1;
+            self.exit_doors = self
+                .exit_doors
+                .max(self.topology.requirements().min_exit_routes as i32);
+        }
+    }
+
+    /// Most zones the world holds: the strips cut along its longer side stay two cells wide, up to four.
+    pub fn zone_limit(&self) -> usize {
+        (self.cols.max(self.rows).max(1) as usize / 2).clamp(2, 4)
+    }
+
+    /// The zones in use: 1 without zoning.
+    pub fn zone_count(&self) -> usize {
+        if self.zones.count >= 2 {
+            self.zones.count.min(self.zone_limit())
+        } else {
+            1
+        }
+    }
+
+    /// The strip of zone `k` as `[x0, y0, x1, y1]`, in the world of the scaffold (from the origin, `cols` by `rows` cells).
+    pub fn zone_strip(&self, k: usize) -> [f64; 4] {
+        let (w, h) = (
+            self.cols.max(1) as f64 * self.cell_w,
+            self.rows.max(1) as f64 * self.cell_h,
+        );
+        let n = self.zone_count() as f64;
+        let (lo, hi) = (k as f64 / n, (k + 1) as f64 / n);
+        if w >= h {
+            [w * lo, 0.0, w * hi, h]
+        } else {
+            [0.0, h * lo, w, h * hi]
+        }
+    }
+
+    /// The zone a point stands in. A pure function of the point and Λ: it draws nothing from the generator.
+    pub fn zone_of(&self, at: [f64; 2]) -> usize {
+        let n = self.zone_count();
+        let (w, h) = (
+            self.cols.max(1) as f64 * self.cell_w,
+            self.rows.max(1) as f64 * self.cell_h,
+        );
+        let t = if w >= h { at[0] / w } else { at[1] / h };
+        ((t * n as f64).floor().max(0.0) as usize).min(n - 1)
+    }
+
+    /// Why zones cannot be joined by single corridors with this layout and intent, if they cannot.
+    pub fn zone_bottleneck_blocker(&self) -> Option<&'static str> {
+        if !self.layout.places_freely() {
+            return Some(
+                "Single-corridor joins need the Growth or Binary partition layout; the grid only gets zone styles.",
+            );
+        }
+        matches!(
+            self.topology.profile,
+            TopologyProfile::Ring | TopologyProfile::HubAndWings | TopologyProfile::SpineWithDetours
+        )
+        .then_some("This intent crosses every zone boundary, so zones keep their styles but cannot be single corridors.")
+    }
+
+    /// Whether the zones are joined by single corridors (it needs a layout that places rooms in free space, zone by zone).
+    pub fn bottleneck_on(&self) -> bool {
+        self.zone_count() > 1 && self.zones.bottleneck && self.layout.places_freely()
+    }
+
+    /// Clumps of the grown layout joined by single corridors: the zones when they are bottlenecks, else the islands.
+    pub fn clumps(&self) -> usize {
+        if self.bottleneck_on() {
+            self.zone_count()
+        } else if self.layout == Layout::Growth {
+            self.growth.islands.max(1) as usize
+        } else {
+            1
+        }
+    }
+
+    /// Turns zoning on with `count` zones. A zone's look is its shape class, so with rectangles only the weights get a mix.
+    pub fn set_zones(&mut self, count: usize, bottleneck: bool) {
+        self.zones = ZoneSpec { count, bottleneck };
+        let others = [
+            ShapeClass::Disc,
+            ShapeClass::Oct,
+            ShapeClass::L,
+            ShapeClass::Star,
+        ];
+        if count >= 2 && others.iter().all(|c| self.weights.get(*c) <= 0.0) {
+            self.weights = ByClass::new(0.4, 0.2, 0.2, 0.2, 0.0);
+        }
+    }
+
+    /// Rooms in each wing of the hub, the first being the route to the exit: `exitMinHops` rooms, then one fewer each, never fewer
+    /// than one. The wings are as many as the hub degree asks for, three at least and four at most.
+    pub fn hub_wing_depths(&self) -> Vec<usize> {
+        let hops = self.exit_min_hops.max(1) as usize;
+        let wings = self.topology.requirements().min_hub_degree.clamp(3, 4);
+        (0..wings).map(|i| hops.saturating_sub(i).max(1)).collect()
+    }
+
+    /// Rooms on the ring: even, so the exit stands opposite the entrance at `exitMinHops` or more room hops from it.
+    pub fn ring_rooms(&self) -> usize {
+        (2 * self.exit_min_hops.max(2)) as usize
+    }
+
+    /// The ellipse the ring rooms centre on: the world's middle and the radii that keep the first room a `gap` from the north border.
+    pub fn ring_ellipse(&self) -> ([f64; 2], [f64; 2]) {
+        let (w, h) = (
+            self.cols.max(1) as f64 * self.cell_w,
+            self.rows.max(1) as f64 * self.cell_h,
+        );
+        let (bw, bh) = (self.cell_w - 2.0 * self.gap, self.cell_h - 2.0 * self.gap);
+        (
+            [w / 2.0, h / 2.0],
+            [
+                (w / 2.0 - self.gap - bw / 2.0).max(1.0),
+                (h / 2.0 - self.gap - bh / 2.0).max(1.0),
+            ],
+        )
+    }
+
+    /// How many one-cell rooms fit round the ring ellipse, a room and a minimum corridor apart (Ramanujan's perimeter).
+    pub fn ring_capacity(&self) -> usize {
+        let (_, [a, b]) = self.ring_ellipse();
+        let perimeter =
+            std::f64::consts::PI * (3.0 * (a + b) - ((3.0 * a + b) * (a + 3.0 * b)).sqrt());
+        let step = self.cell_w - 2.0 * self.gap + self.min_len;
+        (perimeter / step.max(1.0)).floor() as usize
+    }
+
+    /// Combinations that cannot express the requested intent, before spending attempts on geometry.
+    pub fn intent_error(&self) -> Option<&'static str> {
+        if self.topology.profile == TopologyProfile::SpineWithDetours {
+            if self.layout != Layout::Growth
+                || !self.entrance
+                || !self.exit_room
+                || self.growth.islands != 1
+            {
+                return Some(
+                    "Spine with detours needs Growth, an entrance and exit, and one island.",
+                );
+            }
+            if self.growth.depth < self.exit_min_hops {
+                return Some("Growth depth must reach the requested main route length.");
+            }
+        }
+        if self.zones.count >= 2 {
+            if self.zones.count > self.zone_limit() {
+                return Some(
+                    "The world is too small for that many zones: each strip needs two cells.",
+                );
+            }
+            if self.zones.bottleneck {
+                if let Some(reason) = self.zone_bottleneck_blocker() {
+                    return Some(reason);
+                }
+            }
+        }
+        if self.topology.profile == TopologyProfile::HubAndWings
+            && (self.layout != Layout::Growth
+                || self.growth.start != GrowthStart::Center
+                || !self.entrance
+                || !self.exit_room
+                || self.growth.islands != 1)
+        {
+            return Some(
+                "Hub and wings needs Growth starting at the centre, an entrance and exit, and one island.",
+            );
+        }
+        if self.topology.profile == TopologyProfile::Ring {
+            if self.layout != Layout::Growth
+                || self.growth.start != GrowthStart::North
+                || !self.entrance
+                || !self.exit_room
+                || self.growth.islands != 1
+            {
+                return Some(
+                    "Ring needs Growth starting at the north border, an entrance and exit, and one island.",
+                );
+            }
+            if self.ring_rooms() > self.ring_capacity() {
+                return Some("The ring needs more rooms than fit around this world.");
+            }
+        }
+        if self.entrance
+            && self.exit_room
+            && self.topology_requirements().min_exit_routes > self.exit_doors.max(0) as usize
+        {
+            return Some("The exit needs at least one door per independent route.");
+        }
+        None
+    }
+
     /// The topology requirements this Λ can meet: those that need the path between an entrance and an exit are left out without
     /// both, and independent routes to the exit are left out with several islands, whose bridges are single corridors.
     pub fn topology_requirements(&self) -> TopologySpec {
         let mut out = self
             .topology
             .requirements_with(self.entrance && self.exit_room);
-        if self.layout == Layout::Growth && self.growth.islands > 1 {
+        if self.clumps() > 1 {
             out.min_exit_routes = 1;
         }
         out

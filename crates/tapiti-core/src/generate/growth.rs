@@ -12,6 +12,44 @@ pub(super) fn grow_rooms(
     progress: &mut Option<&mut dyn FnMut(GenerationEvent)>,
 ) -> Vec<usize> {
     let p = g.p;
+    let mut plan = matches!(
+        p.topology.profile,
+        TopologyProfile::SpineWithDetours | TopologyProfile::HubAndWings
+    )
+    .then(|| spine::SpinePlan::new(p));
+    let is_ring = p.topology.profile == TopologyProfile::Ring;
+    let unit_boxes = is_ring || plan.is_some();
+    // Zones joined by single corridors: each grows inside its strip, from a room of generation 0, and the next starts through a
+    // short corridor. The style of a zone (its shape class) is applied by `fit_room` wherever it is, bottleneck or not.
+    let bottle = p.bottleneck_on();
+    let regions: Vec<Bx> = if bottle {
+        (0..p.zone_count())
+            .map(|k| {
+                let z = p.zone_strip(k);
+                Bx {
+                    x0: z[0],
+                    y0: z[1],
+                    x1: z[2],
+                    y1: z[3],
+                }
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
+    let target = plan
+        .as_ref()
+        .map_or(target, |plan| target.max(plan.minimum_rooms()));
+    let target = if is_ring {
+        target.max(p.ring_rooms())
+    } else {
+        target
+    };
+    let target = if bottle {
+        target.max(3 * p.zone_count())
+    } else {
+        target
+    };
     let (cw, ch) = (p.cell_w.max(1.0), p.cell_h.max(1.0));
     let cell = cw.max(ch);
     g.room_grid = SpatialHash::new(cell);
@@ -25,7 +63,7 @@ pub(super) fn grow_rooms(
     };
     // A box the size of one of the grid's blocks, drawn at random (1x1 when the grid has none), so the rooms take as much room as the grid's.
     let pick_box = |rng: &mut Mulberry| -> (f64, f64, i32) {
-        let (kw, kh) = if sizes.is_empty() {
+        let (kw, kh) = if sizes.is_empty() || unit_boxes {
             (1, 1)
         } else {
             sizes[(rng.next() * sizes.len() as f64).floor() as usize % sizes.len()]
@@ -37,7 +75,13 @@ pub(super) fn grow_rooms(
         )
     };
     let fit_room = |g: &mut Gen<'_>, bx: Bx, cells: i32| -> Option<(ShapeClass, Shape)> {
-        let ws: Vec<f64> = CLASSES.iter().map(|c| weight_of(*c, cells)).collect();
+        let ws: Vec<f64> = CLASSES
+            .iter()
+            .map(|c| {
+                weight_of(*c, cells)
+                    * zones::factor(p, [(bx.x0 + bx.x1) / 2.0, (bx.y0 + bx.y1) / 2.0], *c)
+            })
+            .collect();
         let mut c = CLASSES[g.pick_class(&ws)];
         let shape = match fit(c, bx, &mut g.rng, p, cells) {
             Some(s) => s,
@@ -71,8 +115,28 @@ pub(super) fn grow_rooms(
         }
     };
 
+    if p.layout == Layout::Bsp {
+        bsp::build(g, world, target, &fit_room, &make_room, progress);
+        // With zone bottlenecks the zone of a room is its clump, which keeps the cycles inside it.
+        return g
+            .rooms
+            .iter()
+            .map(|r| {
+                if p.bottleneck_on() {
+                    p.zone_of(r.center)
+                } else {
+                    0
+                }
+            })
+            .collect();
+    }
     // The first room, in the middle of the world or against the border `growth.start` names (a `gap` in from it).
-    let (w0, h0, cells0) = pick_box(&mut g.rng);
+    // The hub of hub-and-wings is a hall two cells wide, the one big room of the floor.
+    let (w0, h0, cells0) = if p.topology.profile == TopologyProfile::HubAndWings {
+        (2.0 * cw - 2.0 * p.gap, ch - 2.0 * p.gap, 2)
+    } else {
+        pick_box(&mut g.rng)
+    };
     let (mut mx, mut my) = ((world.x0 + world.x1) / 2.0, (world.y0 + world.y1) / 2.0);
     match p.growth.start {
         GrowthStart::Center => {}
@@ -80,6 +144,10 @@ pub(super) fn grow_rooms(
         GrowthStart::South => my = world.y1 - p.gap - h0 / 2.0,
         GrowthStart::West => mx = world.x0 + p.gap + w0 / 2.0,
         GrowthStart::East => mx = world.x1 - p.gap - w0 / 2.0,
+    }
+    if bottle {
+        mx = (regions[0].x0 + regions[0].x1) / 2.0;
+        my = (regions[0].y0 + regions[0].y1) / 2.0;
     }
     let bx0 = Bx {
         x0: mx - w0 / 2.0,
@@ -96,6 +164,9 @@ pub(super) fn grow_rooms(
     g.rooms.push(r0);
     g.nodes.push(Node::Room { room: 0 });
     g.node_of_room.push(0);
+    if plan.is_some() {
+        g.spine.push(0);
+    }
     let mut depth = vec![0i32];
     // Failed rounds of each parent: it leaves the pool after three, not after one.
     let mut strikes = vec![0u8];
@@ -106,6 +177,32 @@ pub(super) fn grow_rooms(
     let mut open: Vec<usize> = vec![0];
     let max_depth = p.growth.depth.max(1);
     let branch = p.growth.branch.max(1);
+    if is_ring {
+        if !ring::build(g, world, &fit_room, &make_room, progress) {
+            return island_of;
+        }
+        g.exit_room = g.ring[g.ring.len() / 2];
+        let count = g.ring.len();
+        for k in 1..count {
+            let id = g.ring[k];
+            depth.push(k.min(count - k) as i32);
+            strikes.push(0);
+            island_of.push(0);
+            let centre = g.rooms[id].center;
+            let mut around = 0.0;
+            for (room, slot) in g.rooms.iter().zip(near.iter_mut()).take(id) {
+                if dist(room.center, centre) <= near_radius {
+                    *slot += 1.0;
+                    around += 1.0;
+                }
+            }
+            near.push(around);
+        }
+        open = (0..count)
+            .map(|k| g.ring[k])
+            .filter(|&i| depth[i] < max_depth && g.rooms[i].ports.iter().any(|q| g.port_free(q)))
+            .collect();
+    }
     let mut budget = target.saturating_mul(60).max(200);
     // Diagnostics only (they never touch the RNG): why proposals were refused and why the loop ended.
     // [out of the world, no shape fits, crowded, on a corridor, outside the clump radius, no corridor to the parent]
@@ -115,7 +212,11 @@ pub(super) fn grow_rooms(
     // When the pool empties short of the target, rooms that still have a free door come back (twice at most), in any clump.
     let (mut refills, mut refilling) = (0, false);
     // Islands: the rooms are split into clumps; each clump grows on its own and a long bridge corridor starts the next one.
-    let mut islands = p.growth.islands.max(1) as usize;
+    let mut islands = if bottle {
+        regions.len()
+    } else {
+        p.growth.islands.max(1) as usize
+    };
     let (mut island_idx, mut island_size) = (0usize, 1usize);
     let mut quota = (target / islands).max(1);
     let (mut need_bridge, mut bridge_tries) = (false, 0);
@@ -131,7 +232,9 @@ pub(super) fn grow_rooms(
             strikes.iter_mut().for_each(|x| *x = 0);
             open = (0..g.rooms.len())
                 .filter(|&i| {
-                    depth[i] < max_depth && g.rooms[i].ports.iter().any(|q| g.port_free(q))
+                    (!bottle || island_of[i] == island_idx)
+                        && depth[i] < max_depth
+                        && g.rooms[i].ports.iter().any(|q| g.port_free(q))
                 })
                 .collect();
         }
@@ -144,7 +247,19 @@ pub(super) fn grow_rooms(
                 break;
             }
         }
-        let (parent, k, children, bridge) = if need_bridge {
+        let planning = plan.as_ref().is_some_and(|plan| !plan.finished(g));
+        let (parent, k, children, bridge) = if planning {
+            let Some(parent) = plan.as_mut().unwrap().parent(g, &open) else {
+                stop = "intent-blocked";
+                break;
+            };
+            (
+                parent,
+                open.iter().position(|r| *r == parent).unwrap(),
+                1,
+                false,
+            )
+        } else if need_bridge {
             bridge_tries += 1;
             if bridge_tries > 60 {
                 // No room for another clump: keep growing the last one.
@@ -154,6 +269,7 @@ pub(super) fn grow_rooms(
             }
             // Any room with a free door may start a bridge.
             let any: Vec<usize> = (0..g.rooms.len())
+                .filter(|&i| !bottle || island_of[i] == island_idx)
                 .filter(|&i| g.rooms[i].ports.iter().any(|q| g.port_free(q)))
                 .collect();
             if any.is_empty() {
@@ -170,7 +286,15 @@ pub(super) fn grow_rooms(
             // The parent is drawn with weight e^(cluster·density): preferential attachment, so crowded spots keep growing.
             let ws: Vec<f64> = open
                 .iter()
-                .map(|&i| (p.growth.cluster * near[i]).clamp(-30.0, 30.0).exp())
+                .map(|&i| {
+                    if (plan.is_some() && g.reserved_rooms.contains(&i))
+                        || ((plan.is_some() || is_ring) && g.locked_full(i))
+                    {
+                        0.0
+                    } else {
+                        (p.growth.cluster * near[i]).clamp(-30.0, 30.0).exp()
+                    }
+                })
                 .collect();
             let Some(k) = g.weighted(&ws) else {
                 stop = "weighted-none";
@@ -189,7 +313,7 @@ pub(super) fn grow_rooms(
                 break;
             }
             let mut placed = false;
-            for _attempt in 0..8 {
+            for _attempt in 0..if planning { 24 } else { 8 } {
                 budget = budget.saturating_sub(1);
                 let free: Vec<Port> = g.rooms[parent]
                     .ports
@@ -232,7 +356,10 @@ pub(super) fn grow_rooms(
                     let door = free[(g.rng.next() * free.len() as f64).floor() as usize];
                     let u = dir_of(door.k);
                     let (bw, bh, cells) = pick_box(&mut g.rng);
-                    let reach = if bridge {
+                    let reach = if bridge && bottle {
+                        // The next district is the next strip: a short corridor reaches it.
+                        p.min_len + (0.3 + 0.7 * g.rng.next()) * cell
+                    } else if bridge {
                         p.min_len + (3.0 + 3.0 * g.rng.next()) * cell
                     } else {
                         let r = p.min_len
@@ -280,12 +407,24 @@ pub(super) fn grow_rooms(
                                     p.clear,
                                 )
                         });
-                    let outside = !bridge
-                        && !refilling
-                        && islands > 1
-                        && island_idx + 1 < islands
-                        && dist(room.center, root_c) > radius;
-                    if crowded || on_corridor || outside {
+                    let outside = if bottle {
+                        let strip = &regions[if bridge {
+                            island_idx + 1
+                        } else {
+                            island_of[parent]
+                        }];
+                        room.bounds.lo[0] < strip.x0
+                            || room.bounds.lo[1] < strip.y0
+                            || room.bounds.hi[0] > strip.x1
+                            || room.bounds.hi[1] > strip.y1
+                    } else {
+                        !bridge
+                            && !refilling
+                            && islands > 1
+                            && island_idx + 1 < islands
+                            && dist(room.center, root_c) > radius
+                    };
+                    if crowded || on_corridor || outside || g.box_in_court(&bx) {
                         refused[if crowded {
                             2
                         } else if on_corridor {
@@ -323,7 +462,7 @@ pub(super) fn grow_rooms(
                     proposals.push((room, w));
                 }
                 // The proposals are tried in weight order until one has a corridor to the parent.
-                let mut chosen: Option<(usize, Candidate)> = None;
+                let mut chosen: Option<(usize, Candidate, Option<Candidate>)> = None;
                 while !proposals.is_empty() {
                     let ws: Vec<f64> = proposals.iter().map(|(_, w)| *w).collect();
                     let Some(k) = g.weighted(&ws) else {
@@ -337,16 +476,33 @@ pub(super) fn grow_rooms(
                             .into_iter()
                             .filter(|c| g.fits_now(c))
                             .collect();
-                    let ws: Vec<f64> = found.iter().map(|c| c.weight).collect();
+                    let needs_return = plan
+                        .as_ref()
+                        .is_some_and(|plan| planning && plan.needs_return(g));
+                    let found: Vec<_> = found
+                        .into_iter()
+                        .filter_map(|c| {
+                            if needs_return {
+                                plan.as_ref()
+                                    .unwrap()
+                                    .return_link(g, &c)
+                                    .map(|back| (c, Some(back)))
+                            } else {
+                                Some((c, None))
+                            }
+                        })
+                        .collect();
+                    let ws: Vec<f64> = found.iter().map(|(c, _)| c.weight).collect();
                     let Some(k) = g.weighted(&ws) else {
                         g.rooms.pop();
                         refused[5] += 1;
                         continue;
                     };
-                    chosen = Some((id, found.into_iter().nth(k).unwrap()));
+                    let (c, back) = found.into_iter().nth(k).unwrap();
+                    chosen = Some((id, c, back));
                     break;
                 }
-                let Some((id, c)) = chosen else {
+                let Some((id, c, back)) = chosen else {
                     continue;
                 };
                 g.room_grid
@@ -366,7 +522,27 @@ pub(super) fn grow_rooms(
                     id: edge,
                     pts: g.edges[edge].pts.clone(),
                 });
-                depth.push(depth[parent] + 1);
+                if let Some(back) = back {
+                    let edge = g.add_edge(
+                        g.node_of_room[back.a],
+                        g.node_of_room[back.b],
+                        back.pts,
+                        [Some(back.ports[0]), Some(back.ports[1])],
+                    );
+                    report_progress(progress, || GenerationEvent::EdgeUpdated {
+                        id: edge,
+                        pts: g.edges[edge].pts.clone(),
+                    });
+                }
+                if planning {
+                    plan.as_mut().unwrap().placed(g, id);
+                }
+                // A district starts afresh: the bridge room is generation 0 of its own.
+                depth.push(if bridge && bottle {
+                    0
+                } else {
+                    depth[parent] + 1
+                });
                 strikes.push(0);
                 island_of.push(if bridge { island_idx + 1 } else { island_idx });
                 let centre = g.rooms[id].center;

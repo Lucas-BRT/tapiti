@@ -17,6 +17,8 @@ fn main() {
         "backbone" => TopologyProfile::Backbone,
         "hub" => TopologyProfile::Hub,
         "redundantExit" => TopologyProfile::RedundantExit,
+        "hubAndWings" => TopologyProfile::HubAndWings,
+        "ring" => TopologyProfile::Ring,
         "longLoop" => TopologyProfile::LongLoop,
         _ => TopologyProfile::Classic,
     };
