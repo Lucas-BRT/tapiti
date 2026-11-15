@@ -14,14 +14,19 @@ pub struct Mesh {
     pub normals: Vec<[f32; 3]>,
     pub colors: Vec<[u8; 3]>,
     pub indices: Vec<u32>,
+    /// The room each triangle belongs to (`NO_ROOM` for a corridor or a stair), one for every three indices: for picking.
+    pub owner: Vec<u32>,
 }
+
+/// The owner of the triangles that belong to no room.
+pub const NO_ROOM: u32 = u32::MAX;
 
 impl Mesh {
     pub fn triangles(&self) -> usize {
         self.indices.len() / 3
     }
 
-    fn quad(&mut self, p: [[f32; 3]; 4], color: [u8; 3]) {
+    fn quad(&mut self, p: [[f32; 3]; 4], color: [u8; 3], owner: u32) {
         let n = normalize3(cross3(sub3(p[1], p[0]), sub3(p[3], p[0])));
         let base = self.positions.len() as u32;
         for v in p {
@@ -31,10 +36,11 @@ impl Mesh {
         }
         self.indices
             .extend([base, base + 1, base + 2, base, base + 2, base + 3]);
+        self.owner.extend([owner, owner]);
     }
 
     /// A flat polygon at height `y` facing up (`up` true) or down, triangulated by ear clipping.
-    fn flat(&mut self, pts: &[V], y: f32, color: [u8; 3], up: bool) {
+    fn flat(&mut self, pts: &[V], y: f32, color: [u8; 3], up: bool, owner: u32) {
         let n = if up {
             [0.0, 1.0, 0.0]
         } else {
@@ -49,6 +55,7 @@ impl Mesh {
         for t in triangulate(pts) {
             self.indices
                 .extend([base + t[0] as u32, base + t[1] as u32, base + t[2] as u32]);
+            self.owner.push(owner);
         }
     }
 }
@@ -127,7 +134,7 @@ pub fn outline(shape: &Shape) -> Vec<V> {
         Shape::Disc { c, r } => (0..32)
             .map(|i| {
                 let a = std::f64::consts::TAU * f64::from(i) / 32.0;
-                [c[0] + r * a.cos(), c[1] + r * a.sin()]
+                [c[0] + r * libm::cos(a), c[1] + r * libm::sin(a)]
             })
             .collect(),
         Shape::Poly { pts } => pts.clone(),
@@ -307,9 +314,10 @@ pub fn build(floor: &Floor, o: &MeshOptions) -> Scene {
         if pts.len() < 3 {
             continue;
         }
-        s.solid.flat(&pts, y, base, true);
+        s.solid.flat(&pts, y, base, true, r.id as u32);
         if o.ceilings {
-            s.solid.flat(&pts, y + wall, shade(base, 0.8), false);
+            s.solid
+                .flat(&pts, y + wall, shade(base, 0.8), false, r.id as u32);
         }
         let doors: Vec<V> = r.used.iter().map(|q| q.p).collect();
         let wall_color = shade(base, 0.85);
@@ -326,6 +334,7 @@ pub fn build(floor: &Floor, o: &MeshOptions) -> Scene {
                         [p[0] as f32, y + wall, p[1] as f32],
                     ],
                     wall_color,
+                    r.id as u32,
                 );
             }
             // The lintel over each door, so the opening has a top.
@@ -341,6 +350,7 @@ pub fn build(floor: &Floor, o: &MeshOptions) -> Scene {
                             [p[0] as f32, y + wall, p[1] as f32],
                         ],
                         wall_color,
+                        r.id as u32,
                     );
                 }
             }
@@ -354,7 +364,8 @@ pub fn build(floor: &Floor, o: &MeshOptions) -> Scene {
                     .map_or(0.0, |wt| wt.level[node]);
                 let wy = ((level + node_level[node] as f64 * o.explode * storey) * o.exaggeration)
                     as f32;
-                s.water.flat(&pts, wy, [0x1f, 0x7f, 0xc9], true);
+                s.water
+                    .flat(&pts, wy, [0x1f, 0x7f, 0xc9], true, r.id as u32);
             }
         }
     }
@@ -398,6 +409,7 @@ pub fn build(floor: &Floor, o: &MeshOptions) -> Scene {
                     corner(p[0], -1.0, ya),
                 ],
                 corridor,
+                NO_ROOM,
             );
             for sgn in [1.0, -1.0] {
                 let (l0, l1) = (corner(p[0], sgn, ya), corner(p[1], sgn, yb));
@@ -409,6 +421,7 @@ pub fn build(floor: &Floor, o: &MeshOptions) -> Scene {
                         [l0[0], l0[1] + wall, l0[2]],
                     ],
                     shade(corridor, 0.8),
+                    NO_ROOM,
                 );
             }
             if o.ceilings {
@@ -436,6 +449,7 @@ pub fn build(floor: &Floor, o: &MeshOptions) -> Scene {
                         ],
                     ],
                     shade(corridor, 0.7),
+                    NO_ROOM,
                 );
             }
         }
@@ -466,10 +480,12 @@ pub fn build(floor: &Floor, o: &MeshOptions) -> Scene {
                     [x0, yb, z1],
                 ],
                 [0xb4, 0x9a, 0x7a],
+                NO_ROOM,
             );
             s.solid.quad(
                 [[x0, ya, z0], [x0, yb, z0], [x0, yb, z1], [x0, ya, z1]],
                 [0x8f, 0x78, 0x5c],
+                NO_ROOM,
             );
         }
     }

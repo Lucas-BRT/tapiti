@@ -8,6 +8,7 @@ use std::fmt::Write;
 use tapiti_core::generate::{room_hops, Floor, Node, Role};
 use tapiti_core::geom::{dir_of, Shape, V};
 
+pub mod digest;
 mod hatch;
 pub mod mesh;
 pub mod raster;

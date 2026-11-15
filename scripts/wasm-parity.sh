@@ -10,4 +10,5 @@ mkdir -p "$out"
 cargo build --release --locked --manifest-path crates/tapiti-wasm/Cargo.toml --target $target
 wasm-bindgen --target nodejs --out-dir "$out" --no-typescript "$build/$target/release/tapiti.wasm"
 cargo run --release --locked -q -p tapiti-core --example parity > "$out/native.jsonl"
+cargo run --release --locked -q -p tapiti-render --example parity_view > "$out/native-view.jsonl"
 node scripts/wasm-parity.mjs "$out"

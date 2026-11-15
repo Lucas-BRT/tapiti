@@ -187,7 +187,10 @@ impl WalkMap {
         let y = self.ground(p, from)?;
         for k in 0..8 {
             let a = std::f64::consts::TAU * f64::from(k) / 8.0;
-            self.ground([p[0] + radius * a.cos(), p[1] + radius * a.sin()], from)?;
+            self.ground(
+                [p[0] + radius * libm::cos(a), p[1] + radius * libm::sin(a)],
+                from,
+            )?;
         }
         Some(y)
     }

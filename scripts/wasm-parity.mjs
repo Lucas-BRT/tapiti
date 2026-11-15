@@ -25,4 +25,19 @@ for (const line of lines) {
   }
 }
 console.log(`${lines.length - failed} of ${lines.length} cases match`)
-process.exit(failed ? 1 : 0)
+
+// The 3D look: the fingerprint of the mesh and of two pictures, native against the module.
+const views = readFileSync(resolve(dir, 'native-view.jsonl'), 'utf8').trim().split('\n')
+let viewFailed = 0
+for (const line of views) {
+  const { name, seed, params, digest } = JSON.parse(line)
+  const got = wasm.view_digest(seed, JSON.stringify(params))
+  if (got === digest) {
+    console.log(`ok   view ${name} seed ${seed}`)
+  } else {
+    viewFailed++
+    console.log(`FAIL view ${name} seed ${seed}\n  native ${digest}\n  module ${got}`)
+  }
+}
+console.log(`${views.length - viewFailed} of ${views.length} 3D fingerprints match`)
+process.exit(failed || viewFailed ? 1 : 0)

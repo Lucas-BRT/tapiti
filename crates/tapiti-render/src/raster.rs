@@ -37,10 +37,11 @@ impl Camera {
     }
 
     fn forward_of(yaw: f32, pitch: f32) -> [f32; 3] {
+        // `libm` on every target: the platform's sin and cos differ in the last digit, and a frame must be the same everywhere.
         [
-            pitch.cos() * yaw.sin(),
-            pitch.sin(),
-            pitch.cos() * yaw.cos(),
+            libm::cosf(pitch) * libm::sinf(yaw),
+            libm::sinf(pitch),
+            libm::cosf(pitch) * libm::cosf(yaw),
         ]
     }
 
@@ -95,7 +96,7 @@ impl View {
         let forward = c.forward();
         let right = norm(cross(forward, [0.0, 1.0, 0.0]));
         let up = cross(right, forward);
-        let fy = 1.0 / (c.fov.to_radians() / 2.0).tan();
+        let fy = 1.0 / libm::tanf(c.fov.to_radians() / 2.0);
         Self {
             eye: c.eye,
             right,
@@ -278,6 +279,56 @@ pub fn render(
         height,
         rgba,
     }
+}
+
+/// The room under the pixel `(x, y)` of a picture `width` by `height` drawn from `camera`: the nearest triangle of the solid mesh the
+/// ray through it hits, if it belongs to a room (a corridor or a stair gives `None`).
+pub fn pick(
+    scene: &Scene,
+    camera: &Camera,
+    width: usize,
+    height: usize,
+    x: f32,
+    y: f32,
+) -> Option<usize> {
+    let view = View::new(camera, width.max(1), height.max(1));
+    let (nx, ny) = ((x / view.w - 0.5) * 2.0, (0.5 - y / view.h) * 2.0);
+    let local = [nx / view.fx, ny / view.fy, 1.0];
+    let dir = norm([
+        view.right[0] * local[0] + view.up[0] * local[1] + view.forward[0] * local[2],
+        view.right[1] * local[0] + view.up[1] * local[1] + view.forward[1] * local[2],
+        view.right[2] * local[0] + view.up[2] * local[1] + view.forward[2] * local[2],
+    ]);
+    let m = &scene.solid;
+    let mut best: Option<(f32, u32)> = None;
+    for (k, tri) in m.indices.as_chunks::<3>().0.iter().enumerate() {
+        let [a, b, c] = [0, 1, 2].map(|i| m.positions[tri[i] as usize]);
+        // Möller-Trumbore, on both sides of the triangle.
+        let (e1, e2) = (
+            [b[0] - a[0], b[1] - a[1], b[2] - a[2]],
+            [c[0] - a[0], c[1] - a[1], c[2] - a[2]],
+        );
+        let p = cross(dir, e2);
+        let det = dot(e1, p);
+        if det.abs() < 1e-9 {
+            continue;
+        }
+        let t0 = [view.eye[0] - a[0], view.eye[1] - a[1], view.eye[2] - a[2]];
+        let u = dot(t0, p) / det;
+        if !(0.0..=1.0).contains(&u) {
+            continue;
+        }
+        let q = cross(t0, e1);
+        let v = dot(dir, q) / det;
+        if v < 0.0 || u + v > 1.0 {
+            continue;
+        }
+        let t = dot(e2, q) / det;
+        if t > view.near && best.is_none_or(|(d, _)| t < d) {
+            best = Some((t, m.owner.get(k).copied().unwrap_or(crate::mesh::NO_ROOM)));
+        }
+    }
+    best.and_then(|(_, o)| (o != crate::mesh::NO_ROOM).then_some(o as usize))
 }
 
 #[cfg(test)]
