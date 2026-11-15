@@ -442,6 +442,10 @@ pub fn validate(d: &Floor) -> Vec<String> {
     if let Some(field) = d.environment.as_ref().and_then(|e| e.height.as_ref()) {
         out.extend(crate::environment::height::check(d, field));
     }
+    // E4 light.
+    if let Some(light) = d.environment.as_ref().and_then(|e| e.light.as_ref()) {
+        out.extend(crate::environment::light::check(d, light));
+    }
     // E3 climate.
     if let Some(env) = d.environment.as_ref() {
         if let (Some(climate), Some(height)) = (env.climate.as_ref(), env.height.as_ref()) {

@@ -86,5 +86,21 @@ pub fn cases() -> Vec<(String, Params)> {
     cold.environment.climate.season = -1.0;
     cold.environment.climate.openings = 3;
     out.push(("climate-cold-winter-before-height-ring-medium".into(), cold));
+    let mut torches = rich_of_size(Size::Medium);
+    torches.layout = Layout::Growth;
+    torches.environment.light.enabled = true;
+    torches.environment.light.time = 0.0;
+    torches.environment.light.torches = 4;
+    torches.environment.light.placement = tapiti_core::environment::Placement::DeadEnds;
+    out.push(("light-night-torches-growth-medium".into(), torches));
+    let mut sun = params_of_size(Size::Medium);
+    sun.apply_intent(TopologyProfile::HubAndWings);
+    sun.environment.height.enabled = true;
+    sun.environment.light.enabled = true;
+    sun.environment.light.time = 9.0;
+    sun.environment.light.openings = 2;
+    sun.environment.light.torches = 2;
+    sun.environment.light.placement = tapiti_core::environment::Placement::HighGround;
+    out.push(("light-morning-hub-and-wings-medium".into(), sun));
     out
 }

@@ -339,6 +339,27 @@ pub fn groups() -> Vec<ParamGroup> {
                 number("environment.climate.openings", tx("Surface openings"), 0.0, 64.0, true),
                 number("environment.climate.reach", tx("Surface reach"), 1.0, 1000000.0, false),
                 number("environment.climate.gradient", tx("Warming with depth"), 0.0, 100.0, false),
+                boolean("environment.light.enabled", tx("Light")),
+                number("environment.light.time", tx("Hour of the day"), 0.0, 24.0, false),
+                number("environment.light.daylight", tx("Daylight"), 0.0, 1.0, false),
+                number("environment.light.openings", tx("Light openings"), 0.0, 64.0, true),
+                number("environment.light.torches", tx("Direct light sources"), 0.0, 256.0, true),
+                number("environment.light.torchPower", tx("Source power"), 0.0, 1.0, false),
+                choice(
+                    "environment.light.placement",
+                    tx("Sources go"),
+                    &[
+                        ("uniform", tx("Anywhere")),
+                        ("nearEntrance", tx("Near the entrance")),
+                        ("farFromEntrance", tx("Far from the entrance")),
+                        ("mainPath", tx("On the main path")),
+                        ("deadEnds", tx("In dead ends")),
+                        ("highGround", tx("On high ground")),
+                        ("lowGround", tx("On low ground")),
+                    ],
+                ),
+                number("environment.light.range", tx("Light range"), 1.0, 1000000.0, false),
+                number("environment.light.doorLoss", tx("Light through a door"), 0.0, 1.0, false),
             ],
         ),
         group(
@@ -438,6 +459,15 @@ fn help(path: &str, label: &str) -> Text {
         "environment.climate.openings" => tx("Rooms that open to the surface besides the entrance, drawn from the higher ground."),
         "environment.climate.reach" => tx("How far along the corridors the surface is felt from an opening, in the units of the floor."),
         "environment.climate.gradient" => tx("Degrees gained for every hundred units of depth below the highest ground."),
+        "environment.light.enabled" => tx("An intensity from 0 to 1 at every room and junction: the sun at the openings to the surface and direct sources placed on the floor, spread along the corridors and weakened at each door. Needs nothing else; it uses Height to place sources on high or low ground. Runs after the layout and moves nothing."),
+        "environment.light.time" => tx("The hour of the day. The sun is strongest at noon and gone from 18 to 6."),
+        "environment.light.daylight" => tx("The power of the sun at noon, from 0 to 1."),
+        "environment.light.openings" => tx("Rooms that open to the surface besides the entrance, drawn from the higher ground."),
+        "environment.light.torches" => tx("Direct sources placed on the floor: torches, lamps, anything that gives light on its own."),
+        "environment.light.torchPower" => tx("The light a direct source gives, from 0 to 1."),
+        "environment.light.placement" => tx("Where direct sources go: anywhere, near or far from the entrance, on the way to the exit, in dead ends, or on high or low ground. A floor with no room that fits falls back to anywhere."),
+        "environment.light.range" => tx("The length of corridor over which light fades to nothing."),
+        "environment.light.doorLoss" => tx("The fraction of light that gets through a door: 1 loses nothing, 0 stops all of it."),
         "exitDoors" => tx("Maximum number of corridors that can enter the exit room."),
         "exitMinHops" => tx("Minimum number of links between the entrance and the exit, counted in rooms."),
         "topology.profile" => tx("Choose the exploration structure. Spine with detours plans the main route, returning wings and dead ends before filling the remaining space; it needs Growth, entrance and exit, and one island. Ring places rooms round an empty court and closes the loop, with the exit opposite the entrance; it needs Growth from the north border, entrance and exit, and one island. Hub and wings starts in a central hall and grows three or four wings of different depths, the longest ending at the exit; it needs Growth from the centre, entrance and exit, and one island."),
@@ -478,6 +508,7 @@ mod tests {
         params.environment.height.enabled = true;
         params.environment.water.enabled = true;
         params.environment.climate.enabled = true;
+        params.environment.light.enabled = true;
         let lambda = serde_json::to_value(params).unwrap();
         for group in groups() {
             for field in &group.fields {

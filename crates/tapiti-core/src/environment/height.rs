@@ -305,7 +305,7 @@ pub fn terrain_of(p: &crate::params::Params, seed: u32, world: World) -> Option<
 pub const HEIGHT_TAG: u32 = 0x4845_4947;
 
 /// Hops over the corridors from the entrance (from the first node when the floor has none); a node nothing reaches is as far as the farthest.
-fn hops_from_entrance(floor: &Floor) -> Vec<usize> {
+pub fn hops_from_entrance(floor: &Floor) -> Vec<usize> {
     let n = floor.nodes.len();
     let start = floor
         .entrance

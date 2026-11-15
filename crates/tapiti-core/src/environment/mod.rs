@@ -9,9 +9,13 @@
 
 pub mod climate;
 pub mod height;
+pub mod light;
+pub mod placement;
 pub mod water;
 pub use climate::{Climate, ClimateField, ClimateSpec};
 pub use height::{HeightField, HeightSpec, HeightStyle, Terrain};
+pub use light::{LightField, LightSpec};
+pub use placement::Placement;
 pub use water::{WaterField, WaterSpec};
 
 use crate::{generate::Floor, params::Params, rng::Mulberry};
@@ -44,6 +48,7 @@ pub struct EnvSpec {
     pub height: HeightSpec,
     pub water: WaterSpec,
     pub climate: ClimateSpec,
+    pub light: LightSpec,
 }
 
 impl EnvSpec {
@@ -62,6 +67,8 @@ pub struct Environment {
     pub water: Option<WaterField>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub climate: Option<ClimateField>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub light: Option<LightField>,
     /// The ground the layers that run before the layout hand the generator; not part of the floor.
     #[serde(skip)]
     pub terrain: Option<height::Terrain>,
@@ -136,6 +143,9 @@ pub fn layers_of(p: &Params) -> Vec<Box<dyn Layer>> {
     }
     if p.environment.climate.enabled {
         out.push(Box::new(climate::ClimateLayer(p.environment.climate)));
+    }
+    if p.environment.light.enabled {
+        out.push(Box::new(light::LightLayer(p.environment.light)));
     }
     out
 }

@@ -383,6 +383,20 @@ fn room_temperatures(floor: &Floor) -> Vec<Option<f32>> {
     out
 }
 
+/// The light in each room, 0 to 1; empty without a light layer.
+fn room_lights(floor: &Floor) -> Vec<Option<f32>> {
+    let Some(light) = floor.environment.as_ref().and_then(|e| e.light.as_ref()) else {
+        return Vec::new();
+    };
+    let mut out = vec![None; floor.rooms.len()];
+    for (node, v) in floor.nodes.iter().zip(&light.intensity) {
+        if let Node::Room { room } = node {
+            out[*room] = Some(*v as f32);
+        }
+    }
+    out
+}
+
 /// Blue for cold, red for hot.
 fn temperature_color(t: f32) -> Color32 {
     Color32::from_rgb(0x2f, 0x6d, 0xc4)
@@ -438,6 +452,11 @@ pub fn draw_floor(painter: &Painter, xf: &Xf, floor: &Floor, overlays: Overlays,
     } else {
         Vec::new()
     };
+    let lights = if overlays.light {
+        room_lights(floor)
+    } else {
+        Vec::new()
+    };
     let temperatures = if overlays.temperature {
         room_temperatures(floor)
     } else {
@@ -454,6 +473,10 @@ pub fn draw_floor(painter: &Painter, xf: &Xf, floor: &Floor, overlays: Overlays,
             let mut fill = pal.shape(room.cls.name());
             if let Some(Some(t)) = heights.get(room.id) {
                 fill = fill.lerp_to_gamma(height_color(*t), 0.55);
+            }
+            if let Some(Some(v)) = lights.get(room.id) {
+                // Darker where less light arrives.
+                fill = fill.lerp_to_gamma(Color32::from_rgb(0x14, 0x14, 0x1c), 0.75 * (1.0 - v));
             }
             if let Some(Some(t)) = temperatures.get(room.id) {
                 fill = fill.lerp_to_gamma(temperature_color(*t), 0.6);
@@ -518,6 +541,23 @@ pub fn draw_floor(painter: &Painter, xf: &Xf, floor: &Floor, overlays: Overlays,
                 pal.ink,
                 Stroke::new(1.5, pal.background),
             );
+        }
+    }
+    if overlays.light {
+        if let Some(light) = floor.environment.as_ref().and_then(|e| e.light.as_ref()) {
+            // A warm dot at the corner of each room with a direct source, a pale one at each opening to the surface (the middle holds the label).
+            for (nodes, color) in [
+                (&light.torches, Color32::from_rgb(0xf2, 0xb1, 0x2c)),
+                (&light.openings, Color32::from_rgb(0xe8, 0xf1, 0xff)),
+            ] {
+                for &i in nodes {
+                    if let Node::Room { room } = &floor.nodes[i] {
+                        let at = xf.pt(floor.rooms[*room].bounds.lo) + eframe::egui::vec2(9.0, 9.0);
+                        painter.circle_filled(at, 6.0, color);
+                        painter.circle_stroke(at, 6.0, eframe::egui::Stroke::new(1.0, pal.ink));
+                    }
+                }
+            }
         }
     }
     if overlays.labels {

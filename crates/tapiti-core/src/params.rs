@@ -688,6 +688,11 @@ impl Params {
                 return Some(error);
             }
         }
+        if self.environment.light.enabled {
+            if let Some(error) = self.environment.light.error() {
+                return Some(error);
+            }
+        }
         if self.environment.climate.enabled {
             if !self.environment.height.enabled {
                 return Some("Climate needs the depth: turn Height on too.");

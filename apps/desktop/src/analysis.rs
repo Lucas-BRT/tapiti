@@ -117,6 +117,29 @@ pub fn analysis_tab(app: &mut App, ui: &mut Ui) {
         });
     }
 
+    // ---- light ----
+    if let Some(l) = &m.light {
+        card(ui, "Light", |ui| {
+            ui.columns(2, |cols| {
+                tile(
+                    &mut cols[0],
+                    l.dark_rooms.to_string(),
+                    "Rooms in the dark",
+                    &format!(
+                        "Less than a twentieth of full light; the average is {:.0}%",
+                        100.0 * l.mean
+                    ),
+                );
+                tile(
+                    &mut cols[1],
+                    format!("{} + {}", l.openings, l.torches),
+                    "Openings + direct sources",
+                    "Where light comes from",
+                );
+            });
+        });
+    }
+
     // ---- climate ----
     if let Some(c) = &m.climate {
         card(ui, "Temperature", |ui| {

@@ -687,10 +687,47 @@ fn environment_card(app: &mut App, ui: &mut Ui) {
                     }
                 }
             });
+        ui.add_space(4.0);
+        let light_on = app.params.environment.light.enabled;
+        Grid::new("environment_light")
+            .num_columns(3)
+            .spacing([8.0, 6.0])
+            .show(ui, |ui| {
+                for path in LIGHT_FIELDS {
+                    if path != "environment.light.enabled" && !light_on {
+                        continue;
+                    }
+                    if let Some(field) = app
+                        .groups
+                        .iter()
+                        .flat_map(|g| &g.fields)
+                        .find(|f| f.path == path)
+                    {
+                        let value = value_of(app, &current, path);
+                        if let Some(next) = field_row(ui, field, &value, app.default_ref(path)) {
+                            edits.push((field.path.clone(), next));
+                        }
+                    }
+                }
+            });
     });
     for (path, value) in edits {
         app.change_param(&path, value);
     }
+}
+
+/// The light settings the Environment card lists; the others (daylight, source power, range, door transmission) are in Advanced.
+const LIGHT_FIELDS: [&str; 5] = [
+    "environment.light.enabled",
+    "environment.light.time",
+    "environment.light.openings",
+    "environment.light.torches",
+    "environment.light.placement",
+];
+
+/// Whether the Environment card lists the setting, so Advanced does not.
+fn in_environment_card(path: &str) -> bool {
+    !path.starts_with("environment.light.") || LIGHT_FIELDS.contains(&path)
 }
 
 fn design_tab(app: &mut App, ui: &mut Ui) {
@@ -730,7 +767,7 @@ fn advanced_tab(app: &mut App, ui: &mut Ui) {
                 !needle.is_empty()
                     || (f.path != "topology.profile"
                         && !f.path.starts_with("zones.")
-                        && !f.path.starts_with("environment.")
+                        && !(f.path.starts_with("environment.") && in_environment_card(&f.path))
                         && f.path != "layout"
                         && !layout_fields(app.params.layout).contains(&f.path.as_str())
                         && !intent_fields(app.params.topology.profile).contains(&f.path.as_str())
@@ -990,6 +1027,11 @@ fn map_controls(app: &mut App, ui: &mut Ui, rect: egui::Rect) {
                         &mut o.water,
                         "Water",
                         "Rooms with water over their floor, deeper in a stronger blue",
+                    ),
+                    (
+                        &mut o.light,
+                        "Light",
+                        "Darken rooms the light does not reach and mark direct sources",
                     ),
                     (
                         &mut o.temperature,

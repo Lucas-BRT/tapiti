@@ -41,6 +41,22 @@ pub struct Metrics {
     /// The measures of the climate layer; absent while it is off.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub climate: Option<ClimateMetrics>,
+    /// The measures of the light layer; absent while it is off.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub light: Option<LightMetrics>,
+}
+
+/// What the light did to the floor.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LightMetrics {
+    pub darkest: f64,
+    pub brightest: f64,
+    pub mean: f64,
+    /// Rooms with less than a twentieth of full light.
+    pub dark_rooms: usize,
+    pub openings: usize,
+    pub torches: usize,
 }
 
 /// What the climate did to the floor.
@@ -356,6 +372,27 @@ pub fn metrics_of(d: &Floor) -> Metrics {
                     hottest: rooms.iter().copied().fold(f64::NEG_INFINITY, f64::max),
                     mean: rooms.iter().sum::<f64>() / rooms.len().max(1) as f64,
                     openings: climate.openings.len(),
+                }
+            }),
+        light: d
+            .environment
+            .as_ref()
+            .and_then(|e| e.light.as_ref())
+            .map(|light| {
+                let rooms: Vec<f64> = d
+                    .nodes
+                    .iter()
+                    .zip(&light.intensity)
+                    .filter(|(n, _)| matches!(n, Node::Room { room } if d.rooms[*room].alive))
+                    .map(|(_, v)| *v)
+                    .collect();
+                LightMetrics {
+                    darkest: rooms.iter().copied().fold(f64::INFINITY, f64::min),
+                    brightest: rooms.iter().copied().fold(f64::NEG_INFINITY, f64::max),
+                    mean: rooms.iter().sum::<f64>() / rooms.len().max(1) as f64,
+                    dark_rooms: rooms.iter().filter(|v| **v < 0.05).count(),
+                    openings: light.openings.len(),
+                    torches: light.torches.len(),
                 }
             }),
     }

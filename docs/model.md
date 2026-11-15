@@ -400,6 +400,24 @@ with $T_{mean}$ and $\sigma$ the mean and the swing of the climate (cold $-2$ an
 
 The entrance is an opening to the surface, and so are `openings` more rooms, drawn from a stream of their own and weighted toward high ground. The openness is $1$ at an opening and falls linearly with the distance along the corridors to the nearest opening, to $0$ at `reach`, in the same way as humidity falls from the water. With the season at $0$ and no water, the floor only warms with depth. The validator checks (E3) that the temperature of every node is the one this formula gives for its depth, openness and humidity, and that the openness lies between $0$ and $1$. The measures give the coldest, the hottest and the mean temperature of the rooms, and the number of openings. A snapshot, not a simulation: the season is a setting, and time does not pass.
 
+### Light and placement
+
+The `environment.light` layer gives every node an intensity $I$ from $0$ to $1$ and runs after the layout, so it moves nothing and needs no other layer (it uses the heights, when there are any, to place sources on high or low ground). A source has a power $P$: the sun at an opening to the surface, and the power of each direct source. The sun is `daylight` times a curve of the hour $t$,
+
+$$
+\max\Bigl(0,\;1-\bigl(\tfrac{t-12}{6}\bigr)^{2}\Bigr),
+$$
+
+which is $1$ at noon and $0$ from 18 to 6. A corridor $e$ of length $\ell(e)$ lets through the fraction $\tau_e=\lambda\,\max(0,\,1-\ell(e)/r)$ of the light at one end to the other, with $\lambda$ the transmission of a door and $r$ the range. The light at a node is the strongest that reaches it,
+
+$$
+I_v=\max\Bigl(P_v,\;\max_u I_u\,\tau_{uv}\Bigr),
+$$
+
+solved by sweeps in the order of the corridors. Every $\tau_e<1$, so a cycle never adds light and the sweeps converge. The validator checks (E4) that every intensity lies from $0$ to $1$, that no node is dimmer than what a neighbour lets through or than the source it holds, and that every direct source gives its power.
+
+The openings are the entrance and `openings` rooms more, drawn from the higher ground. The direct sources are drawn with a *placement*, a weight for each room from which rooms are drawn without repeats, from the stream of the layer: anywhere; nearer to the entrance (weight $1/(1+k)$ with $k$ the corridors from it); farther from it ($1+k$); only on the main path; only in dead ends; on high ground; on low ground. A placement that rules out every room falls back to anywhere. The same placements are what events will use.
+
 ### Zones
 
 The `zones` parameter cuts the world into $k$ strips along its longer side, $k$ being `zones.count` (two at least, and no more than half the longer side in cells, four at most, so each strip stays two cells wide or more). Zoning is independent of the layout and of the topology profile. The zone of a point is a pure function of the point and of Λ, so it draws nothing from the generator and a floor without zones draws what it always drew.

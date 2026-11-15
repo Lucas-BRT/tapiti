@@ -103,6 +103,7 @@ pub struct Overlays {
     pub height: bool,
     pub water: bool,
     pub temperature: bool,
+    pub light: bool,
     pub labels: bool,
     pub ports: bool,
     pub pairs: bool,
@@ -196,6 +197,7 @@ impl App {
                 height: true,
                 water: true,
                 temperature: false,
+                light: false,
                 labels: true,
                 ports: false,
                 pairs: false,
@@ -257,6 +259,12 @@ impl App {
         }
         if std::env::var("TAPITI_HEIGHT").is_ok() {
             self.params.environment.height.enabled = true;
+        }
+        if std::env::var("TAPITI_LIGHT").is_ok() {
+            self.params.environment.light.enabled = true;
+            self.params.environment.light.torches = 3;
+            self.params.environment.light.time = 0.0;
+            self.overlays.light = true;
         }
         if std::env::var("TAPITI_CLIMATE").is_ok() {
             self.params.environment.height.enabled = true;
