@@ -150,32 +150,29 @@ pub(super) fn fit(
             if cells < p.star_cells {
                 return None;
             }
-            let n = if p.m == 8 && rng.next() < 0.5 { 8 } else { 4 };
-            let rho = (w_.min(h_) / 2.0) * rng.range(0.9, 1.0);
-            let inner = rho * rng.range(0.45, 0.55);
-            let tau = 2.0 * iota + 8.0;
-            let spread = (tau / 2.0).atan2(rho);
-            if spread > (PI / n as f64) * 0.6 {
-                return if n == 8 {
-                    let mut q = p.clone();
-                    q.m = 4;
-                    fit(ShapeClass::Star, b, &mut Const(0.9), &q, cells)
-                } else {
-                    None
-                };
+            // The draw that used to pick 4 or 8 points stays, so the rest of the stream is the same as before.
+            if p.m == 8 {
+                rng.next();
             }
-            // The two shoulders at each tip extend tangentially, so the star's
-            // axis-aligned bounds can be slightly wider than `rho`. Build it
-            // around the origin first, then place by its actual bounds.
+            // A four-pointed star with its points on the diagonals and a flat notch on each axis. Every door sits on a notch (a straight
+            // stretch of `2 * iota + 8`, facing an axis, where the corridor leaves between two points), so the points themselves can be
+            // sharp: nothing needs a flat tip any more.
+            let tip = (w_.min(h_) / 2.0) * rng.range(0.9, 1.0);
+            let sharp = rng.range(0.45, 0.55) / 0.5;
+            let half = iota + 4.0;
+            if tip < half + 22.0 {
+                return None;
+            }
+            // The notch floor lies between the half-length of the notch and the tip, nearer the notch the sharper the star.
+            let floor = half + (tip - half) * 0.35 * sharp;
             let mut local: Vec<V> = Vec::new();
-            for k in 0..n {
-                let psi = 2.0 * PI * k as f64 / n as f64;
-                let tip = mul([psi.cos(), psi.sin()], rho);
-                let side = mul([-psi.sin(), psi.cos()], tau / 2.0);
-                let mid = psi + PI / n as f64;
-                local.push(sub(tip, side));
-                local.push(add(tip, side));
-                local.push(mul([mid.cos(), mid.sin()], inner));
+            for k in 0..4 {
+                let (c, s) = ((PI / 2.0 * k as f64).cos(), (PI / 2.0 * k as f64).sin());
+                let turn = |q: V| [q[0] * c - q[1] * s, q[0] * s + q[1] * c];
+                // East notch (top end first), then the tip on the next diagonal.
+                local.push(turn([floor, -half]));
+                local.push(turn([floor, half]));
+                local.push(turn([tip, tip]));
             }
             let mut lo = [f64::INFINITY; 2];
             let mut hi = [f64::NEG_INFINITY; 2];

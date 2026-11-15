@@ -73,9 +73,9 @@ $$
 | Disc | radius $\rho$ | $\pi\rho^2$ |
 | Octagon | circumradius $\rho$ | $4\rho^2\sin(\pi/4)$ |
 | L | box $W\times H$, notch $a\times b$, corner $c$ | $WH-ab$ |
-| Truncated star | number of points $n$, radii and top width $\tau$ | computed by the polygon (*shoelace*) formula |
+| Star | tip radius, notch width and notch depth | computed by the polygon (*shoelace*) formula |
 
-A star has its points cut off. Without the cut, each point would be just a vertex and there would be no suitable stretch of edge to open a straight door.
+A star has four sharp points, on the diagonals, and a flat notch between them on each axis. A door needs a straight stretch of edge facing one of the allowed directions, and a sharp point has none, so the doors sit on the notches: each is a flat stretch just wide enough for a corridor, and the corridor leaves between two points.
 
 In the reference model, a room is fitted into a usable rectangle $\beta$ by a function
 

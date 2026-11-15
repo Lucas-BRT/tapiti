@@ -111,7 +111,7 @@ impl Palette {
 
 pub const SHAPE_CLASSES: [&str; 5] = ["rect", "disc", "oct", "L", "star"];
 
-/// Ear clipping, for the concave rooms (L, truncated star): egui fills only convex paths.
+/// Ear clipping, for the concave rooms (L, star): egui fills only convex paths.
 pub fn triangulate(pts: &[[f64; 2]]) -> Vec<[usize; 3]> {
     let n = pts.len();
     if n < 3 {
