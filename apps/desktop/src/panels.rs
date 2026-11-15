@@ -333,12 +333,20 @@ fn layout_card(app: &mut App, ui: &mut Ui) {
             .num_columns(3)
             .spacing([8.0, 6.0])
             .show(ui, |ui| {
-                let paths = std::iter::once("layout").chain(
-                    layout_fields(layout)
-                        .iter()
-                        .copied()
-                        .filter(|p| crate::relevance::applies(p, &app.params)),
-                );
+                let levels = app.params.levels.count > 1;
+                let paths = std::iter::once("layout")
+                    .chain(
+                        layout_fields(layout)
+                            .iter()
+                            .copied()
+                            .filter(|p| crate::relevance::applies(p, &app.params)),
+                    )
+                    .chain(["levels.count"])
+                    .chain(
+                        ["levels.stairs", "levels.storey"]
+                            .into_iter()
+                            .filter(|_| levels),
+                    );
                 for path in paths {
                     if let Some(field) = app
                         .groups
@@ -739,6 +747,7 @@ fn environment_card(app: &mut App, ui: &mut Ui) {
                 ui,
                 &app.params.environment.events.list,
                 app.params.zone_count(),
+                &app.params.environment,
             );
         }
     });
@@ -747,7 +756,7 @@ fn environment_card(app: &mut App, ui: &mut Ui) {
     }
     if let Some(list) = new_events {
         app.params.environment.events.list = list;
-        app.params_edited();
+        app.environment_edited(false);
     }
 }
 
@@ -757,8 +766,18 @@ fn events_editor(
     ui: &mut Ui,
     list: &[tapiti_core::environment::EventSpec],
     zones: usize,
+    env: &tapiti_core::environment::EnvSpec,
 ) -> Option<Vec<tapiti_core::environment::EventSpec>> {
-    use tapiti_core::environment::{EventSpec, Placement};
+    use tapiti_core::environment::{Condition, ConditionField as F, EventSpec, Placement};
+    // What a condition can look at: the layers that are on (and the level, always).
+    let fields: Vec<(F, &str, bool)> = vec![
+        (F::Height, "height", env.height.enabled),
+        (F::WaterDepth, "water depth", env.water.enabled),
+        (F::Humidity, "humidity", env.water.enabled),
+        (F::Temperature, "temperature", env.climate.enabled),
+        (F::Light, "light", env.light.enabled),
+        (F::Level, "level", true),
+    ];
     let options = tapiti_schema::placement_options();
     let key = |p: Placement| {
         serde_json::to_value(p)
@@ -843,6 +862,59 @@ fn events_editor(
                 .checkbox(&mut event.avoid_entrance, "keep off the entrance and exit")
                 .changed();
         });
+        // Where the layers say it may happen: "only where the light is below 0.1".
+        let mut drop_condition = None;
+        for (c, cond) in event.conditions.iter_mut().enumerate() {
+            ui.horizontal(|ui| {
+                ui.label("only where");
+                let name = fields
+                    .iter()
+                    .find(|(f, _, _)| *f == cond.field)
+                    .map_or("?", |(_, n, _)| *n);
+                egui::ComboBox::from_id_salt(("event_condition", i, c))
+                    .selected_text(name)
+                    .show_ui(ui, |ui| {
+                        for (f, n, on) in &fields {
+                            if *on || *f == cond.field {
+                                changed |= ui.selectable_value(&mut cond.field, *f, *n).changed();
+                            }
+                        }
+                    });
+                for (limit, label) in [(&mut cond.min, "from"), (&mut cond.max, "to")] {
+                    let mut on = limit.is_some();
+                    if ui.checkbox(&mut on, label).changed() {
+                        *limit = on.then_some(limit.unwrap_or(0.0));
+                        changed = true;
+                    }
+                    if let Some(v) = limit {
+                        changed |= ui.add(egui::DragValue::new(v).speed(0.05)).changed();
+                    }
+                }
+                if ui
+                    .small_button("x")
+                    .on_hover_text("Remove this condition")
+                    .clicked()
+                {
+                    drop_condition = Some(c);
+                }
+            });
+        }
+        if let Some(c) = drop_condition {
+            event.conditions.remove(c);
+            changed = true;
+        }
+        if event.conditions.len() < 8 && ui.small_button("Add a condition").clicked() {
+            let first = fields
+                .iter()
+                .find(|(_, _, on)| *on)
+                .map_or(F::Level, |(f, _, _)| *f);
+            event.conditions.push(Condition {
+                field: first,
+                min: Some(0.0),
+                max: None,
+            });
+            changed = true;
+        }
     }
     ui.separator();
     if ui.button("Add an event").clicked() {
@@ -914,6 +986,7 @@ fn advanced_tab(app: &mut App, ui: &mut Ui) {
                     || (f.path != "topology.profile"
                         && !f.path.starts_with("zones.")
                         && !(f.path.starts_with("environment.") && in_environment_card(&f.path))
+                        && !f.path.starts_with("levels.")
                         && f.path != "layout"
                         && !layout_fields(app.params.layout).contains(&f.path.as_str())
                         && !intent_fields(app.params.topology.profile).contains(&f.path.as_str())
@@ -1050,7 +1123,16 @@ pub fn central(app: &mut App, ui: &mut Ui) {
                 egui::StrokeKind::Inside,
             );
 
-            let Some((min, max)) = app.map_bounds() else {
+            let Some((min, max)) =
+                (if app.view_mode == crate::ViewMode::Iso && !app.showing_building() {
+                    app.generated
+                        .as_ref()
+                        .map(|g| crate::iso::bounds(&g.floor, &app.iso))
+                } else {
+                    None
+                })
+                .or_else(|| app.map_bounds())
+            else {
                 painter.text(
                     rect.center(),
                     egui::Align2::CENTER_CENTER,
@@ -1067,7 +1149,7 @@ pub fn central(app: &mut App, ui: &mut Ui) {
                 app.zoom = 1.0;
                 app.pan = [0.0, 0.0];
             }
-            if response.hovered() {
+            if response.hovered() && app.view_mode != crate::ViewMode::Solid {
                 let (scroll, pinch) = ctx.input(|i| (i.smooth_scroll_delta().y, i.zoom_delta()));
                 let factor = f64::from((scroll * 0.0012).exp() * pinch);
                 if (factor - 1.0).abs() > 1e-6 {
@@ -1077,12 +1159,35 @@ pub fn central(app: &mut App, ui: &mut Ui) {
                     }
                 }
             }
-            if response.dragged() {
+            if response.dragged_by(egui::PointerButton::Secondary)
+                && app.view_mode == crate::ViewMode::Iso
+            {
+                // The right button turns the view: across for the yaw, up and down for the tilt.
+                let delta = response.drag_delta();
+                app.iso.yaw = (app.iso.yaw + f64::from(delta.x) * 0.4).rem_euclid(360.0);
+                app.iso.tilt = (app.iso.tilt - f64::from(delta.y) * 0.3).clamp(15.0, 90.0);
+            } else if response.dragged() && app.view_mode != crate::ViewMode::Solid {
                 let delta = response.drag_delta();
                 let scale = f64::from(xf.scale).max(1e-6);
                 app.pan[0] -= f64::from(delta.x) / scale;
                 app.pan[1] -= f64::from(delta.y) / scale;
                 xf = Xf::new(rect, min, max, app.zoom, app.pan);
+            }
+            if response.hovered() && app.view_mode == crate::ViewMode::Iso {
+                // The arrow keys turn and tilt the oblique view, for those without a right button.
+                let (turn, tilt, dt) = ctx.input(|i| {
+                    let key = |k: egui::Key| f64::from(u8::from(i.key_down(k)));
+                    (
+                        key(egui::Key::ArrowRight) - key(egui::Key::ArrowLeft),
+                        key(egui::Key::ArrowDown) - key(egui::Key::ArrowUp),
+                        f64::from(i.stable_dt).min(0.1),
+                    )
+                });
+                if turn != 0.0 || tilt != 0.0 {
+                    app.iso.yaw = (app.iso.yaw + turn * dt * 90.0).rem_euclid(360.0);
+                    app.iso.tilt = (app.iso.tilt + tilt * dt * 60.0).clamp(15.0, 90.0);
+                    ctx.request_repaint();
+                }
             }
             if response.hovered() {
                 ctx.set_cursor_icon(if response.dragged() {
@@ -1102,8 +1207,25 @@ pub fn central(app: &mut App, ui: &mut Ui) {
             }
             if app.showing_building() {
                 map::draw_building(&painter, &xf, &app.building, overlays, &pal);
-            } else if let Some(generated) = &app.generated {
-                map::draw_floor(&painter, &xf, &generated.floor, overlays, &pal);
+            } else if let Some(floor) = app.generated.as_ref().map(|g| g.floor.clone()) {
+                match app.view_mode {
+                    crate::ViewMode::Solid => {
+                        if let Some(id) =
+                            app.solid.show(ui, rect, &response, &floor, overlays, &pal)
+                        {
+                            let room = &floor.rooms[id];
+                            let info =
+                                map_object_at(&floor, room.center, app.zoom, Some(room.level));
+                            if !info.is_empty() {
+                                response.clone().on_hover_text_at_pointer(info);
+                            }
+                        }
+                    }
+                    crate::ViewMode::Iso => {
+                        crate::iso::draw(&painter, &xf, &floor, &app.iso, overlays, &pal);
+                    }
+                    crate::ViewMode::Plan => map::draw_floor(&painter, &xf, &floor, overlays, &pal),
+                }
             }
             if app.overlays.legend && rect.width() > 520.0 && rect.height() > 380.0 {
                 if let Some(generated) = &app.generated {
@@ -1115,9 +1237,27 @@ pub fn central(app: &mut App, ui: &mut Ui) {
                         .map(|room| room.cls.name())
                         .collect();
                     map::legend(&painter, rect, &pal, ui.visuals().text_color(), &present);
+                    map::scales(
+                        &painter,
+                        rect,
+                        ui.visuals().text_color(),
+                        &generated.floor,
+                        app.overlays,
+                    );
                 }
             }
             map_controls(app, ui, rect);
+            if app.view_mode != app.saved_view {
+                app.saved_view = app.view_mode;
+                crate::prefs::save(
+                    "view",
+                    match app.view_mode {
+                        crate::ViewMode::Plan => "plan",
+                        crate::ViewMode::Iso => "iso",
+                        crate::ViewMode::Solid => "solid",
+                    },
+                );
+            }
             if app.busy {
                 painter.text(
                     rect.right_top() + Vec2::new(-14.0, 16.0),
@@ -1128,9 +1268,28 @@ pub fn central(app: &mut App, ui: &mut Ui) {
                 );
             }
 
-            if response.hovered() && !response.dragged() && !app.showing_building() {
+            if response.hovered()
+                && !response.dragged()
+                && !app.showing_building()
+                && app.view_mode != crate::ViewMode::Solid
+            {
                 if let (Some(pos), Some(generated)) = (response.hover_pos(), &app.generated) {
-                    let info = map_object_at(&generated.floor, xf.to_world(pos), app.zoom);
+                    let info = if app.view_mode == crate::ViewMode::Iso {
+                        // The room under the pointer in the oblique view, described as the plan describes it.
+                        crate::iso::pick(&generated.floor, &xf, &app.iso, pos)
+                            .map(|id| {
+                                let r = &generated.floor.rooms[id];
+                                map_object_at(&generated.floor, r.center, app.zoom, Some(r.level))
+                            })
+                            .unwrap_or_default()
+                    } else {
+                        map_object_at(
+                            &generated.floor,
+                            xf.to_world(pos),
+                            app.zoom,
+                            app.overlays.level,
+                        )
+                    };
                     if !info.is_empty() {
                         response.on_hover_text_at_pointer(info);
                     }
@@ -1157,6 +1316,144 @@ fn zoom_at(app: &mut App, xf: &Xf, anchor: egui::Pos2, factor: f64) {
 /// What floats over the map: the layers at the top left, the zoom at the bottom right.
 fn map_controls(app: &mut App, ui: &mut Ui, rect: egui::Rect) {
     let margin = Vec2::splat(10.0);
+    // The level of a stacked floor on show.
+    let levels = app
+        .generated
+        .as_ref()
+        .and_then(|g| g.floor.stack.as_ref())
+        .map_or(0, |s| s.levels.len());
+    // In the oblique view the levels are drawn together, so the selector of one is for the plan only.
+    let plan_levels = levels > 1 && app.view_mode == crate::ViewMode::Plan;
+    // The way the floor is shown, and in the oblique view where it is looked at from.
+    egui::Area::new(ui.scope_id().with("map_view"))
+        .fixed_pos(
+            rect.left_top() + margin + Vec2::new(84.0 + if plan_levels { 100.0 } else { 0.0 }, 0.0),
+        )
+        .show(ui.ctx(), |ui| {
+            ui.horizontal(|ui| {
+                egui::ComboBox::from_id_salt("map_view_mode")
+                    .selected_text(match app.view_mode {
+                        crate::ViewMode::Plan => "2D",
+                        crate::ViewMode::Iso => "2.5D",
+                        crate::ViewMode::Solid => "3D",
+                    })
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(&mut app.view_mode, crate::ViewMode::Plan, "2D");
+                        ui.selectable_value(&mut app.view_mode, crate::ViewMode::Iso, "2.5D");
+                        ui.selectable_value(&mut app.view_mode, crate::ViewMode::Solid, "3D");
+                    });
+                if app.view_mode == crate::ViewMode::Solid {
+                    ui.menu_button("Camera", |ui| {
+                        use crate::solid::Mode;
+                        let before = app.solid.mode;
+                        ui.horizontal(|ui| {
+                            ui.selectable_value(
+                                &mut app.solid.mode,
+                                Mode::Orbit,
+                                "Circle the floor",
+                            );
+                            ui.selectable_value(&mut app.solid.mode, Mode::Walk, "Walk in it");
+                        });
+                        if app.solid.mode != before && app.solid.mode == Mode::Walk {
+                            app.solid.respawn();
+                        }
+                        ui.add(
+                            egui::Slider::new(&mut app.solid.wall_height, 20.0..=140.0)
+                                .text("walls"),
+                        );
+                        ui.add(
+                            egui::Slider::new(&mut app.solid.exaggeration, 0.5..=6.0)
+                                .text("height ×"),
+                        );
+                        ui.add(egui::Slider::new(&mut app.solid.quality, 0.3..=1.5).text("detail"));
+                        if levels > 1 {
+                            ui.add(
+                                egui::Slider::new(&mut app.solid.explode, 0.0..=3.0)
+                                    .text("levels apart"),
+                            );
+                            let mut all = app.solid.up_to.is_none();
+                            if ui.checkbox(&mut all, "all levels").changed() {
+                                app.solid.up_to = if all { None } else { Some(levels - 1) };
+                            }
+                            if let Some(up) = app.solid.up_to.as_mut() {
+                                ui.add(egui::Slider::new(up, 0..=levels - 1).text("up to level"));
+                            }
+                        }
+                        let walking = app.solid.mode == Mode::Walk;
+                        if ui
+                            .button(if walking {
+                                "Back to the entrance"
+                            } else {
+                                "Reset the camera"
+                            })
+                            .clicked()
+                        {
+                            if walking {
+                                app.solid.respawn();
+                            } else {
+                                app.solid.reset_orbit();
+                            }
+                        }
+                        ui.label(muted(
+                            ui,
+                            if walking {
+                                "W A S D to walk, Shift to run, drag to look, E at a stair."
+                            } else {
+                                "Drag to turn, wheel to come near or go far."
+                            },
+                        ));
+                    });
+                }
+                if app.view_mode == crate::ViewMode::Iso {
+                    ui.menu_button("Camera", |ui| {
+                        ui.add(egui::Slider::new(&mut app.iso.yaw, 0.0..=360.0).text("turn"));
+                        ui.add(egui::Slider::new(&mut app.iso.tilt, 15.0..=90.0).text("tilt"));
+                        ui.add(
+                            egui::Slider::new(&mut app.iso.exaggeration, 0.5..=6.0)
+                                .text("height ×"),
+                        );
+                        if levels > 1 {
+                            ui.add(
+                                egui::Slider::new(&mut app.iso.explode, 0.0..=3.0)
+                                    .text("levels apart"),
+                            );
+                            let mut all = app.iso.up_to.is_none();
+                            ui.checkbox(&mut all, "all levels").changed().then(|| {
+                                app.iso.up_to = if all { None } else { Some(levels - 1) };
+                            });
+                            if let Some(up) = app.iso.up_to.as_mut() {
+                                ui.add(egui::Slider::new(up, 0..=levels - 1).text("up to level"));
+                            }
+                        }
+                        if ui.button("Reset the camera").clicked() {
+                            app.iso = crate::iso::IsoCamera::default();
+                        }
+                        ui.label(muted(
+                            ui,
+                            "Right button: turn and tilt. Left: move. Wheel: zoom.",
+                        ));
+                    });
+                }
+            });
+        });
+    if plan_levels {
+        egui::Area::new(ui.scope_id().with("map_levels"))
+            .fixed_pos(rect.left_top() + margin + Vec2::new(84.0, 0.0))
+            .show(ui.ctx(), |ui| {
+                let shown = app.overlays.level.unwrap_or(0).min(levels - 1);
+                egui::ComboBox::from_id_salt("map_level")
+                    .selected_text(format!("Level {}", shown + 1))
+                    .show_ui(ui, |ui| {
+                        for k in 0..levels {
+                            ui.selectable_value(
+                                &mut app.overlays.level,
+                                Some(k),
+                                format!("Level {}", k + 1),
+                            );
+                        }
+                    });
+            });
+    }
     egui::Area::new(ui.scope_id().with("map_layers"))
         .fixed_pos(rect.left_top() + margin)
         .show(ui.ctx(), |ui| {

@@ -7,7 +7,7 @@
 //! $1$ at noon and $0$ from 18 to 6. Only sums, products and quotients: the same on every platform.
 
 use super::{
-    height::corridor_length,
+    height::edge_length,
     placement::{place, Placement},
     Environment, Layer, LayerPhase,
 };
@@ -115,7 +115,7 @@ pub fn spread(floor: &Floor, spec: &LightSpec, power: &[f64]) -> Vec<f64> {
     let edges: Vec<(usize, usize, f64)> = floor
         .edges
         .iter()
-        .map(|e| (e.u, e.v, transmission(spec, corridor_length(&e.pts))))
+        .map(|e| (e.u, e.v, transmission(spec, edge_length(floor, e))))
         .collect();
     for _ in 0..=i.len() {
         let mut changed = false;
@@ -212,7 +212,7 @@ pub fn check(d: &Floor, field: &LightField) -> Vec<String> {
         }
     }
     for e in &d.edges {
-        let t = transmission(&spec, corridor_length(&e.pts));
+        let t = transmission(&spec, edge_length(d, e));
         for (a, b) in [(e.u, e.v), (e.v, e.u)] {
             if field.intensity[b] < field.intensity[a] * t - eps {
                 out.push(format!(

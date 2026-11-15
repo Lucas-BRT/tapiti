@@ -7,6 +7,7 @@ use eframe::egui::{
 };
 use tapiti_core::generate::{Floor, Node, Role};
 use tapiti_core::geom::{dir_of, Shape};
+use tapiti_render::view::{self, Channel};
 
 /// World (generator pixels) to screen.
 pub struct Xf {
@@ -319,70 +320,6 @@ pub fn draw_building(
     }
 }
 
-/// The height of each room as a fraction of the floor's range (low 0, high 1); empty without a height layer.
-fn room_heights(floor: &Floor) -> Vec<Option<f32>> {
-    let Some(field) = floor.environment.as_ref().and_then(|e| e.height.as_ref()) else {
-        return Vec::new();
-    };
-    let span = (field.max - field.min).max(1e-9);
-    let mut out = vec![None; floor.rooms.len()];
-    for (node, h) in floor.nodes.iter().zip(&field.nodes) {
-        if let Node::Room { room } = node {
-            out[*room] = Some(((h - field.min) / span) as f32);
-        }
-    }
-    out
-}
-
-/// The depth of the water in each room as a fraction of the deepest pool; `None` for a dry room, empty without a water layer.
-fn room_depths(floor: &Floor) -> Vec<Option<f32>> {
-    let Some(env) = floor.environment.as_ref() else {
-        return Vec::new();
-    };
-    let (Some(water), Some(height)) = (env.water.as_ref(), env.height.as_ref()) else {
-        return Vec::new();
-    };
-    let depth = |i: usize| (water.level[i] - height.nodes[i]).max(0.0);
-    let deepest = (0..water.level.len())
-        .map(depth)
-        .fold(0.0, f64::max)
-        .max(1e-9);
-    let mut out = vec![None; floor.rooms.len()];
-    for (i, node) in floor.nodes.iter().enumerate() {
-        if let Node::Room { room } = node {
-            if depth(i) > 1e-9 {
-                out[*room] = Some((depth(i) / deepest) as f32);
-            }
-        }
-    }
-    out
-}
-
-/// The temperature of each room as a fraction of the floor's range (cold 0, hot 1); empty without a climate layer.
-fn room_temperatures(floor: &Floor) -> Vec<Option<f32>> {
-    let Some(climate) = floor.environment.as_ref().and_then(|e| e.climate.as_ref()) else {
-        return Vec::new();
-    };
-    let lo = climate
-        .celsius
-        .iter()
-        .copied()
-        .fold(f64::INFINITY, f64::min);
-    let hi = climate
-        .celsius
-        .iter()
-        .copied()
-        .fold(f64::NEG_INFINITY, f64::max);
-    let span = (hi - lo).max(1e-9);
-    let mut out = vec![None; floor.rooms.len()];
-    for (node, t) in floor.nodes.iter().zip(&climate.celsius) {
-        if let Node::Room { room } = node {
-            out[*room] = Some(((t - lo) / span) as f32);
-        }
-    }
-    out
-}
-
 /// The colour of the `k`-th kind of event.
 pub fn event_color(k: usize) -> Color32 {
     const COLORS: [(u8, u8, u8); 8] = [
@@ -399,37 +336,71 @@ pub fn event_color(k: usize) -> Color32 {
     Color32::from_rgb(r, g, b)
 }
 
-/// The light in each room, 0 to 1; empty without a light layer.
-fn room_lights(floor: &Floor) -> Vec<Option<f32>> {
-    let Some(light) = floor.environment.as_ref().and_then(|e| e.light.as_ref()) else {
-        return Vec::new();
-    };
-    let mut out = vec![None; floor.rooms.len()];
-    for (node, v) in floor.nodes.iter().zip(&light.intensity) {
-        if let Node::Room { room } = node {
-            out[*room] = Some(*v as f32);
+/// The tints of the channels on show, room by room: what the overlays do to the colour of a class.
+pub struct Tints {
+    heights: Vec<Option<f32>>,
+    lights: Vec<Option<f32>>,
+    temperatures: Vec<Option<f32>>,
+    depths: Vec<Option<f32>>,
+}
+
+impl Tints {
+    pub fn new(floor: &Floor, overlays: Overlays) -> Self {
+        Self {
+            heights: channel_t(floor, overlays.height, Channel::Height),
+            lights: channel_t(floor, overlays.light, Channel::Light),
+            temperatures: channel_t(floor, overlays.temperature, Channel::Temperature),
+            depths: channel_t(floor, overlays.water, Channel::Water),
         }
     }
-    out
+
+    /// The colour of room `room` whose class has colour `base`.
+    pub fn fill(&self, base: Color32, room: usize) -> Color32 {
+        let mut fill = base;
+        if let Some(Some(t)) = self.heights.get(room) {
+            fill = fill.lerp_to_gamma(channel_color(Channel::Height, *t), 0.55);
+        }
+        if let Some(Some(v)) = self.lights.get(room) {
+            // Darker where less light arrives.
+            fill = fill.lerp_to_gamma(Color32::from_rgb(0x14, 0x14, 0x1c), 0.75 * (1.0 - v));
+        }
+        if let Some(Some(t)) = self.temperatures.get(room) {
+            fill = fill.lerp_to_gamma(channel_color(Channel::Temperature, *t), 0.6);
+        }
+        // Only a room with water over its floor is tinted: the scale starts at the dry floor.
+        if let Some(Some(t)) = self.depths.get(room).filter(|t| t.is_some_and(|t| t > 0.0)) {
+            fill = fill.lerp_to_gamma(channel_color(Channel::Water, *t), 0.35 + 0.5 * t);
+        }
+        fill
+    }
 }
 
-/// Blue for cold, red for hot.
-fn temperature_color(t: f32) -> Color32 {
-    Color32::from_rgb(0x2f, 0x6d, 0xc4)
-        .lerp_to_gamma(Color32::from_rgb(0xd0, 0x3a, 0x2c), t.clamp(0.0, 1.0))
+/// The position of each room's value on the scale of a channel, 0 to 1; empty when the overlay is off or the floor has no such layer.
+fn channel_t(floor: &Floor, on: bool, c: Channel) -> Vec<Option<f32>> {
+    let Some(scale) = on.then(|| view::scale(floor, c)).flatten() else {
+        return Vec::new();
+    };
+    view::room_values(floor, c)
+        .into_iter()
+        .map(|v| v.map(|v| view::position(scale, v) as f32))
+        .collect()
 }
 
-/// Blue for low ground, amber for high.
-fn height_color(t: f32) -> Color32 {
-    Color32::from_rgb(0x3f, 0x6f, 0xa8)
-        .lerp_to_gamma(Color32::from_rgb(0xd9, 0x8a, 0x3a), t.clamp(0.0, 1.0))
+/// The colour of a channel at `t` on its scale.
+pub fn channel_color(c: Channel, t: f32) -> Color32 {
+    let [r, g, b] = view::color(c, f64::from(t));
+    Color32::from_rgb(r, g, b)
 }
 
 pub fn draw_floor(painter: &Painter, xf: &Xf, floor: &Floor, overlays: Overlays, pal: &Palette) {
+    // A stacked floor is drawn one level at a time: levels overlap in plan, and drawn together they cannot be read.
+    let view = overlays.level.filter(|_| floor.stack.is_some());
+    let on = |room: &tapiti_core::generate::Room| view.is_none_or(|v| room.level == v);
+    let node_level = tapiti_core::environment::height::node_levels(floor);
     if overlays.cells {
         grid(painter, xf, &floor.grid_x, &floor.grid_y, pal.grid);
     }
-    if overlays.pairs {
+    if overlays.pairs && view.is_none_or(|v| v == 0) {
         for [a, b] in &floor.pairs {
             if let (Some(first), Some(second)) = (floor.rooms.get(*a), floor.rooms.get(*b)) {
                 painter.add(Draw::dashed_line(
@@ -441,7 +412,7 @@ pub fn draw_floor(painter: &Painter, xf: &Xf, floor: &Floor, overlays: Overlays,
             }
         }
     }
-    if overlays.candidates {
+    if overlays.candidates && view.is_none_or(|v| v == 0) {
         for candidate in &floor.candidates {
             polyline(
                 painter,
@@ -454,6 +425,12 @@ pub fn draw_floor(painter: &Painter, xf: &Xf, floor: &Floor, overlays: Overlays,
         }
     }
     for edge in &floor.edges {
+        if edge.stair {
+            continue;
+        }
+        if view.is_some_and(|v| node_level[edge.u] != v) {
+            continue;
+        }
         polyline(
             painter,
             xf,
@@ -463,43 +440,11 @@ pub fn draw_floor(painter: &Painter, xf: &Xf, floor: &Floor, overlays: Overlays,
             false,
         );
     }
-    let heights = if overlays.height {
-        room_heights(floor)
-    } else {
-        Vec::new()
-    };
-    let lights = if overlays.light {
-        room_lights(floor)
-    } else {
-        Vec::new()
-    };
-    let temperatures = if overlays.temperature {
-        room_temperatures(floor)
-    } else {
-        Vec::new()
-    };
-    let depths = if overlays.water {
-        room_depths(floor)
-    } else {
-        Vec::new()
-    };
-    for room in &floor.rooms {
+    let tints = Tints::new(floor, overlays);
+    for room in floor.rooms.iter().filter(|r| on(r)) {
         if room.alive {
             let alpha = if room.leaf { 0.65 } else { 0.92 };
-            let mut fill = pal.shape(room.cls.name());
-            if let Some(Some(t)) = heights.get(room.id) {
-                fill = fill.lerp_to_gamma(height_color(*t), 0.55);
-            }
-            if let Some(Some(v)) = lights.get(room.id) {
-                // Darker where less light arrives.
-                fill = fill.lerp_to_gamma(Color32::from_rgb(0x14, 0x14, 0x1c), 0.75 * (1.0 - v));
-            }
-            if let Some(Some(t)) = temperatures.get(room.id) {
-                fill = fill.lerp_to_gamma(temperature_color(*t), 0.6);
-            }
-            if let Some(Some(depth)) = depths.get(room.id) {
-                fill = fill.lerp_to_gamma(Color32::from_rgb(0x1f, 0x7f, 0xc9), 0.35 + 0.5 * depth);
-            }
+            let fill = tints.fill(pal.shape(room.cls.name()), room.id);
             room_shape(
                 painter,
                 xf,
@@ -525,7 +470,7 @@ pub fn draw_floor(painter: &Painter, xf: &Xf, floor: &Floor, overlays: Overlays,
         }
     }
     if overlays.ports {
-        for room in &floor.rooms {
+        for room in floor.rooms.iter().filter(|r| on(r)) {
             for port in &room.ports {
                 let half = (4.0 * xf.scale).max(1.5);
                 painter.rect_filled(
@@ -536,7 +481,7 @@ pub fn draw_floor(painter: &Painter, xf: &Xf, floor: &Floor, overlays: Overlays,
             }
         }
     }
-    for room in &floor.rooms {
+    for room in floor.rooms.iter().filter(|r| on(r)) {
         for port in &room.used {
             let d = dir_of(port.k);
             polyline(
@@ -572,6 +517,9 @@ pub fn draw_floor(painter: &Painter, xf: &Xf, floor: &Floor, overlays: Overlays,
                     .map_or("?".to_string(), |c| c.to_uppercase().to_string());
                 for &i in &kind.nodes {
                     if let Node::Room { room } = &floor.nodes[i] {
+                        if !on(&floor.rooms[*room]) {
+                            continue;
+                        }
                         let r = &floor.rooms[*room];
                         let at = xf.pt([r.bounds.hi[0], r.bounds.lo[1]])
                             + eframe::egui::vec2(-9.0 - 15.0 * slot[*room] as f32, 9.0);
@@ -599,6 +547,9 @@ pub fn draw_floor(painter: &Painter, xf: &Xf, floor: &Floor, overlays: Overlays,
             ] {
                 for &i in nodes {
                     if let Node::Room { room } = &floor.nodes[i] {
+                        if !on(&floor.rooms[*room]) {
+                            continue;
+                        }
                         let at = xf.pt(floor.rooms[*room].bounds.lo) + eframe::egui::vec2(9.0, 9.0);
                         painter.circle_filled(at, 6.0, color);
                         painter.circle_stroke(at, 6.0, eframe::egui::Stroke::new(1.0, pal.ink));
@@ -608,7 +559,7 @@ pub fn draw_floor(painter: &Painter, xf: &Xf, floor: &Floor, overlays: Overlays,
         }
     }
     if overlays.labels {
-        for room in floor.rooms.iter().filter(|room| room.alive) {
+        for room in floor.rooms.iter().filter(|room| room.alive && on(room)) {
             let role = if room.role == Role::Plain {
                 String::new()
             } else {
@@ -617,6 +568,79 @@ pub fn draw_floor(painter: &Painter, xf: &Xf, floor: &Floor, overlays: Overlays,
             let text = format!("#{} {}{}", room.id, class_label(room.cls.name()), role);
             label(painter, xf, &text, room.center, pal.on_room(), 18.0);
         }
+    }
+    // The stairs, over the rooms: marks where the level goes up or down.
+    for edge in floor.edges.iter().filter(|e| e.stair) {
+        if view.is_none_or(|v| node_level[edge.u] == v || node_level[edge.v] == v) {
+            let at = xf.pt(edge.pts[0]);
+            painter.circle_filled(at, 9.0, pal.accent);
+            painter.circle_stroke(at, 9.0, eframe::egui::Stroke::new(1.0, pal.ink));
+            painter.text(
+                at,
+                eframe::egui::Align2::CENTER_CENTER,
+                "S",
+                eframe::egui::FontId::proportional(10.0),
+                Color32::WHITE,
+            );
+        }
+    }
+}
+
+/// A scale for every channel on show (with its layer on the floor): the ramp from the low end to the high end, with both values, stacked
+/// down from the top right of the map.
+pub fn scales(
+    painter: &Painter,
+    rect: Rect,
+    text_color: Color32,
+    floor: &Floor,
+    overlays: Overlays,
+) {
+    let shown = [
+        (overlays.height, Channel::Height),
+        (overlays.water, Channel::Water),
+        (overlays.temperature, Channel::Temperature),
+        (overlays.light, Channel::Light),
+    ];
+    let font = FontId::proportional(11.0);
+    let (w, h) = (150.0, 8.0);
+    let mut y = rect.top() + 44.0;
+    for (_, c) in shown.into_iter().filter(|(on, _)| *on) {
+        let Some((lo, hi)) = view::scale(floor, c) else {
+            continue;
+        };
+        let x0 = rect.right() - w - 14.0;
+        painter.text(
+            Pos2::new(x0, y),
+            Align2::LEFT_BOTTOM,
+            c.label(),
+            font.clone(),
+            text_color,
+        );
+        let steps = 30;
+        for k in 0..steps {
+            let t = k as f32 / (steps - 1) as f32;
+            let at = x0 + w * k as f32 / steps as f32;
+            painter.rect_filled(
+                Rect::from_min_size(Pos2::new(at, y + 2.0), Vec2::new(w / steps as f32 + 0.5, h)),
+                0.0,
+                channel_color(c, t),
+            );
+        }
+        painter.text(
+            Pos2::new(x0, y + h + 4.0),
+            Align2::LEFT_TOP,
+            view::format_value(c, lo),
+            font.clone(),
+            text_color,
+        );
+        painter.text(
+            Pos2::new(x0 + w, y + h + 4.0),
+            Align2::RIGHT_TOP,
+            view::format_value(c, hi),
+            font.clone(),
+            text_color,
+        );
+        y += 46.0;
     }
 }
 

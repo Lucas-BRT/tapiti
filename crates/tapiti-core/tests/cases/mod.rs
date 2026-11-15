@@ -151,5 +151,53 @@ pub fn cases() -> Vec<(String, Params)> {
         },
     ];
     out.push(("events-zones-bsp-large".into(), zoned));
+    let mut tower = rich_of_size(Size::Medium);
+    tower.layout = Layout::Growth;
+    tower.levels = tapiti_core::params::LevelsSpec {
+        count: 3,
+        stairs: 2,
+        ..Default::default()
+    };
+    out.push(("levels-3-growth-medium".into(), tower));
+    let mut deep = params_of_size(Size::Medium);
+    deep.apply_intent(TopologyProfile::Ring);
+    deep.levels.count = 2;
+    deep.environment.height.enabled = true;
+    deep.environment.water.enabled = true;
+    deep.environment.climate.enabled = true;
+    deep.environment.light.enabled = true;
+    deep.environment.light.torches = 3;
+    out.push(("levels-2-ring-all-layers-medium".into(), deep));
+    let mut lair = rich_of_size(Size::Medium);
+    lair.layout = Layout::Growth;
+    lair.environment.height.enabled = true;
+    lair.environment.water.enabled = true;
+    lair.environment.light.enabled = true;
+    lair.environment.light.time = 0.0;
+    lair.environment.light.torches = 3;
+    lair.environment.events.enabled = true;
+    lair.environment.events.list = vec![
+        EventSpec {
+            name: "damp".into(),
+            count: 3,
+            conditions: vec![tapiti_core::environment::Condition {
+                field: tapiti_core::environment::ConditionField::Humidity,
+                min: Some(0.4),
+                max: None,
+            }],
+            ..EventSpec::default()
+        },
+        EventSpec {
+            name: "dark".into(),
+            count: 3,
+            conditions: vec![tapiti_core::environment::Condition {
+                field: tapiti_core::environment::ConditionField::Light,
+                min: None,
+                max: Some(0.05),
+            }],
+            ..EventSpec::default()
+        },
+    ];
+    out.push(("events-conditions-growth-medium".into(), lair));
     out
 }

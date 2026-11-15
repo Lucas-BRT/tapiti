@@ -370,6 +370,16 @@ pub fn groups() -> Vec<ParamGroup> {
             ],
         ),
         group(
+            "levels",
+            tx("Levels"),
+            tx("Stack several levels in the same world: each is generated on its own, and stairs join two levels where their rooms overlap in plan."),
+            vec![
+                number("levels.count", tx("Levels"), 1.0, 8.0, true),
+                number("levels.stairs", tx("Stairs between levels"), 1.0, 4.0, true),
+                number("levels.storey", tx("Height of a storey"), 1.0, 100000.0, false),
+            ],
+        ),
+        group(
             "growth",
             tx("Growth"),
             tx("Used by the Growth layout: instead of one room per grid block, rooms grow one from another, in free positions. The grid only sets the size of the world."),
@@ -477,6 +487,9 @@ fn help(path: &str, label: &str) -> Text {
         "environment.light.doorLoss" => tx("The fraction of light that gets through a door: 1 loses nothing, 0 stops all of it."),
         "environment.events.enabled" => tx("Events you name and scatter over the floor, each with a count and a distribution over the rooms. The generator only says in which rooms they happen. Runs after the layout and moves nothing."),
         "environment.events.exclusive" => tx("At most one event in a room, whatever its kind. Turn it off to let kinds share rooms."),
+        "levels.count" => tx("How many levels the floor has, from 1. Each is generated on its own, with the same settings, and rooms of different levels may overlap in plan. Needs an entrance and an exit: the path climbs from the entrance of the first level to the exit of the last. Height before the layout is not available with several levels."),
+        "levels.stairs" => tx("Stairs between two consecutive levels, each where a room of one level and a room of the next overlap most. A level with no such overlap is left unjoined and the floor is redrawn."),
+        "levels.storey" => tx("The height between two levels, in the units of the floor. With Height on, each level stands this much above the last, and a stair is as long as the steepest slope needs."),
         "exitDoors" => tx("Maximum number of corridors that can enter the exit room."),
         "exitMinHops" => tx("Minimum number of links between the entrance and the exit, counted in rooms."),
         "topology.profile" => tx("Choose the exploration structure. Spine with detours plans the main route, returning wings and dead ends before filling the remaining space; it needs Growth, entrance and exit, and one island. Ring places rooms round an empty court and closes the loop, with the exit opposite the entrance; it needs Growth from the north border, entrance and exit, and one island. Hub and wings starts in a central hall and grows three or four wings of different depths, the longest ending at the exit; it needs Growth from the centre, entrance and exit, and one island."),
@@ -519,6 +532,7 @@ mod tests {
         params.environment.climate.enabled = true;
         params.environment.light.enabled = true;
         params.environment.events.enabled = true;
+        params.levels.count = 2;
         let lambda = serde_json::to_value(params).unwrap();
         for group in groups() {
             for field in &group.fields {

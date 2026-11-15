@@ -150,6 +150,7 @@ pub(super) fn build_rooms(
             leaf: false,
             alive: true,
             role: Role::Plain,
+            level: 0,
         });
         report_progress(progress, || {
             GenerationEvent::RoomAdded(g.rooms[id].shape.clone())

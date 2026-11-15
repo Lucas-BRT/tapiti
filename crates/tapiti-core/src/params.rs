@@ -96,6 +96,34 @@ pub enum TopologyProfile {
     HubAndWings,
 }
 
+/// Stacked levels: the floor is made of `count` levels in the same world, each generated on its own, joined by `stairs` stairs between
+/// each two consecutive ones where rooms of the two overlap in plan. One level (the default) is the floor as it always was; the settings
+/// are then left out of the JSON.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct LevelsSpec {
+    pub count: usize,
+    pub stairs: usize,
+    /// The height between two levels, in the units of the floor.
+    pub storey: f64,
+}
+
+impl Default for LevelsSpec {
+    fn default() -> Self {
+        Self {
+            count: 1,
+            stairs: 1,
+            storey: 120.0,
+        }
+    }
+}
+
+impl LevelsSpec {
+    fn is_off(&self) -> bool {
+        *self == Self::default()
+    }
+}
+
 /// Zoning: the world cut into strips along its longer side, each with a shape class of its own, and optionally joined by single corridors.
 /// Fewer than two zones means no zoning; the settings are then left out of the JSON, so older files keep their shape.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -409,6 +437,9 @@ pub struct Params {
     pub growth: GrowthSpec,
     #[serde(default, skip_serializing_if = "ZoneSpec::is_off")]
     pub zones: ZoneSpec,
+    /// The levels of a stacked floor; left out of the JSON with one level.
+    #[serde(default, skip_serializing_if = "LevelsSpec::is_off")]
+    pub levels: LevelsSpec,
     /// The environment layers; left out of the JSON while all are off.
     #[serde(default, skip_serializing_if = "crate::environment::EnvSpec::is_off")]
     pub environment: crate::environment::EnvSpec,
@@ -483,6 +514,7 @@ fn base() -> Params {
         topology: TopologySpec::default(),
         growth: GrowthSpec::default(),
         zones: ZoneSpec::default(),
+        levels: LevelsSpec::default(),
         environment: Default::default(),
     }
 }
@@ -671,6 +703,28 @@ impl Params {
                 return Some("Growth depth must reach the requested main route length.");
             }
         }
+        if self.levels.count > 1 || self.levels != LevelsSpec::default() {
+            if !(1..=8).contains(&self.levels.count) {
+                return Some("Levels: from 1 to 8.");
+            }
+            if !(1..=4).contains(&self.levels.stairs) {
+                return Some("Levels: from 1 to 4 stairs between two levels.");
+            }
+            if !(self.levels.storey.is_finite() && self.levels.storey > 0.0) {
+                return Some("Levels: the height of a storey must be greater than 0.");
+            }
+            if self.levels.count > 1 && !(self.entrance && self.exit_room) {
+                return Some(
+                    "Levels need an entrance and an exit: the path climbs from one to the other.",
+                );
+            }
+            if self.levels.count > 1
+                && self.environment.height.enabled
+                && self.environment.height.phase == crate::environment::LayerPhase::Before
+            {
+                return Some("Height before the layout is not available with several levels yet.");
+            }
+        }
         if self.zones.count >= 2 {
             if self.zones.count > self.zone_limit() {
                 return Some(
@@ -705,6 +759,26 @@ impl Params {
                 .any(|e| e.zone.is_some_and(|z| z >= self.zone_count()))
             {
                 return Some("Events: a kind is limited to a zone the map does not have.");
+            }
+            let env = &self.environment;
+            for c in self
+                .environment
+                .events
+                .list
+                .iter()
+                .flat_map(|e| &e.conditions)
+            {
+                use crate::environment::ConditionField as F;
+                let missing = match c.field {
+                    F::Height => !env.height.enabled,
+                    F::WaterDepth | F::Humidity => !env.water.enabled,
+                    F::Temperature => !env.climate.enabled,
+                    F::Light => !env.light.enabled,
+                    F::Level => false,
+                };
+                if missing {
+                    return Some("Events: a condition needs the layer it looks at turned on.");
+                }
             }
         }
         if self.environment.climate.enabled {

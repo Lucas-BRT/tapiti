@@ -3434,6 +3434,8 @@ dependencies = [
 name = "tapiti-render"
 version = "0.1.1"
 dependencies = [
+ "libm",
+ "serde_json",
  "tapiti-core",
 ]
 
@@ -3466,6 +3468,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tapiti-core",
+ "tapiti-render",
  "wasm-bindgen",
 ]
 

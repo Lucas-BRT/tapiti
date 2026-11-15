@@ -107,7 +107,7 @@ fn no_node_is_dimmer_than_a_neighbour_lets_through_and_the_validator_agrees() {
                     for e in &s.d.edges {
                         let t = transmission(
                             &p.environment.light,
-                            tapiti_core::environment::height::corridor_length(&e.pts),
+                            tapiti_core::environment::height::edge_length(&s.d, e),
                         );
                         assert!(
                             field.intensity[e.v] >= field.intensity[e.u] * t - 1e-9,

@@ -45,13 +45,28 @@ pub(crate) fn node_label(floor: &Floor, node: usize) -> String {
     }
 }
 
-pub(crate) fn map_object_at(floor: &Floor, point: [f64; 2], zoom: f64) -> String {
+pub(crate) fn map_object_at(
+    floor: &Floor,
+    point: [f64; 2],
+    zoom: f64,
+    level: Option<usize>,
+) -> String {
+    // A stacked floor shows one level at a time: only what is on it can be under the pointer.
+    let view = level.filter(|_| floor.stack.is_some());
+    let node_level = tapiti_core::environment::height::node_levels(floor);
     for room in floor.rooms.iter().rev() {
-        if room.alive && point_in_shape(&room.shape, point) {
+        if room.alive && view.is_none_or(|v| room.level == v) && point_in_shape(&room.shape, point)
+        {
             let kind = if room.leaf { "leaf chamber" } else { "room" };
+            // What the environment layers say about this room, one line each.
+            let layers: String = tapiti_render::view::inspect(floor, room.id)
+                .into_iter()
+                .map(|(name, value)| format!("\n{name}: {value}"))
+                .collect();
             return format!(
-                "{kind} · {role}\nRoom #{id} · {class}\nArea: {area:.0} px²\nDoors used: {used} · possible: {possible}",
+                "{kind} · {role}\nRoom #{id} · {class}\nArea: {area:.0} px²\nDoors used: {used} · possible: {possible}{layers}",
                 kind = kind,
+                layers = layers,
                 role = role_label(room.role),
                 id = room.id,
                 class = class_label(room.cls.name()),
@@ -63,7 +78,9 @@ pub(crate) fn map_object_at(floor: &Floor, point: [f64; 2], zoom: f64) -> String
     }
     for (id, node) in floor.nodes.iter().enumerate() {
         if let Node::Junction { p } = node {
-            if dist(**p, point) <= (8.0 / zoom.max(0.1)).max(6.0) {
+            if view.is_none_or(|v| node_level[id] == v)
+                && dist(**p, point) <= (8.0 / zoom.max(0.1)).max(6.0)
+            {
                 let degree = floor
                     .edges
                     .iter()
@@ -78,11 +95,25 @@ pub(crate) fn map_object_at(floor: &Floor, point: [f64; 2], zoom: f64) -> String
             }
         }
     }
-    for edge in &floor.edges {
-        if edge.pts.windows(2).any(|segment| {
-            distance_to_segment(point, segment[0], segment[1])
-                <= floor.params.width / 2.0 + 5.0 / zoom.max(0.1)
-        }) {
+    for edge in floor
+        .edges
+        .iter()
+        .filter(|e| view.is_none_or(|v| node_level[e.u] == v || (e.stair && node_level[e.v] == v)))
+    {
+        if edge.stair && dist(edge.pts[0], point) <= 9.0 / zoom.max(0.1) {
+            return format!(
+                "Stair #{id}\n{from} – {to}",
+                id = edge.id,
+                from = node_label(floor, edge.u),
+                to = node_label(floor, edge.v)
+            );
+        }
+        if !edge.stair
+            && edge.pts.windows(2).any(|segment| {
+                distance_to_segment(point, segment[0], segment[1])
+                    <= floor.params.width / 2.0 + 5.0 / zoom.max(0.1)
+            })
+        {
             let length = edge
                 .pts
                 .windows(2)

@@ -35,11 +35,29 @@ pub(super) fn report_progress(
     }
 }
 
+/// One floor, or a stacked floor made of several levels (`levels.count`): with one level this is the floor of `generate_level` as it
+/// always was.
 pub(super) fn generate_inner(
+    seed: u32,
+    p: &Params,
+    progress: Option<&mut dyn FnMut(GenerationEvent)>,
+    cancel: Option<Cancel>,
+) -> Option<Floor> {
+    if p.levels.count <= 1 {
+        generate_level(seed, p, progress, cancel, true)
+    } else {
+        super::stack::generate_stack(seed, p, progress, cancel)
+    }
+}
+
+/// One level: the whole pipeline. With `environment` off the layers are left for the caller (a stacked floor runs them once, on the
+/// whole).
+pub(super) fn generate_level(
     seed: u32,
     p: &Params,
     mut progress: Option<&mut dyn FnMut(GenerationEvent)>,
     cancel: Option<Cancel>,
+    environment: bool,
 ) -> Option<Floor> {
     let mut phases: Vec<(String, f64)> = Vec::new();
     let mut t_last = crate::clock::now_ms();
@@ -102,7 +120,11 @@ pub(super) fn generate_inner(
         y1: grid_y[rows as usize],
     };
     // Layers that go before the rooms hand the generator their limits (the ground of the height layer).
-    let env_layers = crate::environment::layers_of(p);
+    let env_layers = if environment {
+        crate::environment::layers_of(p)
+    } else {
+        Vec::new()
+    };
     let env_before = crate::environment::run_before(
         &env_layers,
         seed,
@@ -348,6 +370,7 @@ pub(super) fn generate_inner(
         dropped: dropped_centers,
         log: g.log,
         environment: None,
+        stack: None,
         phases,
     };
     floor.environment = crate::environment::run_after(&env_layers, seed, &floor, env_before);

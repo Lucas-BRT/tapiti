@@ -70,6 +70,16 @@ pub fn ground_at(seed: u32, params_json: &str, x: f64, y: f64) -> Result<f64, Js
     )
 }
 
+/// The fingerprint of how the floor of `seed` and the Λ in `params_json` looks in 3D (the hash of its mesh and of two pictures of it), as
+/// three hexadecimal numbers: to check that this module draws what the native build draws.
+#[wasm_bindgen]
+pub fn view_digest(seed: u32, params_json: &str) -> Result<String, JsError> {
+    let p: params::Params =
+        serde_json::from_str(params_json).map_err(|e| JsError::new(&format!("bad Λ: {e}")))?;
+    let [mesh, outside, inside] = tapiti_render::digest::of(&generate::generate(seed, &p));
+    Ok(format!("{mesh:016x} {outside:016x} {inside:016x}"))
+}
+
 /// How many threads the module computes with (1 for the single-threaded build).
 #[wasm_bindgen]
 pub fn threads() -> u32 {

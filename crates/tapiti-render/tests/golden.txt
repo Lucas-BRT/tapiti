@@ -1,0 +1,12 @@
+grid-rich-small seed 1: mesh c5cb308c27522d08 outside 7a21b2888c9c3b57 inside 4c8b1aa99e53b2bc
+grid-rich-small seed 2: mesh f89c0ae3009c99e9 outside 12b4ca8644053975 inside 2a91108fd8e39968
+growth-rich-medium seed 1: mesh 7ccf095b147f4d00 outside 74ef5d781247100d inside 5cce3cc6ef47d2e5
+growth-rich-medium seed 2: mesh 9815e7788ddfd69b outside 2436cef56c78ee43 inside dd57f28b681fa7b2
+bsp-rich-medium seed 1: mesh a4e90c58ab942d0d outside 40f98592d25e574f inside 0fae4fe290ae2134
+bsp-rich-medium seed 2: mesh a18a1bcfed52a7f5 outside fe251aadfb2cfe48 inside 1b6c92a27335ba97
+ring-medium seed 1: mesh ec5180d0f72dc003 outside 5620821b10e1c7c2 inside d55dda93b7b2df2c
+ring-medium seed 2: mesh ad4c54081d0d9e16 outside e6f4e79118dc7589 inside 56a5be85d88a6010
+growth-all-layers-medium seed 1: mesh d134597e8d5d1ba7 outside 764438652e80a62a inside 57f4f41e7d2521d3
+growth-all-layers-medium seed 2: mesh ea4aa5ef62757546 outside 4ac4e38eccb3f2a0 inside 50ae0174761bf86f
+two-levels-all-layers-medium seed 1: mesh 587e37f5bb7a8afa outside f0df0b60c2c5fbc5 inside c6a771c5c96e543a
+two-levels-all-layers-medium seed 2: mesh f9a27af5fc3f29a9 outside 88877f9c5a67e69a inside b59bff0b14908b3e

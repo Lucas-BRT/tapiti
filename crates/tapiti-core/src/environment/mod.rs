@@ -14,7 +14,7 @@ pub mod light;
 pub mod placement;
 pub mod water;
 pub use climate::{Climate, ClimateField, ClimateSpec};
-pub use events::{EventKind, EventSpec, EventsField, EventsSpec};
+pub use events::{Condition, ConditionField, EventKind, EventSpec, EventsField, EventsSpec};
 pub use height::{HeightField, HeightSpec, HeightStyle, Terrain};
 pub use light::{LightField, LightSpec};
 pub use placement::Placement;
@@ -90,7 +90,7 @@ pub fn fade_from(floor: &Floor, from: &[bool], reach: f64) -> Vec<f64> {
     let edges: Vec<(usize, usize, f64)> = floor
         .edges
         .iter()
-        .map(|e| (e.u, e.v, height::corridor_length(&e.pts)))
+        .map(|e| (e.u, e.v, height::edge_length(floor, e)))
         .collect();
     for _ in 0..=n {
         let mut changed = false;
@@ -186,6 +186,17 @@ pub fn run_after(
         ran = true;
     }
     ran.then_some(out)
+}
+
+/// Runs the layers again on a finished floor, for a Λ that differs from the floor's only in the settings of the layers that run after
+/// the layout: the floor itself is not touched, so this is the same floor `generate` draws for that Λ, found without drawing the rooms
+/// again. A layer that runs before the layout (height before it) cannot be reevaluated: it changes the rooms, so the floor has to be
+/// generated again.
+pub fn reevaluate(floor: &mut Floor, p: &Params) {
+    floor.params = p.clone();
+    floor.environment = None;
+    let layers = layers_of(p);
+    floor.environment = run_after(&layers, floor.seed, floor, None);
 }
 
 #[cfg(test)]

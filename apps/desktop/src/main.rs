@@ -9,11 +9,14 @@
 
 mod analysis;
 mod charts;
+mod iso;
 mod map;
 mod panels;
 mod params_ui;
 mod pick;
+mod prefs;
 mod relevance;
+mod solid;
 mod theme;
 
 use eframe::egui::{self, Key, Modifiers};
@@ -97,6 +100,17 @@ pub enum Tab {
     Analysis,
 }
 
+/// How the floor is shown on the map.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ViewMode {
+    /// The plan, from above.
+    Plan,
+    /// Obliquely, rooms as slabs at their height (see `iso`).
+    Iso,
+    /// In three dimensions, from outside or on foot (see `solid`).
+    Solid,
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct Overlays {
     pub cells: bool,
@@ -105,6 +119,8 @@ pub struct Overlays {
     pub temperature: bool,
     pub light: bool,
     pub events: bool,
+    /// The level of a stacked floor on show (0 is the first); a floor with one level ignores it.
+    pub level: Option<usize>,
     pub labels: bool,
     pub ports: bool,
     pub pairs: bool,
@@ -143,6 +159,11 @@ pub struct App {
     pub filter: String,
     pub overlays: Overlays,
     pub zoom: f64,
+    pub view_mode: ViewMode,
+    /// The view mode last written to the preferences.
+    saved_view: ViewMode,
+    pub iso: iso::IsoCamera,
+    pub solid: solid::Solid,
     pub pan: [f64; 2],
     pub busy: bool,
     pub queued: bool,
@@ -176,6 +197,11 @@ impl App {
     fn new(cc: &eframe::CreationContext<'_>) -> Self {
         let (tx, rx) = channel();
         let params = params_of_size(Size::Small);
+        let loaded_view = match prefs::load("view").as_deref() {
+            Some("iso") => ViewMode::Iso,
+            Some("solid") => ViewMode::Solid,
+            _ => ViewMode::Plan,
+        };
         let mut app = Self {
             ctx: cc.egui_ctx.clone(),
             tx,
@@ -200,6 +226,7 @@ impl App {
                 temperature: false,
                 light: false,
                 events: true,
+                level: Some(0),
                 labels: true,
                 ports: false,
                 pairs: false,
@@ -207,6 +234,10 @@ impl App {
                 legend: true,
             },
             zoom: 1.0,
+            view_mode: loaded_view,
+            saved_view: loaded_view,
+            iso: iso::IsoCamera::default(),
+            solid: solid::Solid::default(),
             pan: [0.0, 0.0],
             busy: false,
             queued: false,
@@ -261,6 +292,19 @@ impl App {
         }
         if std::env::var("TAPITI_HEIGHT").is_ok() {
             self.params.environment.height.enabled = true;
+        }
+        match std::env::var("TAPITI_VIEW").as_deref() {
+            Ok("iso") => self.view_mode = ViewMode::Iso,
+            Ok("solid") => self.view_mode = ViewMode::Solid,
+            Ok("walk") => {
+                self.view_mode = ViewMode::Solid;
+                self.solid.mode = solid::Mode::Walk;
+            }
+            _ => {}
+        }
+        if let Ok(n) = std::env::var("TAPITI_LEVELS") {
+            self.params.levels.count = n.parse().unwrap_or(2);
+            self.params.levels.stairs = 2;
         }
         if std::env::var("TAPITI_EVENTS").is_ok() {
             use tapiti_core::environment::{EventSpec, Placement};
@@ -559,6 +603,34 @@ impl App {
             .collect();
     }
 
+    /// Call after only the settings of the environment layers changed: they run after the layout, so the floor on the screen is kept and
+    /// the layers run again on it, at once. Falls back to a regeneration when there is no floor, when a layer that runs before the
+    /// layout is involved (it changes the rooms), or when a generation is running.
+    pub fn environment_edited(&mut self, was_before: bool) {
+        let before_height =
+            |p: &Params| p.environment.height.phase == tapiti_core::environment::LayerPhase::Before;
+        let reuse = !self.busy
+            && !was_before
+            && !before_height(&self.params)
+            && self
+                .generated
+                .as_ref()
+                .is_some_and(|g| g.floor.params.levels == self.params.levels);
+        if !reuse {
+            self.params_edited();
+            return;
+        }
+        self.refresh_changed();
+        self.sync_json();
+        if let Some(g) = self.generated.as_mut() {
+            let floor = Arc::make_mut(&mut g.floor);
+            tapiti_core::environment::reevaluate(floor, &self.params);
+            g.violations = tapiti_core::validate::validate(floor);
+            g.metrics = metrics_of(floor);
+            self.status = "Environment layers updated on the floor on the screen.".into();
+        }
+    }
+
     /// Call after `params` changed from outside the JSON editor: refreshes derived state and schedules a regeneration.
     pub fn params_edited(&mut self) {
         self.refresh_changed();
@@ -710,6 +782,8 @@ impl App {
     }
 
     pub fn change_param(&mut self, path: &str, value: Value) {
+        let was_before =
+            self.params.environment.height.phase == tapiti_core::environment::LayerPhase::Before;
         let mut params = serde_json::to_value(&self.params).unwrap_or(Value::Null);
         set_path(&mut params, path, value);
         match serde_json::from_value::<Params>(params) {
@@ -725,7 +799,11 @@ impl App {
                     params.set_zones(params.zones.count, params.zones.bottleneck);
                 }
                 self.params = params;
-                self.params_edited();
+                if path.starts_with("environment.") {
+                    self.environment_edited(was_before);
+                } else {
+                    self.params_edited();
+                }
             }
             Err(error) => self.status = format!("Invalid parameter: {error}", error = error),
         }
@@ -886,6 +964,7 @@ fn skipped_defaults() -> Value {
     serde_json::json!({
         "zones": tapiti_core::params::ZoneSpec::default(),
         "environment": tapiti_core::environment::EnvSpec::default(),
+        "levels": tapiti_core::params::LevelsSpec::default(),
         "topology": { "minDetours": 0 },
     })
 }
