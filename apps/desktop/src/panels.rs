@@ -1149,7 +1149,7 @@ pub fn central(app: &mut App, ui: &mut Ui) {
                 app.zoom = 1.0;
                 app.pan = [0.0, 0.0];
             }
-            if response.hovered() {
+            if response.hovered() && app.view_mode != crate::ViewMode::Solid {
                 let (scroll, pinch) = ctx.input(|i| (i.smooth_scroll_delta().y, i.zoom_delta()));
                 let factor = f64::from((scroll * 0.0012).exp() * pinch);
                 if (factor - 1.0).abs() > 1e-6 {
@@ -1166,7 +1166,7 @@ pub fn central(app: &mut App, ui: &mut Ui) {
                 let delta = response.drag_delta();
                 app.iso.yaw = (app.iso.yaw + f64::from(delta.x) * 0.4).rem_euclid(360.0);
                 app.iso.tilt = (app.iso.tilt - f64::from(delta.y) * 0.3).clamp(15.0, 90.0);
-            } else if response.dragged() {
+            } else if response.dragged() && app.view_mode != crate::ViewMode::Solid {
                 let delta = response.drag_delta();
                 let scale = f64::from(xf.scale).max(1e-6);
                 app.pan[0] -= f64::from(delta.x) / scale;
@@ -1191,11 +1191,15 @@ pub fn central(app: &mut App, ui: &mut Ui) {
             }
             if app.showing_building() {
                 map::draw_building(&painter, &xf, &app.building, overlays, &pal);
-            } else if let Some(generated) = &app.generated {
-                if app.view_mode == crate::ViewMode::Iso {
-                    crate::iso::draw(&painter, &xf, &generated.floor, &app.iso, overlays, &pal);
-                } else {
-                    map::draw_floor(&painter, &xf, &generated.floor, overlays, &pal);
+            } else if let Some(floor) = app.generated.as_ref().map(|g| g.floor.clone()) {
+                match app.view_mode {
+                    crate::ViewMode::Solid => {
+                        app.solid.show(ui, rect, &response, &floor, overlays, &pal);
+                    }
+                    crate::ViewMode::Iso => {
+                        crate::iso::draw(&painter, &xf, &floor, &app.iso, overlays, &pal);
+                    }
+                    crate::ViewMode::Plan => map::draw_floor(&painter, &xf, &floor, overlays, &pal),
                 }
             }
             if app.overlays.legend && rect.width() > 520.0 && rect.height() > 380.0 {
@@ -1228,7 +1232,11 @@ pub fn central(app: &mut App, ui: &mut Ui) {
                 );
             }
 
-            if response.hovered() && !response.dragged() && !app.showing_building() {
+            if response.hovered()
+                && !response.dragged()
+                && !app.showing_building()
+                && app.view_mode != crate::ViewMode::Solid
+            {
                 if let (Some(pos), Some(generated)) = (response.hover_pos(), &app.generated) {
                     let info = if app.view_mode == crate::ViewMode::Iso {
                         // The room under the pointer in the oblique view, described as the plan describes it.
@@ -1288,15 +1296,78 @@ fn map_controls(app: &mut App, ui: &mut Ui, rect: egui::Rect) {
         .show(ui.ctx(), |ui| {
             ui.horizontal(|ui| {
                 egui::ComboBox::from_id_salt("map_view_mode")
-                    .selected_text(if app.view_mode == crate::ViewMode::Iso {
-                        "2.5D"
-                    } else {
-                        "2D"
+                    .selected_text(match app.view_mode {
+                        crate::ViewMode::Plan => "2D",
+                        crate::ViewMode::Iso => "2.5D",
+                        crate::ViewMode::Solid => "3D",
                     })
                     .show_ui(ui, |ui| {
                         ui.selectable_value(&mut app.view_mode, crate::ViewMode::Plan, "2D");
                         ui.selectable_value(&mut app.view_mode, crate::ViewMode::Iso, "2.5D");
+                        ui.selectable_value(&mut app.view_mode, crate::ViewMode::Solid, "3D");
                     });
+                if app.view_mode == crate::ViewMode::Solid {
+                    ui.menu_button("Camera", |ui| {
+                        use crate::solid::Mode;
+                        let before = app.solid.mode;
+                        ui.horizontal(|ui| {
+                            ui.selectable_value(
+                                &mut app.solid.mode,
+                                Mode::Orbit,
+                                "Circle the floor",
+                            );
+                            ui.selectable_value(&mut app.solid.mode, Mode::Walk, "Walk in it");
+                        });
+                        if app.solid.mode != before && app.solid.mode == Mode::Walk {
+                            app.solid.respawn();
+                        }
+                        ui.add(
+                            egui::Slider::new(&mut app.solid.wall_height, 20.0..=140.0)
+                                .text("walls"),
+                        );
+                        ui.add(
+                            egui::Slider::new(&mut app.solid.exaggeration, 0.5..=6.0)
+                                .text("height ×"),
+                        );
+                        ui.add(egui::Slider::new(&mut app.solid.quality, 0.3..=1.5).text("detail"));
+                        if levels > 1 {
+                            ui.add(
+                                egui::Slider::new(&mut app.solid.explode, 0.0..=3.0)
+                                    .text("levels apart"),
+                            );
+                            let mut all = app.solid.up_to.is_none();
+                            if ui.checkbox(&mut all, "all levels").changed() {
+                                app.solid.up_to = if all { None } else { Some(levels - 1) };
+                            }
+                            if let Some(up) = app.solid.up_to.as_mut() {
+                                ui.add(egui::Slider::new(up, 0..=levels - 1).text("up to level"));
+                            }
+                        }
+                        let walking = app.solid.mode == Mode::Walk;
+                        if ui
+                            .button(if walking {
+                                "Back to the entrance"
+                            } else {
+                                "Reset the camera"
+                            })
+                            .clicked()
+                        {
+                            if walking {
+                                app.solid.respawn();
+                            } else {
+                                app.solid.reset_orbit();
+                            }
+                        }
+                        ui.label(muted(
+                            ui,
+                            if walking {
+                                "W A S D to walk, Shift to run, drag to look, E at a stair."
+                            } else {
+                                "Drag to turn, wheel to come near or go far."
+                            },
+                        ));
+                    });
+                }
                 if app.view_mode == crate::ViewMode::Iso {
                     ui.menu_button("Camera", |ui| {
                         ui.add(egui::Slider::new(&mut app.iso.yaw, 0.0..=360.0).text("turn"));

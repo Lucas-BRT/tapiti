@@ -15,6 +15,7 @@ mod panels;
 mod params_ui;
 mod pick;
 mod relevance;
+mod solid;
 mod theme;
 
 use eframe::egui::{self, Key, Modifiers};
@@ -105,6 +106,8 @@ pub enum ViewMode {
     Plan,
     /// Obliquely, rooms as slabs at their height (see `iso`).
     Iso,
+    /// In three dimensions, from outside or on foot (see `solid`).
+    Solid,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -157,6 +160,7 @@ pub struct App {
     pub zoom: f64,
     pub view_mode: ViewMode,
     pub iso: iso::IsoCamera,
+    pub solid: solid::Solid,
     pub pan: [f64; 2],
     pub busy: bool,
     pub queued: bool,
@@ -224,6 +228,7 @@ impl App {
             zoom: 1.0,
             view_mode: ViewMode::Plan,
             iso: iso::IsoCamera::default(),
+            solid: solid::Solid::default(),
             pan: [0.0, 0.0],
             busy: false,
             queued: false,
@@ -279,8 +284,14 @@ impl App {
         if std::env::var("TAPITI_HEIGHT").is_ok() {
             self.params.environment.height.enabled = true;
         }
-        if std::env::var("TAPITI_VIEW").is_ok_and(|v| v == "iso") {
-            self.view_mode = ViewMode::Iso;
+        match std::env::var("TAPITI_VIEW").as_deref() {
+            Ok("iso") => self.view_mode = ViewMode::Iso,
+            Ok("solid") => self.view_mode = ViewMode::Solid,
+            Ok("walk") => {
+                self.view_mode = ViewMode::Solid;
+                self.solid.mode = solid::Mode::Walk;
+            }
+            _ => {}
         }
         if let Ok(n) = std::env::var("TAPITI_LEVELS") {
             self.params.levels.count = n.parse().unwrap_or(2);
