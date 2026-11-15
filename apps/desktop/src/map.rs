@@ -336,6 +336,45 @@ pub fn event_color(k: usize) -> Color32 {
     Color32::from_rgb(r, g, b)
 }
 
+/// The tints of the channels on show, room by room: what the overlays do to the colour of a class.
+pub struct Tints {
+    heights: Vec<Option<f32>>,
+    lights: Vec<Option<f32>>,
+    temperatures: Vec<Option<f32>>,
+    depths: Vec<Option<f32>>,
+}
+
+impl Tints {
+    pub fn new(floor: &Floor, overlays: Overlays) -> Self {
+        Self {
+            heights: channel_t(floor, overlays.height, Channel::Height),
+            lights: channel_t(floor, overlays.light, Channel::Light),
+            temperatures: channel_t(floor, overlays.temperature, Channel::Temperature),
+            depths: channel_t(floor, overlays.water, Channel::Water),
+        }
+    }
+
+    /// The colour of room `room` whose class has colour `base`.
+    pub fn fill(&self, base: Color32, room: usize) -> Color32 {
+        let mut fill = base;
+        if let Some(Some(t)) = self.heights.get(room) {
+            fill = fill.lerp_to_gamma(channel_color(Channel::Height, *t), 0.55);
+        }
+        if let Some(Some(v)) = self.lights.get(room) {
+            // Darker where less light arrives.
+            fill = fill.lerp_to_gamma(Color32::from_rgb(0x14, 0x14, 0x1c), 0.75 * (1.0 - v));
+        }
+        if let Some(Some(t)) = self.temperatures.get(room) {
+            fill = fill.lerp_to_gamma(channel_color(Channel::Temperature, *t), 0.6);
+        }
+        // Only a room with water over its floor is tinted: the scale starts at the dry floor.
+        if let Some(Some(t)) = self.depths.get(room).filter(|t| t.is_some_and(|t| t > 0.0)) {
+            fill = fill.lerp_to_gamma(channel_color(Channel::Water, *t), 0.35 + 0.5 * t);
+        }
+        fill
+    }
+}
+
 /// The position of each room's value on the scale of a channel, 0 to 1; empty when the overlay is off or the floor has no such layer.
 fn channel_t(floor: &Floor, on: bool, c: Channel) -> Vec<Option<f32>> {
     let Some(scale) = on.then(|| view::scale(floor, c)).flatten() else {
@@ -401,28 +440,11 @@ pub fn draw_floor(painter: &Painter, xf: &Xf, floor: &Floor, overlays: Overlays,
             false,
         );
     }
-    let heights = channel_t(floor, overlays.height, Channel::Height);
-    let lights = channel_t(floor, overlays.light, Channel::Light);
-    let temperatures = channel_t(floor, overlays.temperature, Channel::Temperature);
-    let depths = channel_t(floor, overlays.water, Channel::Water);
+    let tints = Tints::new(floor, overlays);
     for room in floor.rooms.iter().filter(|r| on(r)) {
         if room.alive {
             let alpha = if room.leaf { 0.65 } else { 0.92 };
-            let mut fill = pal.shape(room.cls.name());
-            if let Some(Some(t)) = heights.get(room.id) {
-                fill = fill.lerp_to_gamma(channel_color(Channel::Height, *t), 0.55);
-            }
-            if let Some(Some(v)) = lights.get(room.id) {
-                // Darker where less light arrives.
-                fill = fill.lerp_to_gamma(Color32::from_rgb(0x14, 0x14, 0x1c), 0.75 * (1.0 - v));
-            }
-            if let Some(Some(t)) = temperatures.get(room.id) {
-                fill = fill.lerp_to_gamma(channel_color(Channel::Temperature, *t), 0.6);
-            }
-            // Only a room with water over its floor is tinted: the scale starts at the dry floor.
-            if let Some(Some(t)) = depths.get(room.id).filter(|t| t.is_some_and(|t| t > 0.0)) {
-                fill = fill.lerp_to_gamma(channel_color(Channel::Water, *t), 0.35 + 0.5 * t);
-            }
+            let fill = tints.fill(pal.shape(room.cls.name()), room.id);
             room_shape(
                 painter,
                 xf,

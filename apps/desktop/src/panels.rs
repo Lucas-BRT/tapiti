@@ -1123,7 +1123,16 @@ pub fn central(app: &mut App, ui: &mut Ui) {
                 egui::StrokeKind::Inside,
             );
 
-            let Some((min, max)) = app.map_bounds() else {
+            let Some((min, max)) =
+                (if app.view_mode == crate::ViewMode::Iso && !app.showing_building() {
+                    app.generated
+                        .as_ref()
+                        .map(|g| crate::iso::bounds(&g.floor, &app.iso))
+                } else {
+                    None
+                })
+                .or_else(|| app.map_bounds())
+            else {
                 painter.text(
                     rect.center(),
                     egui::Align2::CENTER_CENTER,
@@ -1150,7 +1159,14 @@ pub fn central(app: &mut App, ui: &mut Ui) {
                     }
                 }
             }
-            if response.dragged() {
+            if response.dragged_by(egui::PointerButton::Secondary)
+                && app.view_mode == crate::ViewMode::Iso
+            {
+                // The right button turns the view: across for the yaw, up and down for the tilt.
+                let delta = response.drag_delta();
+                app.iso.yaw = (app.iso.yaw + f64::from(delta.x) * 0.4).rem_euclid(360.0);
+                app.iso.tilt = (app.iso.tilt - f64::from(delta.y) * 0.3).clamp(15.0, 90.0);
+            } else if response.dragged() {
                 let delta = response.drag_delta();
                 let scale = f64::from(xf.scale).max(1e-6);
                 app.pan[0] -= f64::from(delta.x) / scale;
@@ -1176,7 +1192,11 @@ pub fn central(app: &mut App, ui: &mut Ui) {
             if app.showing_building() {
                 map::draw_building(&painter, &xf, &app.building, overlays, &pal);
             } else if let Some(generated) = &app.generated {
-                map::draw_floor(&painter, &xf, &generated.floor, overlays, &pal);
+                if app.view_mode == crate::ViewMode::Iso {
+                    crate::iso::draw(&painter, &xf, &generated.floor, &app.iso, overlays, &pal);
+                } else {
+                    map::draw_floor(&painter, &xf, &generated.floor, overlays, &pal);
+                }
             }
             if app.overlays.legend && rect.width() > 520.0 && rect.height() > 380.0 {
                 if let Some(generated) = &app.generated {
@@ -1210,12 +1230,22 @@ pub fn central(app: &mut App, ui: &mut Ui) {
 
             if response.hovered() && !response.dragged() && !app.showing_building() {
                 if let (Some(pos), Some(generated)) = (response.hover_pos(), &app.generated) {
-                    let info = map_object_at(
-                        &generated.floor,
-                        xf.to_world(pos),
-                        app.zoom,
-                        app.overlays.level,
-                    );
+                    let info = if app.view_mode == crate::ViewMode::Iso {
+                        // The room under the pointer in the oblique view, described as the plan describes it.
+                        crate::iso::pick(&generated.floor, &xf, &app.iso, pos)
+                            .map(|id| {
+                                let r = &generated.floor.rooms[id];
+                                map_object_at(&generated.floor, r.center, app.zoom, Some(r.level))
+                            })
+                            .unwrap_or_default()
+                    } else {
+                        map_object_at(
+                            &generated.floor,
+                            xf.to_world(pos),
+                            app.zoom,
+                            app.overlays.level,
+                        )
+                    };
                     if !info.is_empty() {
                         response.on_hover_text_at_pointer(info);
                     }
@@ -1248,7 +1278,58 @@ fn map_controls(app: &mut App, ui: &mut Ui, rect: egui::Rect) {
         .as_ref()
         .and_then(|g| g.floor.stack.as_ref())
         .map_or(0, |s| s.levels.len());
-    if levels > 1 {
+    // In the oblique view the levels are drawn together, so the selector of one is for the plan only.
+    let plan_levels = levels > 1 && app.view_mode == crate::ViewMode::Plan;
+    // The way the floor is shown, and in the oblique view where it is looked at from.
+    egui::Area::new(ui.scope_id().with("map_view"))
+        .fixed_pos(
+            rect.left_top() + margin + Vec2::new(84.0 + if plan_levels { 100.0 } else { 0.0 }, 0.0),
+        )
+        .show(ui.ctx(), |ui| {
+            ui.horizontal(|ui| {
+                egui::ComboBox::from_id_salt("map_view_mode")
+                    .selected_text(if app.view_mode == crate::ViewMode::Iso {
+                        "2.5D"
+                    } else {
+                        "2D"
+                    })
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(&mut app.view_mode, crate::ViewMode::Plan, "2D");
+                        ui.selectable_value(&mut app.view_mode, crate::ViewMode::Iso, "2.5D");
+                    });
+                if app.view_mode == crate::ViewMode::Iso {
+                    ui.menu_button("Camera", |ui| {
+                        ui.add(egui::Slider::new(&mut app.iso.yaw, 0.0..=360.0).text("turn"));
+                        ui.add(egui::Slider::new(&mut app.iso.tilt, 15.0..=90.0).text("tilt"));
+                        ui.add(
+                            egui::Slider::new(&mut app.iso.exaggeration, 0.5..=6.0)
+                                .text("height ×"),
+                        );
+                        if levels > 1 {
+                            ui.add(
+                                egui::Slider::new(&mut app.iso.explode, 0.0..=3.0)
+                                    .text("levels apart"),
+                            );
+                            let mut all = app.iso.up_to.is_none();
+                            ui.checkbox(&mut all, "all levels").changed().then(|| {
+                                app.iso.up_to = if all { None } else { Some(levels - 1) };
+                            });
+                            if let Some(up) = app.iso.up_to.as_mut() {
+                                ui.add(egui::Slider::new(up, 0..=levels - 1).text("up to level"));
+                            }
+                        }
+                        if ui.button("Reset the camera").clicked() {
+                            app.iso = crate::iso::IsoCamera::default();
+                        }
+                        ui.label(muted(
+                            ui,
+                            "Right button: turn and tilt. Left: move. Wheel: zoom.",
+                        ));
+                    });
+                }
+            });
+        });
+    if plan_levels {
         egui::Area::new(ui.scope_id().with("map_levels"))
             .fixed_pos(rect.left_top() + margin + Vec2::new(84.0, 0.0))
             .show(ui.ctx(), |ui| {

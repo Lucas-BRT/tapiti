@@ -9,6 +9,7 @@
 
 mod analysis;
 mod charts;
+mod iso;
 mod map;
 mod panels;
 mod params_ui;
@@ -97,6 +98,15 @@ pub enum Tab {
     Analysis,
 }
 
+/// How the floor is shown on the map.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ViewMode {
+    /// The plan, from above.
+    Plan,
+    /// Obliquely, rooms as slabs at their height (see `iso`).
+    Iso,
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct Overlays {
     pub cells: bool,
@@ -145,6 +155,8 @@ pub struct App {
     pub filter: String,
     pub overlays: Overlays,
     pub zoom: f64,
+    pub view_mode: ViewMode,
+    pub iso: iso::IsoCamera,
     pub pan: [f64; 2],
     pub busy: bool,
     pub queued: bool,
@@ -210,6 +222,8 @@ impl App {
                 legend: true,
             },
             zoom: 1.0,
+            view_mode: ViewMode::Plan,
+            iso: iso::IsoCamera::default(),
             pan: [0.0, 0.0],
             busy: false,
             queued: false,
@@ -264,6 +278,9 @@ impl App {
         }
         if std::env::var("TAPITI_HEIGHT").is_ok() {
             self.params.environment.height.enabled = true;
+        }
+        if std::env::var("TAPITI_VIEW").is_ok_and(|v| v == "iso") {
+            self.view_mode = ViewMode::Iso;
         }
         if let Ok(n) = std::env::var("TAPITI_LEVELS") {
             self.params.levels.count = n.parse().unwrap_or(2);
