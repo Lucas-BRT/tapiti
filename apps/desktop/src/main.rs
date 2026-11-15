@@ -104,6 +104,7 @@ pub struct Overlays {
     pub water: bool,
     pub temperature: bool,
     pub light: bool,
+    pub events: bool,
     pub labels: bool,
     pub ports: bool,
     pub pairs: bool,
@@ -198,6 +199,7 @@ impl App {
                 water: true,
                 temperature: false,
                 light: false,
+                events: true,
                 labels: true,
                 ports: false,
                 pairs: false,
@@ -259,6 +261,32 @@ impl App {
         }
         if std::env::var("TAPITI_HEIGHT").is_ok() {
             self.params.environment.height.enabled = true;
+        }
+        if std::env::var("TAPITI_EVENTS").is_ok() {
+            use tapiti_core::environment::{EventSpec, Placement};
+            let ev = &mut self.params.environment.events;
+            ev.enabled = true;
+            ev.list = vec![
+                EventSpec {
+                    name: "trap".into(),
+                    count: 3,
+                    placement: Placement::DeadEnds,
+                    ..EventSpec::default()
+                },
+                EventSpec {
+                    name: "guard".into(),
+                    count: 3,
+                    placement: Placement::MainPath,
+                    ..EventSpec::default()
+                },
+                EventSpec {
+                    name: "camp".into(),
+                    count: 2,
+                    placement: Placement::FarFromEntrance,
+                    min_gap: 2,
+                    ..EventSpec::default()
+                },
+            ];
         }
         if std::env::var("TAPITI_LIGHT").is_ok() {
             self.params.environment.light.enabled = true;

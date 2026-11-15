@@ -595,6 +595,7 @@ fn value_of(app: &App, current: &Value, path: &str) -> Value {
 fn environment_card(app: &mut App, ui: &mut Ui) {
     let current = serde_json::to_value(&app.params).unwrap_or(Value::Null);
     let mut edits = Vec::new();
+    let mut new_events = None;
     card(ui, "Environment", |ui| {
         ui.label(muted(
             ui,
@@ -710,10 +711,155 @@ fn environment_card(app: &mut App, ui: &mut Ui) {
                     }
                 }
             });
+        ui.add_space(4.0);
+        let events_on = app.params.environment.events.enabled;
+        Grid::new("environment_events")
+            .num_columns(3)
+            .spacing([8.0, 6.0])
+            .show(ui, |ui| {
+                for path in ["environment.events.enabled", "environment.events.exclusive"] {
+                    if path != "environment.events.enabled" && !events_on {
+                        continue;
+                    }
+                    if let Some(field) = app
+                        .groups
+                        .iter()
+                        .flat_map(|g| &g.fields)
+                        .find(|f| f.path == path)
+                    {
+                        let value = value_of(app, &current, path);
+                        if let Some(next) = field_row(ui, field, &value, app.default_ref(path)) {
+                            edits.push((field.path.clone(), next));
+                        }
+                    }
+                }
+            });
+        if events_on {
+            new_events = events_editor(
+                ui,
+                &app.params.environment.events.list,
+                app.params.zone_count(),
+            );
+        }
     });
     for (path, value) in edits {
         app.change_param(&path, value);
     }
+    if let Some(list) = new_events {
+        app.params.environment.events.list = list;
+        app.params_edited();
+    }
+}
+
+/// The events you name: one row each, with the count, where they go, the gap between them and a zone. Returns the new list when
+/// something changed.
+fn events_editor(
+    ui: &mut Ui,
+    list: &[tapiti_core::environment::EventSpec],
+    zones: usize,
+) -> Option<Vec<tapiti_core::environment::EventSpec>> {
+    use tapiti_core::environment::{EventSpec, Placement};
+    let options = tapiti_schema::placement_options();
+    let key = |p: Placement| {
+        serde_json::to_value(p)
+            .ok()
+            .and_then(|v| v.as_str().map(str::to_string))
+            .unwrap_or_default()
+    };
+    let mut list = list.to_vec();
+    let mut changed = false;
+    let mut remove = None;
+    for (i, event) in list.iter_mut().enumerate() {
+        ui.separator();
+        ui.horizontal(|ui| {
+            changed |= ui
+                .add(TextEdit::singleline(&mut event.name).desired_width(120.0))
+                .on_hover_text("The name of this kind of event")
+                .changed();
+            changed |= ui
+                .add(
+                    egui::DragValue::new(&mut event.count)
+                        .range(0..=256)
+                        .suffix(" times"),
+                )
+                .on_hover_text("How many occurrences to place")
+                .changed();
+            if ui.small_button("remove").clicked() {
+                remove = Some(i);
+            }
+        });
+        ui.horizontal(|ui| {
+            let current = key(event.placement);
+            let label = options
+                .iter()
+                .find(|(k, _)| *k == current)
+                .map_or(current.as_str(), |(_, l)| l.as_str())
+                .to_string();
+            egui::ComboBox::from_id_salt(("event_placement", i))
+                .selected_text(label)
+                .show_ui(ui, |ui| {
+                    for (k, l) in &options {
+                        if let Ok(p) =
+                            serde_json::from_value::<Placement>(Value::String((*k).into()))
+                        {
+                            changed |= ui
+                                .selectable_value(&mut event.placement, p, l.as_str())
+                                .changed();
+                        }
+                    }
+                });
+            changed |= ui
+                .add(
+                    egui::DragValue::new(&mut event.min_gap)
+                        .range(0..=64)
+                        .prefix("gap "),
+                )
+                .on_hover_text("The fewest corridors between two of this kind; 0 for no limit")
+                .changed();
+        });
+        ui.horizontal(|ui| {
+            if zones > 1 {
+                let label = event
+                    .zone
+                    .map_or("any zone".to_string(), |z| format!("zone {}", z + 1));
+                egui::ComboBox::from_id_salt(("event_zone", i))
+                    .selected_text(label)
+                    .show_ui(ui, |ui| {
+                        changed |= ui
+                            .selectable_value(&mut event.zone, None, "any zone")
+                            .changed();
+                        for z in 0..zones {
+                            changed |= ui
+                                .selectable_value(
+                                    &mut event.zone,
+                                    Some(z),
+                                    format!("zone {}", z + 1),
+                                )
+                                .changed();
+                        }
+                    });
+            }
+            changed |= ui
+                .checkbox(&mut event.avoid_entrance, "keep off the entrance and exit")
+                .changed();
+        });
+    }
+    ui.separator();
+    if ui.button("Add an event").clicked() {
+        let mut next = EventSpec::default();
+        let mut n = list.len() + 1;
+        while list.iter().any(|e| e.name == format!("event {n}")) {
+            n += 1;
+        }
+        next.name = format!("event {n}");
+        list.push(next);
+        changed = true;
+    }
+    if let Some(i) = remove {
+        list.remove(i);
+        changed = true;
+    }
+    changed.then_some(list)
 }
 
 /// The light settings the Environment card lists; the others (daylight, source power, range, door transmission) are in Advanced.
@@ -1027,6 +1173,11 @@ fn map_controls(app: &mut App, ui: &mut Ui, rect: egui::Rect) {
                         &mut o.water,
                         "Water",
                         "Rooms with water over their floor, deeper in a stronger blue",
+                    ),
+                    (
+                        &mut o.events,
+                        "Events",
+                        "A badge in each room that holds an event, by kind",
                     ),
                     (
                         &mut o.light,

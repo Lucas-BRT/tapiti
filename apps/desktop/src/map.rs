@@ -383,6 +383,22 @@ fn room_temperatures(floor: &Floor) -> Vec<Option<f32>> {
     out
 }
 
+/// The colour of the `k`-th kind of event.
+pub fn event_color(k: usize) -> Color32 {
+    const COLORS: [(u8, u8, u8); 8] = [
+        (0xb8, 0x3a, 0x3a),
+        (0x2f, 0x7d, 0x5b),
+        (0x8a, 0x4f, 0xb0),
+        (0xc9, 0x7a, 0x1f),
+        (0x2b, 0x6c, 0xb0),
+        (0x9a, 0x6b, 0x3a),
+        (0xb0, 0x4a, 0x86),
+        (0x4a, 0x8a, 0x8a),
+    ];
+    let (r, g, b) = COLORS[k % COLORS.len()];
+    Color32::from_rgb(r, g, b)
+}
+
 /// The light in each room, 0 to 1; empty without a light layer.
 fn room_lights(floor: &Floor) -> Vec<Option<f32>> {
     let Some(light) = floor.environment.as_ref().and_then(|e| e.light.as_ref()) else {
@@ -541,6 +557,37 @@ pub fn draw_floor(painter: &Painter, xf: &Xf, floor: &Floor, overlays: Overlays,
                 pal.ink,
                 Stroke::new(1.5, pal.background),
             );
+        }
+    }
+    if overlays.events {
+        if let Some(events) = floor.environment.as_ref().and_then(|e| e.events.as_ref()) {
+            // A coloured badge with the first letter of the kind at the top right of each room, side by side when several share one.
+            let mut slot = vec![0usize; floor.rooms.len()];
+            for (k, kind) in events.kinds.iter().enumerate() {
+                let color = event_color(k);
+                let letter = kind
+                    .name
+                    .chars()
+                    .next()
+                    .map_or("?".to_string(), |c| c.to_uppercase().to_string());
+                for &i in &kind.nodes {
+                    if let Node::Room { room } = &floor.nodes[i] {
+                        let r = &floor.rooms[*room];
+                        let at = xf.pt([r.bounds.hi[0], r.bounds.lo[1]])
+                            + eframe::egui::vec2(-9.0 - 15.0 * slot[*room] as f32, 9.0);
+                        slot[*room] += 1;
+                        painter.circle_filled(at, 7.0, color);
+                        painter.circle_stroke(at, 7.0, eframe::egui::Stroke::new(1.0, pal.ink));
+                        painter.text(
+                            at,
+                            eframe::egui::Align2::CENTER_CENTER,
+                            letter.clone(),
+                            eframe::egui::FontId::proportional(9.0),
+                            Color32::WHITE,
+                        );
+                    }
+                }
+            }
         }
     }
     if overlays.light {

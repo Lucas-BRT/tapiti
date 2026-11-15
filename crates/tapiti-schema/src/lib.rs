@@ -100,6 +100,19 @@ fn class_fields(prefix: &str, title: Text, range: (f64, f64), integer: bool) -> 
     .collect()
 }
 
+/// The placements a layer can draw rooms with, as the value in the Λ and its label: shared by the light layer and the event editor.
+pub fn placement_options() -> Vec<(&'static str, Text)> {
+    vec![
+        ("uniform", tx("Anywhere")),
+        ("nearEntrance", tx("Near the entrance")),
+        ("farFromEntrance", tx("Far from the entrance")),
+        ("mainPath", tx("On the main path")),
+        ("deadEnds", tx("In dead ends")),
+        ("highGround", tx("On high ground")),
+        ("lowGround", tx("On low ground")),
+    ]
+}
+
 pub fn groups() -> Vec<ParamGroup> {
     let mut shapes = class_fields("weights", tx("Weight"), (0.0, 1000.0), false);
     shapes.extend(class_fields("maxOf", tx("Max"), (0.0, 10000.0), true));
@@ -348,18 +361,12 @@ pub fn groups() -> Vec<ParamGroup> {
                 choice(
                     "environment.light.placement",
                     tx("Sources go"),
-                    &[
-                        ("uniform", tx("Anywhere")),
-                        ("nearEntrance", tx("Near the entrance")),
-                        ("farFromEntrance", tx("Far from the entrance")),
-                        ("mainPath", tx("On the main path")),
-                        ("deadEnds", tx("In dead ends")),
-                        ("highGround", tx("On high ground")),
-                        ("lowGround", tx("On low ground")),
-                    ],
+                    &placement_options(),
                 ),
                 number("environment.light.range", tx("Light range"), 1.0, 1000000.0, false),
                 number("environment.light.doorLoss", tx("Light through a door"), 0.0, 1.0, false),
+                boolean("environment.events.enabled", tx("Events")),
+                boolean("environment.events.exclusive", tx("One event per room")),
             ],
         ),
         group(
@@ -465,9 +472,11 @@ fn help(path: &str, label: &str) -> Text {
         "environment.light.openings" => tx("Rooms that open to the surface besides the entrance, drawn from the higher ground."),
         "environment.light.torches" => tx("Direct sources placed on the floor: torches, lamps, anything that gives light on its own."),
         "environment.light.torchPower" => tx("The light a direct source gives, from 0 to 1."),
-        "environment.light.placement" => tx("Where direct sources go: anywhere, near or far from the entrance, on the way to the exit, in dead ends, or on high or low ground. A floor with no room that fits falls back to anywhere."),
+        "environment.light.placement" => tx("Where direct sources go: anywhere, near or far from the entrance, on the way to the exit, in dead ends, or on high or low ground. A floor with no room that fits at all falls back to anywhere."),
         "environment.light.range" => tx("The length of corridor over which light fades to nothing."),
         "environment.light.doorLoss" => tx("The fraction of light that gets through a door: 1 loses nothing, 0 stops all of it."),
+        "environment.events.enabled" => tx("Events you name and scatter over the floor, each with a count and a distribution over the rooms. The generator only says in which rooms they happen. Runs after the layout and moves nothing."),
+        "environment.events.exclusive" => tx("At most one event in a room, whatever its kind. Turn it off to let kinds share rooms."),
         "exitDoors" => tx("Maximum number of corridors that can enter the exit room."),
         "exitMinHops" => tx("Minimum number of links between the entrance and the exit, counted in rooms."),
         "topology.profile" => tx("Choose the exploration structure. Spine with detours plans the main route, returning wings and dead ends before filling the remaining space; it needs Growth, entrance and exit, and one island. Ring places rooms round an empty court and closes the loop, with the exit opposite the entrance; it needs Growth from the north border, entrance and exit, and one island. Hub and wings starts in a central hall and grows three or four wings of different depths, the longest ending at the exit; it needs Growth from the centre, entrance and exit, and one island."),
@@ -509,6 +518,7 @@ mod tests {
         params.environment.water.enabled = true;
         params.environment.climate.enabled = true;
         params.environment.light.enabled = true;
+        params.environment.events.enabled = true;
         let lambda = serde_json::to_value(params).unwrap();
         for group in groups() {
             for field in &group.fields {

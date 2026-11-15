@@ -693,6 +693,20 @@ impl Params {
                 return Some(error);
             }
         }
+        if self.environment.events.enabled {
+            if let Some(error) = self.environment.events.error() {
+                return Some(error);
+            }
+            if self
+                .environment
+                .events
+                .list
+                .iter()
+                .any(|e| e.zone.is_some_and(|z| z >= self.zone_count()))
+            {
+                return Some("Events: a kind is limited to a zone the map does not have.");
+            }
+        }
         if self.environment.climate.enabled {
             if !self.environment.height.enabled {
                 return Some("Climate needs the depth: turn Height on too.");

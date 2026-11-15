@@ -1,8 +1,9 @@
 //! Where things go on a floor: a distribution over the rooms that a layer draws its sources, events or openings from.
 //!
 //! Each placement gives every room a weight; `place` draws rooms without repeats, each in turn with a chance proportional to its weight,
-//! from the stream of the layer. A placement that finds no room fit for it (a floor with no dead end, no main path, no height) falls
-//! back to the uniform one, so asking for something always gives something. Weights use sums, products and quotients only.
+//! from the stream of the layer. A placement that fits no room of the floor at all (no dead end, no main path, no height) falls back to
+//! the uniform one, so asking for something gives something; but once rooms fit and are all taken or excluded, `place` stops short of
+//! the count rather than put a thing where its distribution says it does not go. Weights use sums, products and quotients only.
 
 use super::height::hops_from_entrance;
 use crate::{
@@ -90,13 +91,6 @@ pub fn place(
     let mut w = weights(floor, heights, placement);
     for &i in exclude {
         w[i] = 0.0;
-    }
-    // A placement that leaves nothing once the excluded rooms are out falls back to the uniform one.
-    if w.iter().sum::<f64>() <= 0.0 {
-        w = weights(floor, heights, Placement::Uniform);
-        for &i in exclude {
-            w[i] = 0.0;
-        }
     }
     let mut out = Vec::new();
     while out.len() < count {

@@ -8,11 +8,13 @@
 //!   ([`LayerPhase`]). A layer that runs before changes the floor when it is on, and only then.
 
 pub mod climate;
+pub mod events;
 pub mod height;
 pub mod light;
 pub mod placement;
 pub mod water;
 pub use climate::{Climate, ClimateField, ClimateSpec};
+pub use events::{EventKind, EventSpec, EventsField, EventsSpec};
 pub use height::{HeightField, HeightSpec, HeightStyle, Terrain};
 pub use light::{LightField, LightSpec};
 pub use placement::Placement;
@@ -42,13 +44,14 @@ pub enum LayerPhase {
 }
 
 /// The layers' settings in Λ. Left out of the JSON while every layer is off, so older files keep their shape.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct EnvSpec {
     pub height: HeightSpec,
     pub water: WaterSpec,
     pub climate: ClimateSpec,
     pub light: LightSpec,
+    pub events: EventsSpec,
 }
 
 impl EnvSpec {
@@ -69,6 +72,8 @@ pub struct Environment {
     pub climate: Option<ClimateField>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub light: Option<LightField>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub events: Option<EventsField>,
     /// The ground the layers that run before the layout hand the generator; not part of the floor.
     #[serde(skip)]
     pub terrain: Option<height::Terrain>,
@@ -146,6 +151,9 @@ pub fn layers_of(p: &Params) -> Vec<Box<dyn Layer>> {
     }
     if p.environment.light.enabled {
         out.push(Box::new(light::LightLayer(p.environment.light)));
+    }
+    if p.environment.events.enabled {
+        out.push(Box::new(events::EventsLayer(p.environment.events.clone())));
     }
     out
 }

@@ -117,6 +117,43 @@ pub fn analysis_tab(app: &mut App, ui: &mut Ui) {
         });
     }
 
+    // ---- events ----
+    if let (Some(e), Some(field)) = (
+        &m.events,
+        map.floor
+            .environment
+            .as_ref()
+            .and_then(|e| e.events.as_ref()),
+    ) {
+        card(ui, "Events", |ui| {
+            for (k, (kind, spec)) in field
+                .kinds
+                .iter()
+                .zip(&map.floor.params.environment.events.list)
+                .enumerate()
+            {
+                ui.horizontal(|ui| {
+                    ui.colored_label(crate::map::event_color(k), "●");
+                    ui.label(format!(
+                        "{}: {} of {}",
+                        kind.name,
+                        kind.nodes.len(),
+                        spec.count
+                    ));
+                });
+            }
+            if e.missing > 0 {
+                ui.label(muted(
+                    ui,
+                    format!(
+                        "{} could not be placed: no room that fits was left",
+                        e.missing
+                    ),
+                ));
+            }
+        });
+    }
+
     // ---- light ----
     if let Some(l) = &m.light {
         card(ui, "Light", |ui| {

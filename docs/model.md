@@ -416,7 +416,13 @@ $$
 
 solved by sweeps in the order of the corridors. Every $\tau_e<1$, so a cycle never adds light and the sweeps converge. The validator checks (E4) that every intensity lies from $0$ to $1$, that no node is dimmer than what a neighbour lets through or than the source it holds, and that every direct source gives its power.
 
-The openings are the entrance and `openings` rooms more, drawn from the higher ground. The direct sources are drawn with a *placement*, a weight for each room from which rooms are drawn without repeats, from the stream of the layer: anywhere; nearer to the entrance (weight $1/(1+k)$ with $k$ the corridors from it); farther from it ($1+k$); only on the main path; only in dead ends; on high ground; on low ground. A placement that rules out every room falls back to anywhere. The same placements are what events will use.
+The openings are the entrance and `openings` rooms more, drawn from the higher ground. The direct sources are drawn with a *placement*, a weight for each room from which rooms are drawn without repeats, from the stream of the layer: anywhere; nearer to the entrance (weight $1/(1+k)$ with $k$ the corridors from it); farther from it ($1+k$); only on the main path; only in dead ends; on high ground; on low ground. A placement that fits no room of the floor at all falls back to anywhere; once rooms fit and are all taken or excluded, fewer than asked are placed. The same placements are what events will use.
+
+### Events
+
+The `environment.events` layer scatters kinds of event that you name over the floor, after the layout, moving nothing. It decides nothing about what an event is or does: it says in which rooms each one happens. A kind has a name, a count, a *placement* (the distribution of the previous section: anywhere, near or far from the entrance, on the main path, in dead ends, on high or low ground), and limits: a zone of the map (when zones are on), the fewest corridors between two occurrences of the kind (`minGap`), and keeping off the entrance and the exit. With `exclusive`, a room holds at most one event of any kind. Kinds are placed in the order of the list, each occurrence drawn from the stream of the layer among the rooms the placement and the limits leave; when none is left, fewer than the count are placed, and the measures say how many are missing.
+
+The validator checks (E5) that every occurrence is in a live room, within the count, that no kind repeats a room, keeps its gap and its zone, stays off the entrance and the exit when asked, and that no room holds two kinds when they are exclusive.
 
 ### Zones
 

@@ -102,5 +102,54 @@ pub fn cases() -> Vec<(String, Params)> {
     sun.environment.light.torches = 2;
     sun.environment.light.placement = tapiti_core::environment::Placement::HighGround;
     out.push(("light-morning-hub-and-wings-medium".into(), sun));
+    use tapiti_core::environment::{EventSpec, Placement};
+    let mut scattered = rich_of_size(Size::Medium);
+    scattered.layout = Layout::Growth;
+    scattered.environment.events.enabled = true;
+    scattered.environment.events.list = vec![
+        EventSpec {
+            name: "trap".into(),
+            count: 3,
+            placement: Placement::DeadEnds,
+            ..EventSpec::default()
+        },
+        EventSpec {
+            name: "guard".into(),
+            count: 3,
+            placement: Placement::MainPath,
+            min_gap: 1,
+            ..EventSpec::default()
+        },
+        EventSpec {
+            name: "camp".into(),
+            count: 2,
+            placement: Placement::FarFromEntrance,
+            ..EventSpec::default()
+        },
+    ];
+    out.push(("events-mixed-growth-medium".into(), scattered));
+    let mut zoned = params_of_size(Size::Large);
+    zoned.layout = Layout::Bsp;
+    zoned.set_zones(3, true);
+    zoned.environment.height.enabled = true;
+    zoned.environment.events.enabled = true;
+    zoned.environment.events.exclusive = false;
+    zoned.environment.events.list = vec![
+        EventSpec {
+            name: "spring".into(),
+            count: 2,
+            placement: Placement::LowGround,
+            zone: Some(1),
+            ..EventSpec::default()
+        },
+        EventSpec {
+            name: "watch".into(),
+            count: 2,
+            placement: Placement::HighGround,
+            zone: Some(2),
+            ..EventSpec::default()
+        },
+    ];
+    out.push(("events-zones-bsp-large".into(), zoned));
     out
 }

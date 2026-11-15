@@ -44,6 +44,20 @@ pub struct Metrics {
     /// The measures of the light layer; absent while it is off.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub light: Option<LightMetrics>,
+    /// The measures of the events layer; absent while it is off.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub events: Option<EventMetrics>,
+}
+
+/// What the events layer placed.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EventMetrics {
+    pub kinds: usize,
+    /// Occurrences placed, of every kind.
+    pub placed: usize,
+    /// Occurrences asked for and not placed, because no room that fits was left.
+    pub missing: usize,
 }
 
 /// What the light did to the floor.
@@ -393,6 +407,26 @@ pub fn metrics_of(d: &Floor) -> Metrics {
                     dark_rooms: rooms.iter().filter(|v| **v < 0.05).count(),
                     openings: light.openings.len(),
                     torches: light.torches.len(),
+                }
+            }),
+        events: d
+            .environment
+            .as_ref()
+            .and_then(|e| e.events.as_ref())
+            .map(|events| {
+                let placed: usize = events.kinds.iter().map(|k| k.nodes.len()).sum();
+                let asked: usize = d
+                    .params
+                    .environment
+                    .events
+                    .list
+                    .iter()
+                    .map(|e| e.count)
+                    .sum();
+                EventMetrics {
+                    kinds: events.kinds.len(),
+                    placed,
+                    missing: asked.saturating_sub(placed),
                 }
             }),
     }
