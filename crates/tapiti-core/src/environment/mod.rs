@@ -7,8 +7,10 @@
 //! - a layer runs **after** the layout and only reads the finished floor, or **before** it and hands the generator limits to respect
 //!   ([`LayerPhase`]). A layer that runs before changes the floor when it is on, and only then.
 
+pub mod climate;
 pub mod height;
 pub mod water;
+pub use climate::{Climate, ClimateField, ClimateSpec};
 pub use height::{HeightField, HeightSpec, HeightStyle, Terrain};
 pub use water::{WaterField, WaterSpec};
 
@@ -41,6 +43,7 @@ pub enum LayerPhase {
 pub struct EnvSpec {
     pub height: HeightSpec,
     pub water: WaterSpec,
+    pub climate: ClimateSpec,
 }
 
 impl EnvSpec {
@@ -57,9 +60,45 @@ pub struct Environment {
     pub height: Option<HeightField>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub water: Option<WaterField>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub climate: Option<ClimateField>,
     /// The ground the layers that run before the layout hand the generator; not part of the floor.
     #[serde(skip)]
     pub terrain: Option<height::Terrain>,
+}
+
+/// 1 at the nodes flagged in `from`, falling linearly with the distance along the corridors to the nearest of them, to 0 at `reach`.
+/// Bellman-Ford sweeps in the order of the corridors: sums and comparisons only. Humidity and the openness to the surface use it.
+pub fn fade_from(floor: &Floor, from: &[bool], reach: f64) -> Vec<f64> {
+    let n = from.len();
+    let mut d: Vec<f64> = from
+        .iter()
+        .map(|f| if *f { 0.0 } else { f64::INFINITY })
+        .collect();
+    let edges: Vec<(usize, usize, f64)> = floor
+        .edges
+        .iter()
+        .map(|e| (e.u, e.v, height::corridor_length(&e.pts)))
+        .collect();
+    for _ in 0..=n {
+        let mut changed = false;
+        for &(u, v, len) in &edges {
+            if d[u] + len < d[v] {
+                d[v] = d[u] + len;
+                changed = true;
+            }
+            if d[v] + len < d[u] {
+                d[u] = d[v] + len;
+                changed = true;
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+    d.iter()
+        .map(|x| (1.0 - x / reach).clamp(0.0, 1.0))
+        .collect()
 }
 
 /// The stream of a layer: a pure integer mix of the seed and the layer's tag (SplitMix32), so it is the same on every platform and
@@ -94,6 +133,9 @@ pub fn layers_of(p: &Params) -> Vec<Box<dyn Layer>> {
     }
     if p.environment.water.enabled {
         out.push(Box::new(water::WaterLayer(p.environment.water)));
+    }
+    if p.environment.climate.enabled {
+        out.push(Box::new(climate::ClimateLayer(p.environment.climate)));
     }
     out
 }

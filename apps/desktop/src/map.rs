@@ -358,6 +358,37 @@ fn room_depths(floor: &Floor) -> Vec<Option<f32>> {
     out
 }
 
+/// The temperature of each room as a fraction of the floor's range (cold 0, hot 1); empty without a climate layer.
+fn room_temperatures(floor: &Floor) -> Vec<Option<f32>> {
+    let Some(climate) = floor.environment.as_ref().and_then(|e| e.climate.as_ref()) else {
+        return Vec::new();
+    };
+    let lo = climate
+        .celsius
+        .iter()
+        .copied()
+        .fold(f64::INFINITY, f64::min);
+    let hi = climate
+        .celsius
+        .iter()
+        .copied()
+        .fold(f64::NEG_INFINITY, f64::max);
+    let span = (hi - lo).max(1e-9);
+    let mut out = vec![None; floor.rooms.len()];
+    for (node, t) in floor.nodes.iter().zip(&climate.celsius) {
+        if let Node::Room { room } = node {
+            out[*room] = Some(((t - lo) / span) as f32);
+        }
+    }
+    out
+}
+
+/// Blue for cold, red for hot.
+fn temperature_color(t: f32) -> Color32 {
+    Color32::from_rgb(0x2f, 0x6d, 0xc4)
+        .lerp_to_gamma(Color32::from_rgb(0xd0, 0x3a, 0x2c), t.clamp(0.0, 1.0))
+}
+
 /// Blue for low ground, amber for high.
 fn height_color(t: f32) -> Color32 {
     Color32::from_rgb(0x3f, 0x6f, 0xa8)
@@ -407,6 +438,11 @@ pub fn draw_floor(painter: &Painter, xf: &Xf, floor: &Floor, overlays: Overlays,
     } else {
         Vec::new()
     };
+    let temperatures = if overlays.temperature {
+        room_temperatures(floor)
+    } else {
+        Vec::new()
+    };
     let depths = if overlays.water {
         room_depths(floor)
     } else {
@@ -418,6 +454,9 @@ pub fn draw_floor(painter: &Painter, xf: &Xf, floor: &Floor, overlays: Overlays,
             let mut fill = pal.shape(room.cls.name());
             if let Some(Some(t)) = heights.get(room.id) {
                 fill = fill.lerp_to_gamma(height_color(*t), 0.55);
+            }
+            if let Some(Some(t)) = temperatures.get(room.id) {
+                fill = fill.lerp_to_gamma(temperature_color(*t), 0.6);
             }
             if let Some(Some(depth)) = depths.get(room.id) {
                 fill = fill.lerp_to_gamma(Color32::from_rgb(0x1f, 0x7f, 0xc9), 0.35 + 0.5 * depth);

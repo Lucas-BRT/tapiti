@@ -329,6 +329,16 @@ pub fn groups() -> Vec<ParamGroup> {
                 number("environment.water.sources", tx("Water sources"), 1.0, 64.0, true),
                 number("environment.water.flow", tx("Water per source"), 0.0, 100000.0, false),
                 number("environment.water.reach", tx("Humidity reach"), 1.0, 1000000.0, false),
+                boolean("environment.climate.enabled", tx("Temperature")),
+                choice(
+                    "environment.climate.climate",
+                    tx("Climate"),
+                    &[("cold", tx("Cold")), ("temperate", tx("Temperate")), ("hot", tx("Hot"))],
+                ),
+                number("environment.climate.season", tx("Season"), -1.0, 1.0, false),
+                number("environment.climate.openings", tx("Surface openings"), 0.0, 64.0, true),
+                number("environment.climate.reach", tx("Surface reach"), 1.0, 1000000.0, false),
+                number("environment.climate.gradient", tx("Warming with depth"), 0.0, 100.0, false),
             ],
         ),
         group(
@@ -422,6 +432,12 @@ fn help(path: &str, label: &str) -> Text {
         "environment.water.sources" => tx("How many rooms pour water, drawn from the higher ground."),
         "environment.water.flow" => tx("What each source pours, as a depth of water over an average room. A pool is deeper the smaller its basin."),
         "environment.water.reach" => tx("How far along the corridors humidity spreads from the water: 1 under water, falling to 0 at this distance."),
+        "environment.climate.enabled" => tx("A temperature for every room and junction: the climate's mean, warmer with depth, plus the surface's swing near the openings to it, softened by humidity. Needs Height; it reads Water when that is on. Runs after the layout and moves nothing."),
+        "environment.climate.climate" => tx("The climate of the surface: Cold has a mean of -2 degrees and swings 14, Temperate 12 and 10, Hot 28 and 8."),
+        "environment.climate.season" => tx("From -1 (winter) to 1 (summer): how much of the climate's swing the surface adds near the openings."),
+        "environment.climate.openings" => tx("Rooms that open to the surface besides the entrance, drawn from the higher ground."),
+        "environment.climate.reach" => tx("How far along the corridors the surface is felt from an opening, in the units of the floor."),
+        "environment.climate.gradient" => tx("Degrees gained for every hundred units of depth below the highest ground."),
         "exitDoors" => tx("Maximum number of corridors that can enter the exit room."),
         "exitMinHops" => tx("Minimum number of links between the entrance and the exit, counted in rooms."),
         "topology.profile" => tx("Choose the exploration structure. Spine with detours plans the main route, returning wings and dead ends before filling the remaining space; it needs Growth, entrance and exit, and one island. Ring places rooms round an empty court and closes the loop, with the exit opposite the entrance; it needs Growth from the north border, entrance and exit, and one island. Hub and wings starts in a central hall and grows three or four wings of different depths, the longest ending at the exit; it needs Growth from the centre, entrance and exit, and one island."),
@@ -461,6 +477,7 @@ mod tests {
         params.zones.count = 2;
         params.environment.height.enabled = true;
         params.environment.water.enabled = true;
+        params.environment.climate.enabled = true;
         let lambda = serde_json::to_value(params).unwrap();
         for group in groups() {
             for field in &group.fields {

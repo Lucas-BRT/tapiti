@@ -117,6 +117,26 @@ pub fn analysis_tab(app: &mut App, ui: &mut Ui) {
         });
     }
 
+    // ---- climate ----
+    if let Some(c) = &m.climate {
+        card(ui, "Temperature", |ui| {
+            ui.columns(2, |cols| {
+                tile(
+                    &mut cols[0],
+                    format!("{:.0}° to {:.0}°", c.coldest, c.hottest),
+                    "Range",
+                    &format!("The average is {:.1}°", c.mean),
+                );
+                tile(
+                    &mut cols[1],
+                    c.openings.to_string(),
+                    "Openings to the surface",
+                    "The entrance and the rooms that open outside",
+                );
+            });
+        });
+    }
+
     // ---- water ----
     if let Some(w) = &m.water {
         card(ui, "Water", |ui| {

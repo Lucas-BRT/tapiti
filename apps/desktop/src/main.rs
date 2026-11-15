@@ -102,6 +102,7 @@ pub struct Overlays {
     pub cells: bool,
     pub height: bool,
     pub water: bool,
+    pub temperature: bool,
     pub labels: bool,
     pub ports: bool,
     pub pairs: bool,
@@ -194,6 +195,7 @@ impl App {
                 cells: true,
                 height: true,
                 water: true,
+                temperature: false,
                 labels: true,
                 ports: false,
                 pairs: false,
@@ -255,6 +257,12 @@ impl App {
         }
         if std::env::var("TAPITI_HEIGHT").is_ok() {
             self.params.environment.height.enabled = true;
+        }
+        if std::env::var("TAPITI_CLIMATE").is_ok() {
+            self.params.environment.height.enabled = true;
+            self.params.environment.climate.enabled = true;
+            self.params.environment.climate.season = 1.0;
+            self.overlays.temperature = true;
         }
         if std::env::var("TAPITI_WATER").is_ok() {
             self.params.environment.height.enabled = true;
@@ -672,7 +680,9 @@ impl App {
             Ok(mut params) => {
                 // Turning zones on also gives rectangle-only weights a mix, so the zones can look different.
                 // Water runs down the ground, so turning it on turns Height on.
-                if path == "environment.water.enabled" && params.environment.water.enabled {
+                if (path == "environment.water.enabled" && params.environment.water.enabled)
+                    || (path == "environment.climate.enabled" && params.environment.climate.enabled)
+                {
                     params.environment.height.enabled = true;
                 }
                 if path == "zones.count" && self.params.zones.count < 2 && params.zones.count >= 2 {

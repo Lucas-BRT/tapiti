@@ -69,5 +69,22 @@ pub fn cases() -> Vec<(String, Params)> {
     flood.environment.water.sources = 6;
     flood.environment.water.flow = 400.0;
     out.push(("water-flood-before-height-spine-medium".into(), flood));
+    let mut warm = rich_of_size(Size::Medium);
+    warm.layout = Layout::Growth;
+    warm.environment.height.enabled = true;
+    warm.environment.water.enabled = true;
+    warm.environment.climate.enabled = true;
+    warm.environment.climate.climate = tapiti_core::environment::Climate::Hot;
+    warm.environment.climate.season = 1.0;
+    out.push(("climate-hot-summer-growth-medium".into(), warm));
+    let mut cold = params_of_size(Size::Medium);
+    cold.apply_intent(TopologyProfile::Ring);
+    cold.environment.height.enabled = true;
+    cold.environment.height.phase = tapiti_core::environment::LayerPhase::Before;
+    cold.environment.climate.enabled = true;
+    cold.environment.climate.climate = tapiti_core::environment::Climate::Cold;
+    cold.environment.climate.season = -1.0;
+    cold.environment.climate.openings = 3;
+    out.push(("climate-cold-winter-before-height-ring-medium".into(), cold));
     out
 }

@@ -657,6 +657,36 @@ fn environment_card(app: &mut App, ui: &mut Ui) {
                     }
                 }
             });
+        ui.add_space(4.0);
+        let climate_on = app.params.environment.climate.enabled;
+        Grid::new("environment_climate")
+            .num_columns(3)
+            .spacing([8.0, 6.0])
+            .show(ui, |ui| {
+                for path in [
+                    "environment.climate.enabled",
+                    "environment.climate.climate",
+                    "environment.climate.season",
+                    "environment.climate.openings",
+                    "environment.climate.reach",
+                    "environment.climate.gradient",
+                ] {
+                    if path != "environment.climate.enabled" && !climate_on {
+                        continue;
+                    }
+                    if let Some(field) = app
+                        .groups
+                        .iter()
+                        .flat_map(|g| &g.fields)
+                        .find(|f| f.path == path)
+                    {
+                        let value = value_of(app, &current, path);
+                        if let Some(next) = field_row(ui, field, &value, app.default_ref(path)) {
+                            edits.push((field.path.clone(), next));
+                        }
+                    }
+                }
+            });
     });
     for (path, value) in edits {
         app.change_param(&path, value);
@@ -960,6 +990,11 @@ fn map_controls(app: &mut App, ui: &mut Ui, rect: egui::Rect) {
                         &mut o.water,
                         "Water",
                         "Rooms with water over their floor, deeper in a stronger blue",
+                    ),
+                    (
+                        &mut o.temperature,
+                        "Temperature",
+                        "Tint rooms by temperature, blue cold to red hot",
                     ),
                     (
                         &mut o.labels,

@@ -38,6 +38,20 @@ pub struct Metrics {
     /// The measures of the water layer; absent while it is off.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub water: Option<WaterMetrics>,
+    /// The measures of the climate layer; absent while it is off.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub climate: Option<ClimateMetrics>,
+}
+
+/// What the climate did to the floor.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClimateMetrics {
+    /// Degrees Celsius over the rooms.
+    pub coldest: f64,
+    pub hottest: f64,
+    pub mean: f64,
+    pub openings: usize,
 }
 
 /// What the water did to the floor.
@@ -323,6 +337,25 @@ pub fn metrics_of(d: &Floor) -> Metrics {
                     volume: water.volume,
                     mean_humidity: rooms.iter().map(|&i| water.humidity[i]).sum::<f64>()
                         / rooms.len().max(1) as f64,
+                }
+            }),
+        climate: d
+            .environment
+            .as_ref()
+            .and_then(|e| e.climate.as_ref())
+            .map(|climate| {
+                let rooms: Vec<f64> = d
+                    .nodes
+                    .iter()
+                    .zip(&climate.celsius)
+                    .filter(|(n, _)| matches!(n, Node::Room { room } if d.rooms[*room].alive))
+                    .map(|(_, t)| *t)
+                    .collect();
+                ClimateMetrics {
+                    coldest: rooms.iter().copied().fold(f64::INFINITY, f64::min),
+                    hottest: rooms.iter().copied().fold(f64::NEG_INFINITY, f64::max),
+                    mean: rooms.iter().sum::<f64>() / rooms.len().max(1) as f64,
+                    openings: climate.openings.len(),
                 }
             }),
     }

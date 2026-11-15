@@ -12,7 +12,6 @@
 
 use super::{Environment, Layer, LayerPhase};
 use crate::{
-    environment::height::corridor_length,
     generate::{Floor, Node},
     rng::{Mulberry, Rand},
 };
@@ -237,39 +236,6 @@ fn fill(
     level
 }
 
-/// Humidity: 1 under water and falling linearly with the distance along the corridors to the nearest wet node, to 0 at `reach`.
-fn humidity(floor: &Floor, wet: &[bool], reach: f64) -> Vec<f64> {
-    let n = wet.len();
-    let mut d: Vec<f64> = wet
-        .iter()
-        .map(|w| if *w { 0.0 } else { f64::INFINITY })
-        .collect();
-    let edges: Vec<(usize, usize, f64)> = floor
-        .edges
-        .iter()
-        .map(|e| (e.u, e.v, corridor_length(&e.pts)))
-        .collect();
-    for _ in 0..=n {
-        let mut changed = false;
-        for &(u, v, len) in &edges {
-            if d[u] + len < d[v] {
-                d[v] = d[u] + len;
-                changed = true;
-            }
-            if d[v] + len < d[u] {
-                d[u] = d[v] + len;
-                changed = true;
-            }
-        }
-        if !changed {
-            break;
-        }
-    }
-    d.iter()
-        .map(|x| (1.0 - x / reach).clamp(0.0, 1.0))
-        .collect()
-}
-
 /// The layer: it runs after the layout, and after the height layer it reads.
 pub struct WaterLayer(pub WaterSpec);
 
@@ -322,7 +288,7 @@ impl WaterLayer {
             .map(|(l, h)| l - h > 1e-9 * (1.0 + h.abs()))
             .collect();
         WaterField {
-            humidity: humidity(floor, &wet, spec.reach),
+            humidity: super::fade_from(floor, &wet, spec.reach),
             level,
             routes,
             volume: each * sources.len() as f64,

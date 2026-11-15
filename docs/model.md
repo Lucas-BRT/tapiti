@@ -388,6 +388,18 @@ with $a_i$ the area of node $i$ (a room's area, a junction's corridor width squa
 
 Humidity is a number from $0$ to $1$ per node: $1$ at a node under water, then $\max\bigl(0,\,1-d/\text{reach}\bigr)$ with $d$ the distance along the corridors to the nearest wet node. It comes from the water alone; the depth of the floor plays no part. The validator checks (E2) that no surface lies below its floor, that the water held is the water poured, and that a wet node's surface is never above a neighbour's. The water runs only after the layout: a pool as an obstacle for the rooms would need the water on the continuous ground, and is not implemented.
 
+### Temperature and climate
+
+The `environment.climate` layer needs the height layer, reads the water layer when it is on, and runs after the layout: it moves nothing and changes no height or water. The temperature of a node $i$ in degrees Celsius is
+
+$$
+T_i = T_{mean} + g\,\delta_i + o_i\,\sigma\,\varsigma\,\bigl(1-\tfrac12\,u_i\bigr),
+$$
+
+with $T_{mean}$ and $\sigma$ the mean and the swing of the climate (cold $-2$ and $14$, temperate $12$ and $10$, hot $28$ and $8$), $g$ the gradient in degrees per hundred units of depth, $\delta_i$ the depth below the highest ground in hundreds of units, $\varsigma\in[-1,1]$ the season (winter to summer), $o_i\in[0,1]$ the openness to the surface and $u_i$ the humidity, which takes up to half of the surface's swing away from a node under water.
+
+The entrance is an opening to the surface, and so are `openings` more rooms, drawn from a stream of their own and weighted toward high ground. The openness is $1$ at an opening and falls linearly with the distance along the corridors to the nearest opening, to $0$ at `reach`, in the same way as humidity falls from the water. With the season at $0$ and no water, the floor only warms with depth. The validator checks (E3) that the temperature of every node is the one this formula gives for its depth, openness and humidity, and that the openness lies between $0$ and $1$. The measures give the coldest, the hottest and the mean temperature of the rooms, and the number of openings. A snapshot, not a simulation: the season is a setting, and time does not pass.
+
 ### Zones
 
 The `zones` parameter cuts the world into $k$ strips along its longer side, $k$ being `zones.count` (two at least, and no more than half the longer side in cells, four at most, so each strip stays two cells wide or more). Zoning is independent of the layout and of the topology profile. The zone of a point is a pure function of the point and of Λ, so it draws nothing from the generator and a floor without zones draws what it always drew.
