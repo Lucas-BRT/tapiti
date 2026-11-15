@@ -94,6 +94,132 @@ pub fn analysis_tab(app: &mut App, ui: &mut Ui) {
         ));
     });
 
+    // ---- height ----
+    if let Some(h) = &m.height {
+        card(ui, "Height", |ui| {
+            ui.columns(2, |cols| {
+                tile(
+                    &mut cols[0],
+                    format!("{:.0}", h.range),
+                    "Range",
+                    &format!("From {:.0} to {:.0}", h.min, h.max),
+                );
+                tile(
+                    &mut cols[1],
+                    format!("{:.2}", h.max_slope),
+                    "Steepest corridor",
+                    &format!(
+                        "Rise over run; the average is {:.2} (limit {})",
+                        h.mean_slope, map.floor.params.environment.height.max_slope
+                    ),
+                );
+            });
+        });
+    }
+
+    // ---- events ----
+    if let (Some(e), Some(field)) = (
+        &m.events,
+        map.floor
+            .environment
+            .as_ref()
+            .and_then(|e| e.events.as_ref()),
+    ) {
+        card(ui, "Events", |ui| {
+            for (k, (kind, spec)) in field
+                .kinds
+                .iter()
+                .zip(&map.floor.params.environment.events.list)
+                .enumerate()
+            {
+                ui.horizontal(|ui| {
+                    ui.colored_label(crate::map::event_color(k), "●");
+                    ui.label(format!(
+                        "{}: {} of {}",
+                        kind.name,
+                        kind.nodes.len(),
+                        spec.count
+                    ));
+                });
+            }
+            if e.missing > 0 {
+                ui.label(muted(
+                    ui,
+                    format!(
+                        "{} could not be placed: no room that fits was left",
+                        e.missing
+                    ),
+                ));
+            }
+        });
+    }
+
+    // ---- light ----
+    if let Some(l) = &m.light {
+        card(ui, "Light", |ui| {
+            ui.columns(2, |cols| {
+                tile(
+                    &mut cols[0],
+                    l.dark_rooms.to_string(),
+                    "Rooms in the dark",
+                    &format!(
+                        "Less than a twentieth of full light; the average is {:.0}%",
+                        100.0 * l.mean
+                    ),
+                );
+                tile(
+                    &mut cols[1],
+                    format!("{} + {}", l.openings, l.torches),
+                    "Openings + direct sources",
+                    "Where light comes from",
+                );
+            });
+        });
+    }
+
+    // ---- climate ----
+    if let Some(c) = &m.climate {
+        card(ui, "Temperature", |ui| {
+            ui.columns(2, |cols| {
+                tile(
+                    &mut cols[0],
+                    format!("{:.0}° to {:.0}°", c.coldest, c.hottest),
+                    "Range",
+                    &format!("The average is {:.1}°", c.mean),
+                );
+                tile(
+                    &mut cols[1],
+                    c.openings.to_string(),
+                    "Openings to the surface",
+                    "The entrance and the rooms that open outside",
+                );
+            });
+        });
+    }
+
+    // ---- water ----
+    if let Some(w) = &m.water {
+        card(ui, "Water", |ui| {
+            ui.columns(2, |cols| {
+                tile(
+                    &mut cols[0],
+                    w.wet_rooms.to_string(),
+                    "Rooms under water",
+                    &format!(
+                        "{} sources pour; the deepest pool is {:.0}",
+                        w.sources, w.deepest
+                    ),
+                );
+                tile(
+                    &mut cols[1],
+                    format!("{:.0}%", 100.0 * w.mean_humidity),
+                    "Humidity",
+                    "The average over the rooms, falling with the distance to water",
+                );
+            });
+        });
+    }
+
     // ---- at a glance ----
     card(ui, "At a glance", |ui| {
         ui.columns(2, |cols| {

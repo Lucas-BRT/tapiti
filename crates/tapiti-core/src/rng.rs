@@ -19,12 +19,3 @@ impl Rand for Mulberry {
         ((t ^ (t >> 14)) as f64) / 4294967296.0
     }
 }
-
-/// A source that always answers the same value (the star's fallback fit).
-pub struct Const(pub f64);
-
-impl Rand for Const {
-    fn next(&mut self) -> f64 {
-        self.0
-    }
-}

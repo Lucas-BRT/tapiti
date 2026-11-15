@@ -113,6 +113,8 @@ pub(super) fn add_leaf_chambers(
                 let room = &g.rooms[*id];
                 room.alive
                     && !g.locked_full(*id)
+                    // With zones joined by single corridors, a chamber hangs off a room of its own zone.
+                    && (!p.bottleneck_on() || p.zone_of(room.center) == p.zone_of(center))
                     && dist(room.center, center) <= 1.8 * cell_w.max(cell_h)
             })
             .collect();

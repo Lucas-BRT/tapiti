@@ -27,10 +27,89 @@ pub struct Metrics {
     pub cycle_girth: Option<usize>,
     pub side_branches: usize,
     pub deepest_branch: usize,
+    pub returning_detours: usize,
     pub max_node_degree: usize,
     pub geometric_path_to_exit: Option<f64>,
     pub lambda2: f64,
     pub by_class: BTreeMap<String, usize>,
+    /// The measures of the height layer; absent while it is off.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub height: Option<HeightMetrics>,
+    /// The measures of the water layer; absent while it is off.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub water: Option<WaterMetrics>,
+    /// The measures of the climate layer; absent while it is off.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub climate: Option<ClimateMetrics>,
+    /// The measures of the light layer; absent while it is off.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub light: Option<LightMetrics>,
+    /// The measures of the events layer; absent while it is off.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub events: Option<EventMetrics>,
+}
+
+/// What the events layer placed.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EventMetrics {
+    pub kinds: usize,
+    /// Occurrences placed, of every kind.
+    pub placed: usize,
+    /// Occurrences asked for and not placed, because no room that fits was left.
+    pub missing: usize,
+}
+
+/// What the light did to the floor.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LightMetrics {
+    pub darkest: f64,
+    pub brightest: f64,
+    pub mean: f64,
+    /// Rooms with less than a twentieth of full light.
+    pub dark_rooms: usize,
+    pub openings: usize,
+    pub torches: usize,
+}
+
+/// What the climate did to the floor.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClimateMetrics {
+    /// Degrees Celsius over the rooms.
+    pub coldest: f64,
+    pub hottest: f64,
+    pub mean: f64,
+    pub openings: usize,
+}
+
+/// What the water did to the floor.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WaterMetrics {
+    pub sources: usize,
+    /// Rooms with water over their floor.
+    pub wet_rooms: usize,
+    pub deepest: f64,
+    pub volume: f64,
+    /// The mean humidity of the rooms, 0 to 1.
+    pub mean_humidity: f64,
+}
+
+/// What the height layer made of the floor.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HeightMetrics {
+    pub min: f64,
+    pub max: f64,
+    pub range: f64,
+    /// The steepest corridor, rise over run.
+    pub max_slope: f64,
+    pub mean_slope: f64,
+    /// With the layer before the layout: the most a room was lowered below the ground to keep the rule.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lowered: Option<f64>,
 }
 
 struct Tarjan<'a> {
@@ -248,10 +327,108 @@ pub fn metrics_of(d: &Floor) -> Metrics {
         },
         side_branches,
         deepest_branch,
+        returning_detours: crate::topology::returning_detours(&d.nodes, &d.edges, &d.main_path),
         max_node_degree: crate::topology::max_degree(d.nodes.len(), &d.edges),
         geometric_path_to_exit,
         lambda2: if eig.len() > 1 { eig[1] } else { 0.0 },
         by_class,
+        height: d
+            .environment
+            .as_ref()
+            .and_then(|e| e.height.as_ref())
+            .map(|field| {
+                let slopes = crate::environment::height::edge_slopes(d, field);
+                HeightMetrics {
+                    min: field.min,
+                    max: field.max,
+                    range: field.max - field.min,
+                    max_slope: slopes.iter().copied().fold(0.0, f64::max),
+                    mean_slope: slopes.iter().sum::<f64>() / slopes.len().max(1) as f64,
+                    lowered: field.lowered,
+                }
+            }),
+        water: d
+            .environment
+            .as_ref()
+            .and_then(|e| e.water.as_ref().zip(e.height.as_ref()))
+            .map(|(water, height)| {
+                let rooms: Vec<usize> = d
+                    .nodes
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, n)| matches!(n, Node::Room { room } if d.rooms[*room].alive))
+                    .map(|(i, _)| i)
+                    .collect();
+                let depth = |i: usize| (water.level[i] - height.nodes[i]).max(0.0);
+                WaterMetrics {
+                    sources: water.sources.len(),
+                    wet_rooms: rooms.iter().filter(|&&i| depth(i) > 1e-9).count(),
+                    deepest: (0..water.level.len()).map(depth).fold(0.0, f64::max),
+                    volume: water.volume,
+                    mean_humidity: rooms.iter().map(|&i| water.humidity[i]).sum::<f64>()
+                        / rooms.len().max(1) as f64,
+                }
+            }),
+        climate: d
+            .environment
+            .as_ref()
+            .and_then(|e| e.climate.as_ref())
+            .map(|climate| {
+                let rooms: Vec<f64> = d
+                    .nodes
+                    .iter()
+                    .zip(&climate.celsius)
+                    .filter(|(n, _)| matches!(n, Node::Room { room } if d.rooms[*room].alive))
+                    .map(|(_, t)| *t)
+                    .collect();
+                ClimateMetrics {
+                    coldest: rooms.iter().copied().fold(f64::INFINITY, f64::min),
+                    hottest: rooms.iter().copied().fold(f64::NEG_INFINITY, f64::max),
+                    mean: rooms.iter().sum::<f64>() / rooms.len().max(1) as f64,
+                    openings: climate.openings.len(),
+                }
+            }),
+        light: d
+            .environment
+            .as_ref()
+            .and_then(|e| e.light.as_ref())
+            .map(|light| {
+                let rooms: Vec<f64> = d
+                    .nodes
+                    .iter()
+                    .zip(&light.intensity)
+                    .filter(|(n, _)| matches!(n, Node::Room { room } if d.rooms[*room].alive))
+                    .map(|(_, v)| *v)
+                    .collect();
+                LightMetrics {
+                    darkest: rooms.iter().copied().fold(f64::INFINITY, f64::min),
+                    brightest: rooms.iter().copied().fold(f64::NEG_INFINITY, f64::max),
+                    mean: rooms.iter().sum::<f64>() / rooms.len().max(1) as f64,
+                    dark_rooms: rooms.iter().filter(|v| **v < 0.05).count(),
+                    openings: light.openings.len(),
+                    torches: light.torches.len(),
+                }
+            }),
+        events: d
+            .environment
+            .as_ref()
+            .and_then(|e| e.events.as_ref())
+            .map(|events| {
+                let placed: usize = events.kinds.iter().map(|k| k.nodes.len()).sum();
+                let asked: usize = d
+                    .params
+                    .environment
+                    .events
+                    .list
+                    .iter()
+                    .map(|e| e.count)
+                    .sum();
+                EventMetrics {
+                    kinds: events.kinds.len(),
+                    placed,
+                    missing: asked.saturating_sub(placed),
+                }
+            }),
     }
 }
 

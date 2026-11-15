@@ -2,6 +2,7 @@
 //! and discs), the distance between two shapes and the band a corridor segment covers. Only `+ − × ÷`, `sqrt` and the libm that ships
 //! inside the WASM module, so it rounds the same in every browser.
 
+use crate::detmath::DetMath;
 use serde::Serialize;
 
 pub type V = [f64; 2];
@@ -374,11 +375,11 @@ pub fn band(a: V, b: V, w: f64) -> Shape {
 
 /// A regular octagon with edges facing the 8 directions, `w` across: it fills the joint of two bands meeting at 45° or 90°.
 pub fn joint(c: V, w: f64) -> Shape {
-    let r = w / 2.0 / (std::f64::consts::PI / 8.0).cos();
+    let r = w / 2.0 / (std::f64::consts::PI / 8.0).det_cos();
     let pts = (0..8)
         .map(|i| {
             let a = std::f64::consts::PI / 8.0 + i as f64 * std::f64::consts::PI / 4.0;
-            add(c, mul([a.cos(), a.sin()], r))
+            add(c, mul([a.det_cos(), a.det_sin()], r))
         })
         .collect();
     Shape::Poly { pts }

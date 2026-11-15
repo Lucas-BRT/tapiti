@@ -9,6 +9,9 @@ use std::collections::{HashMap, HashSet};
 pub fn validate(d: &Floor) -> Vec<String> {
     let p = &d.params;
     let mut out: Vec<String> = Vec::new();
+    if let Some(error) = p.intent_error() {
+        out.push(format!("T6 {error}"));
+    }
     let rooms: Vec<&Room> = d.rooms.iter().filter(|r| r.alive).collect();
     let spatial_cell = [p.cell_w, p.cell_h]
         .into_iter()
@@ -376,6 +379,15 @@ pub fn validate(d: &Floor) -> Vec<String> {
     }
 
     let req = p.topology_requirements();
+    if req.min_detours > 0 {
+        let detours = crate::topology::returning_detours(&d.nodes, &d.edges, &d.main_path);
+        if detours < req.min_detours {
+            out.push(format!(
+                "T6 profile requires {} returning detours; found {detours}",
+                req.min_detours
+            ));
+        }
+    }
     if req.min_branches > 0 || req.min_branch_depth > 0 {
         let (branches, branch_depth) =
             crate::topology::side_branch_stats(&d.nodes, &d.edges, &d.main_path);
@@ -423,6 +435,37 @@ pub fn validate(d: &Floor) -> Vec<String> {
                 "T5 profile requires a cycle of at least {} branches; found {}",
                 req.min_cycle_length, girth
             ));
+        }
+    }
+
+    // E: the environment layers (E1 height).
+    if let Some(field) = d.environment.as_ref().and_then(|e| e.height.as_ref()) {
+        out.extend(crate::environment::height::check(d, field));
+    }
+    // E5 events.
+    if let Some(events) = d.environment.as_ref().and_then(|e| e.events.as_ref()) {
+        out.extend(crate::environment::events::check(d, events));
+    }
+    // E4 light.
+    if let Some(light) = d.environment.as_ref().and_then(|e| e.light.as_ref()) {
+        out.extend(crate::environment::light::check(d, light));
+    }
+    // E3 climate.
+    if let Some(env) = d.environment.as_ref() {
+        if let (Some(climate), Some(height)) = (env.climate.as_ref(), env.height.as_ref()) {
+            let humidity = env.water.as_ref().map(|w| w.humidity.as_slice());
+            out.extend(crate::environment::climate::check(
+                d,
+                climate,
+                &height.nodes,
+                humidity,
+            ));
+        }
+    }
+    // E2 water.
+    if let Some(env) = d.environment.as_ref() {
+        if let (Some(water), Some(height)) = (env.water.as_ref(), env.height.as_ref()) {
+            out.extend(crate::environment::water::check(d, water, &height.nodes));
         }
     }
 

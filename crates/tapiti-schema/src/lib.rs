@@ -85,7 +85,7 @@ fn class_fields(prefix: &str, title: Text, range: (f64, f64), integer: bool) -> 
         ("disc", tx("circular")),
         ("oct", tx("octagonal")),
         ("L", tx("L-shaped")),
-        ("star", tx("truncated star")),
+        ("star", tx("star")),
     ]
     .into_iter()
     .map(|(class, label)| {
@@ -98,6 +98,19 @@ fn class_fields(prefix: &str, title: Text, range: (f64, f64), integer: bool) -> 
         )
     })
     .collect()
+}
+
+/// The placements a layer can draw rooms with, as the value in the Λ and its label: shared by the light layer and the event editor.
+pub fn placement_options() -> Vec<(&'static str, Text)> {
+    vec![
+        ("uniform", tx("Anywhere")),
+        ("nearEntrance", tx("Near the entrance")),
+        ("farFromEntrance", tx("Far from the entrance")),
+        ("mainPath", tx("On the main path")),
+        ("deadEnds", tx("In dead ends")),
+        ("highGround", tx("On high ground")),
+        ("lowGround", tx("On low ground")),
+    ]
 }
 
 pub fn groups() -> Vec<ParamGroup> {
@@ -167,7 +180,7 @@ pub fn groups() -> Vec<ParamGroup> {
         ("disc", tx("circular")),
         ("oct", tx("octagonal")),
         ("L", tx("L-shaped")),
-        ("star", tx("truncated star")),
+        ("star", tx("star")),
     ];
     let mut mix = Vec::new();
     for (i, (a, a_label)) in classes.iter().enumerate() {
@@ -205,7 +218,11 @@ pub fn groups() -> Vec<ParamGroup> {
                 choice(
                     "layout",
                     tx("Layout"),
-                    &[("grid", tx("Grid")), ("growth", tx("Growth"))],
+                    &[
+                        ("grid", tx("Grid")),
+                        ("growth", tx("Growth")),
+                        ("bsp", tx("Binary partition")),
+                    ],
                 ),
                 number("cols", tx("Columns"), 1.0, 64.0, true),
                 number("rows", tx("Rows"), 1.0, 64.0, true),
@@ -278,6 +295,9 @@ pub fn groups() -> Vec<ParamGroup> {
                         ("hub", tx("Hub")),
                         ("redundantExit", tx("Redundant exit")),
                         ("longLoop", tx("Long loop")),
+                        ("spineWithDetours", tx("Spine with detours")),
+                        ("ring", tx("Ring")),
+                        ("hubAndWings", tx("Hub and wings")),
                     ],
                 ),
                 number("topology.minBranches", tx("Minimum side branches"), 0.0, 1000.0, true),
@@ -285,6 +305,68 @@ pub fn groups() -> Vec<ParamGroup> {
                 number("topology.minExitRoutes", tx("Independent routes to the exit"), 0.0, 1000.0, true),
                 number("topology.minCycleLength", tx("Minimum cycle length"), 0.0, 1000.0, true),
                 number("topology.minHubDegree", tx("Minimum hub degree"), 0.0, 1000.0, true),
+                number("topology.minDetours", tx("Returning detours"), 0.0, 1000.0, true),
+            ],
+        ),
+        group(
+            "zones",
+            tx("Zones"),
+            tx("Cut the world into strips along its longer side, each leaning toward a shape class of its own. Any layout takes the styles; the single-corridor joins need Growth."),
+            vec![
+                number("zones.count", tx("Zones (0 = none)"), 0.0, 4.0, true),
+                boolean("zones.bottleneck", tx("Join zones by one corridor")),
+            ],
+        ),
+        group(
+            "environment",
+            tx("Environment"),
+            tx("Layers laid over the floor. Each is off by default and never moves a room unless it is set to run before the layout."),
+            vec![
+                boolean("environment.height.enabled", tx("Height")),
+                choice(
+                    "environment.height.phase",
+                    tx("Height runs"),
+                    &[
+                        ("after", tx("After the layout")),
+                        ("before", tx("Before the layout")),
+                    ],
+                ),
+                choice(
+                    "environment.height.style",
+                    tx("Height style"),
+                    &[("hills", tx("Hills and hollows")), ("descent", tx("Going down"))],
+                ),
+                number("environment.height.relief", tx("Height relief"), 0.0, 100000.0, false),
+                number("environment.height.maxSlope", tx("Steepest corridor"), 0.001, 10.0, false),
+                boolean("environment.water.enabled", tx("Water")),
+                number("environment.water.sources", tx("Water sources"), 1.0, 64.0, true),
+                number("environment.water.flow", tx("Water per source"), 0.0, 100000.0, false),
+                number("environment.water.reach", tx("Humidity reach"), 1.0, 1000000.0, false),
+                boolean("environment.climate.enabled", tx("Temperature")),
+                choice(
+                    "environment.climate.climate",
+                    tx("Climate"),
+                    &[("cold", tx("Cold")), ("temperate", tx("Temperate")), ("hot", tx("Hot"))],
+                ),
+                number("environment.climate.season", tx("Season"), -1.0, 1.0, false),
+                number("environment.climate.openings", tx("Surface openings"), 0.0, 64.0, true),
+                number("environment.climate.reach", tx("Surface reach"), 1.0, 1000000.0, false),
+                number("environment.climate.gradient", tx("Warming with depth"), 0.0, 100.0, false),
+                boolean("environment.light.enabled", tx("Light")),
+                number("environment.light.time", tx("Hour of the day"), 0.0, 24.0, false),
+                number("environment.light.daylight", tx("Daylight"), 0.0, 1.0, false),
+                number("environment.light.openings", tx("Light openings"), 0.0, 64.0, true),
+                number("environment.light.torches", tx("Direct light sources"), 0.0, 256.0, true),
+                number("environment.light.torchPower", tx("Source power"), 0.0, 1.0, false),
+                choice(
+                    "environment.light.placement",
+                    tx("Sources go"),
+                    &placement_options(),
+                ),
+                number("environment.light.range", tx("Light range"), 1.0, 1000000.0, false),
+                number("environment.light.doorLoss", tx("Light through a door"), 0.0, 1.0, false),
+                boolean("environment.events.enabled", tx("Events")),
+                boolean("environment.events.exclusive", tx("One event per room")),
             ],
         ),
         group(
@@ -367,15 +449,44 @@ fn help(path: &str, label: &str) -> Text {
         "delta" => tx("Fraction of the cycle reference the generator tries to reach. Higher values favor shortcuts and alternative routes."),
         "entrance" => tx("Marks one room as the entrance. Turn it off for a floor with no entry point; the exit and the profiles that need a path then have nothing to measure."),
         "exitRoom" => tx("Marks a far room as the exit. It needs the entrance; the side-branch and independent-route requirements of the topology profiles also need both."),
+        "zones.count" => tx("Number of zones, from two. Each strip stays at least two cells wide, so a small world holds fewer. Every zone favours one of the shape classes with a positive weight, in turn; turning zones on gives a mix of shapes when only rectangles were enabled."),
+        "zones.bottleneck" => tx("Each pair of neighbouring zones is joined by exactly one corridor, so removing it splits the floor. Needs the Growth layout; Ring, Hub and wings and Spine with detours cross every boundary and cannot use it."),
+        "environment.height.enabled" => tx("Gives every room and junction an elevation, and every corridor a slope between the two. Heights always respect the steepest corridor you set."),
+        "environment.height.phase" => tx("After the layout reads the finished floor and moves nothing. Before the layout makes the ground first, and rooms are joined only where the slope can climb: steep ground becomes a natural barrier, so the floor changes and some layouts may fail more often."),
+        "environment.height.style" => tx("Hills and hollows draws a height for each room between 0 and the relief. Going down lowers rooms with their distance from the entrance, down to minus the relief."),
+        "environment.height.relief" => tx("The span of the heights, in the units of the floor. The slope limit can keep rooms from reaching it."),
+        "environment.height.maxSlope" => tx("The steepest a corridor may be: rise divided by run. 0.25 climbs 25 units over 100."),
+        "environment.water.enabled" => tx("Water runs downhill along the corridors and pools where it cannot go lower, over a floor that has Height. Humidity follows the water. It runs after the layout and moves nothing."),
+        "environment.water.sources" => tx("How many rooms pour water, drawn from the higher ground."),
+        "environment.water.flow" => tx("What each source pours, as a depth of water over an average room. A pool is deeper the smaller its basin."),
+        "environment.water.reach" => tx("How far along the corridors humidity spreads from the water: 1 under water, falling to 0 at this distance."),
+        "environment.climate.enabled" => tx("A temperature for every room and junction: the climate's mean, warmer with depth, plus the surface's swing near the openings to it, softened by humidity. Needs Height; it reads Water when that is on. Runs after the layout and moves nothing."),
+        "environment.climate.climate" => tx("The climate of the surface: Cold has a mean of -2 degrees and swings 14, Temperate 12 and 10, Hot 28 and 8."),
+        "environment.climate.season" => tx("From -1 (winter) to 1 (summer): how much of the climate's swing the surface adds near the openings."),
+        "environment.climate.openings" => tx("Rooms that open to the surface besides the entrance, drawn from the higher ground."),
+        "environment.climate.reach" => tx("How far along the corridors the surface is felt from an opening, in the units of the floor."),
+        "environment.climate.gradient" => tx("Degrees gained for every hundred units of depth below the highest ground."),
+        "environment.light.enabled" => tx("An intensity from 0 to 1 at every room and junction: the sun at the openings to the surface and direct sources placed on the floor, spread along the corridors and weakened at each door. Needs nothing else; it uses Height to place sources on high or low ground. Runs after the layout and moves nothing."),
+        "environment.light.time" => tx("The hour of the day. The sun is strongest at noon and gone from 18 to 6."),
+        "environment.light.daylight" => tx("The power of the sun at noon, from 0 to 1."),
+        "environment.light.openings" => tx("Rooms that open to the surface besides the entrance, drawn from the higher ground."),
+        "environment.light.torches" => tx("Direct sources placed on the floor: torches, lamps, anything that gives light on its own."),
+        "environment.light.torchPower" => tx("The light a direct source gives, from 0 to 1."),
+        "environment.light.placement" => tx("Where direct sources go: anywhere, near or far from the entrance, on the way to the exit, in dead ends, or on high or low ground. A floor with no room that fits at all falls back to anywhere."),
+        "environment.light.range" => tx("The length of corridor over which light fades to nothing."),
+        "environment.light.doorLoss" => tx("The fraction of light that gets through a door: 1 loses nothing, 0 stops all of it."),
+        "environment.events.enabled" => tx("Events you name and scatter over the floor, each with a count and a distribution over the rooms. The generator only says in which rooms they happen. Runs after the layout and moves nothing."),
+        "environment.events.exclusive" => tx("At most one event in a room, whatever its kind. Turn it off to let kinds share rooms."),
         "exitDoors" => tx("Maximum number of corridors that can enter the exit room."),
         "exitMinHops" => tx("Minimum number of links between the entrance and the exit, counted in rooms."),
-        "topology.profile" => tx("Classic keeps the base behavior; other profiles require branches, a hub, redundant routes or long cycles."),
+        "topology.profile" => tx("Choose the exploration structure. Spine with detours plans the main route, returning wings and dead ends before filling the remaining space; it needs Growth, entrance and exit, and one island. Ring places rooms round an empty court and closes the loop, with the exit opposite the entrance; it needs Growth from the north border, entrance and exit, and one island. Hub and wings starts in a central hall and grows three or four wings of different depths, the longest ending at the exit; it needs Growth from the centre, entrance and exit, and one island."),
         "topology.minBranches" => tx("Minimum number of side components linked to the main path by a single passage."),
         "topology.minBranchDepth" => tx("Minimum number of rooms in a branch from the main path."),
         "topology.minExitRoutes" => tx("Minimum number of independent paths between the entrance and the exit."),
         "topology.minCycleLength" => tx("Minimum number of segments in the shortest cycle. Zero imposes no such requirement."),
         "topology.minHubDegree" => tx("Minimum number of arms at a central point. Zero does not require a hub."),
-        "layout" => tx("Grid puts one room in each grid block. Growth grows rooms one from another off a parent's door, in free space; isolated chambers are not generated in that mode."),
+        "topology.minDetours" => tx("Minimum number of off-route room groups that return to a different point of the main route. Spine with detours reserves these before ordinary growth; its minimum is one."),
+        "layout" => tx("Grid puts one room in each grid block. Growth grows rooms one from another off a parent's door, in free space. Binary partition cuts the world into leaves of varied proportions with one room in each and joins sibling halves. The intents that plan their own rooms (Spine with detours, Ring, Hub and wings) need Growth."),
         "growth.start" => tx("Where the first room, the entrance when there is one, stands: the middle of the world or against a border (north is the top of the map). Growing from a border makes a deeper floor."),
         "growth.rooms" => tx("Number of rooms to grow. Zero uses the number of live blocks the grid would give, less the leaf chambers asked for, which are placed in the room that is left."),
         "growth.branch" => tx("Each room spawns from 1 up to this many children before the draw picks another parent."),
@@ -399,10 +510,16 @@ mod tests {
 
     #[test]
     fn every_field_path_exists_in_lambda() {
-        let lambda = serde_json::to_value(tapiti_core::params::rich_of_size(
-            tapiti_core::params::Size::Medium,
-        ))
-        .unwrap();
+        let mut params = tapiti_core::params::rich_of_size(tapiti_core::params::Size::Medium);
+        // `minDetours` and `zones` are left out of the JSON while they are off, so older files keep their shape.
+        params.topology.min_detours = 1;
+        params.zones.count = 2;
+        params.environment.height.enabled = true;
+        params.environment.water.enabled = true;
+        params.environment.climate.enabled = true;
+        params.environment.light.enabled = true;
+        params.environment.events.enabled = true;
+        let lambda = serde_json::to_value(params).unwrap();
         for group in groups() {
             for field in &group.fields {
                 let found = field.path.split('.').try_fold(&lambda, |v, k| v.get(k));

@@ -3410,6 +3410,7 @@ name = "tapiti-core"
 version = "0.1.1"
 dependencies = [
  "criterion",
+ "libm",
  "rayon",
  "serde",
  "serde_json",

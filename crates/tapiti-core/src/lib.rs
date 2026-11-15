@@ -4,6 +4,8 @@
 
 pub mod cancel;
 pub mod clock;
+pub(crate) mod detmath;
+pub mod environment;
 pub mod generate;
 pub mod geom;
 pub mod layout;

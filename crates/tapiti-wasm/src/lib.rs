@@ -52,6 +52,24 @@ pub fn stage_json(seed: u32, params_json: &str) -> Result<String, JsError> {
     .map_err(|e| JsError::new(&e.to_string()))
 }
 
+/// The ground of a height layer that runs before the layout, at the point `(x, y)`, for the seed and the Λ in `params_json`: to draw a
+/// continuous field. `NaN` when the Λ has no such layer; after the layout the heights belong to the nodes of the floor.
+#[wasm_bindgen]
+pub fn ground_at(seed: u32, params_json: &str, x: f64, y: f64) -> Result<f64, JsError> {
+    let p: params::Params =
+        serde_json::from_str(params_json).map_err(|e| JsError::new(&format!("bad Λ: {e}")))?;
+    let world = tapiti_core::environment::World {
+        x0: 0.0,
+        y0: 0.0,
+        x1: p.cols.max(1) as f64 * p.cell_w,
+        y1: p.rows.max(1) as f64 * p.cell_h,
+    };
+    Ok(
+        tapiti_core::environment::height::terrain_of(&p, seed, world)
+            .map_or(f64::NAN, |t| t.at([x, y])),
+    )
+}
+
 /// How many threads the module computes with (1 for the single-threaded build).
 #[wasm_bindgen]
 pub fn threads() -> u32 {

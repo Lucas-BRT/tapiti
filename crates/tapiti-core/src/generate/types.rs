@@ -124,6 +124,9 @@ pub struct Floor {
     pub pairs: Vec<[usize; 2]>,
     pub dropped: Vec<V>,
     pub log: Vec<String>,
+    /// What the environment layers computed; absent while none ran.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub environment: Option<crate::environment::Environment>,
     /// Milliseconds each phase of the generator took, in order (rooms, candidates, tree, β_max, cycles, leaf chambers).
     pub phases: Vec<(String, f64)>,
 }

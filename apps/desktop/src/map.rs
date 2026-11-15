@@ -111,7 +111,7 @@ impl Palette {
 
 pub const SHAPE_CLASSES: [&str; 5] = ["rect", "disc", "oct", "L", "star"];
 
-/// Ear clipping, for the concave rooms (L, truncated star): egui fills only convex paths.
+/// Ear clipping, for the concave rooms (L, star): egui fills only convex paths.
 pub fn triangulate(pts: &[[f64; 2]]) -> Vec<[usize; 3]> {
     let n = pts.len();
     if n < 3 {
@@ -319,6 +319,112 @@ pub fn draw_building(
     }
 }
 
+/// The height of each room as a fraction of the floor's range (low 0, high 1); empty without a height layer.
+fn room_heights(floor: &Floor) -> Vec<Option<f32>> {
+    let Some(field) = floor.environment.as_ref().and_then(|e| e.height.as_ref()) else {
+        return Vec::new();
+    };
+    let span = (field.max - field.min).max(1e-9);
+    let mut out = vec![None; floor.rooms.len()];
+    for (node, h) in floor.nodes.iter().zip(&field.nodes) {
+        if let Node::Room { room } = node {
+            out[*room] = Some(((h - field.min) / span) as f32);
+        }
+    }
+    out
+}
+
+/// The depth of the water in each room as a fraction of the deepest pool; `None` for a dry room, empty without a water layer.
+fn room_depths(floor: &Floor) -> Vec<Option<f32>> {
+    let Some(env) = floor.environment.as_ref() else {
+        return Vec::new();
+    };
+    let (Some(water), Some(height)) = (env.water.as_ref(), env.height.as_ref()) else {
+        return Vec::new();
+    };
+    let depth = |i: usize| (water.level[i] - height.nodes[i]).max(0.0);
+    let deepest = (0..water.level.len())
+        .map(depth)
+        .fold(0.0, f64::max)
+        .max(1e-9);
+    let mut out = vec![None; floor.rooms.len()];
+    for (i, node) in floor.nodes.iter().enumerate() {
+        if let Node::Room { room } = node {
+            if depth(i) > 1e-9 {
+                out[*room] = Some((depth(i) / deepest) as f32);
+            }
+        }
+    }
+    out
+}
+
+/// The temperature of each room as a fraction of the floor's range (cold 0, hot 1); empty without a climate layer.
+fn room_temperatures(floor: &Floor) -> Vec<Option<f32>> {
+    let Some(climate) = floor.environment.as_ref().and_then(|e| e.climate.as_ref()) else {
+        return Vec::new();
+    };
+    let lo = climate
+        .celsius
+        .iter()
+        .copied()
+        .fold(f64::INFINITY, f64::min);
+    let hi = climate
+        .celsius
+        .iter()
+        .copied()
+        .fold(f64::NEG_INFINITY, f64::max);
+    let span = (hi - lo).max(1e-9);
+    let mut out = vec![None; floor.rooms.len()];
+    for (node, t) in floor.nodes.iter().zip(&climate.celsius) {
+        if let Node::Room { room } = node {
+            out[*room] = Some(((t - lo) / span) as f32);
+        }
+    }
+    out
+}
+
+/// The colour of the `k`-th kind of event.
+pub fn event_color(k: usize) -> Color32 {
+    const COLORS: [(u8, u8, u8); 8] = [
+        (0xb8, 0x3a, 0x3a),
+        (0x2f, 0x7d, 0x5b),
+        (0x8a, 0x4f, 0xb0),
+        (0xc9, 0x7a, 0x1f),
+        (0x2b, 0x6c, 0xb0),
+        (0x9a, 0x6b, 0x3a),
+        (0xb0, 0x4a, 0x86),
+        (0x4a, 0x8a, 0x8a),
+    ];
+    let (r, g, b) = COLORS[k % COLORS.len()];
+    Color32::from_rgb(r, g, b)
+}
+
+/// The light in each room, 0 to 1; empty without a light layer.
+fn room_lights(floor: &Floor) -> Vec<Option<f32>> {
+    let Some(light) = floor.environment.as_ref().and_then(|e| e.light.as_ref()) else {
+        return Vec::new();
+    };
+    let mut out = vec![None; floor.rooms.len()];
+    for (node, v) in floor.nodes.iter().zip(&light.intensity) {
+        if let Node::Room { room } = node {
+            out[*room] = Some(*v as f32);
+        }
+    }
+    out
+}
+
+/// Blue for cold, red for hot.
+fn temperature_color(t: f32) -> Color32 {
+    Color32::from_rgb(0x2f, 0x6d, 0xc4)
+        .lerp_to_gamma(Color32::from_rgb(0xd0, 0x3a, 0x2c), t.clamp(0.0, 1.0))
+}
+
+/// Blue for low ground, amber for high.
+fn height_color(t: f32) -> Color32 {
+    Color32::from_rgb(0x3f, 0x6f, 0xa8)
+        .lerp_to_gamma(Color32::from_rgb(0xd9, 0x8a, 0x3a), t.clamp(0.0, 1.0))
+}
+
 pub fn draw_floor(painter: &Painter, xf: &Xf, floor: &Floor, overlays: Overlays, pal: &Palette) {
     if overlays.cells {
         grid(painter, xf, &floor.grid_x, &floor.grid_y, pal.grid);
@@ -357,14 +463,48 @@ pub fn draw_floor(painter: &Painter, xf: &Xf, floor: &Floor, overlays: Overlays,
             false,
         );
     }
+    let heights = if overlays.height {
+        room_heights(floor)
+    } else {
+        Vec::new()
+    };
+    let lights = if overlays.light {
+        room_lights(floor)
+    } else {
+        Vec::new()
+    };
+    let temperatures = if overlays.temperature {
+        room_temperatures(floor)
+    } else {
+        Vec::new()
+    };
+    let depths = if overlays.water {
+        room_depths(floor)
+    } else {
+        Vec::new()
+    };
     for room in &floor.rooms {
         if room.alive {
             let alpha = if room.leaf { 0.65 } else { 0.92 };
+            let mut fill = pal.shape(room.cls.name());
+            if let Some(Some(t)) = heights.get(room.id) {
+                fill = fill.lerp_to_gamma(height_color(*t), 0.55);
+            }
+            if let Some(Some(v)) = lights.get(room.id) {
+                // Darker where less light arrives.
+                fill = fill.lerp_to_gamma(Color32::from_rgb(0x14, 0x14, 0x1c), 0.75 * (1.0 - v));
+            }
+            if let Some(Some(t)) = temperatures.get(room.id) {
+                fill = fill.lerp_to_gamma(temperature_color(*t), 0.6);
+            }
+            if let Some(Some(depth)) = depths.get(room.id) {
+                fill = fill.lerp_to_gamma(Color32::from_rgb(0x1f, 0x7f, 0xc9), 0.35 + 0.5 * depth);
+            }
             room_shape(
                 painter,
                 xf,
                 &room.shape,
-                Some(pal.shape(room.cls.name()).gamma_multiply(alpha)),
+                Some(fill.gamma_multiply(alpha)),
                 pal.role(room.role),
                 4.0,
                 false,
@@ -417,6 +557,54 @@ pub fn draw_floor(painter: &Painter, xf: &Xf, floor: &Floor, overlays: Overlays,
                 pal.ink,
                 Stroke::new(1.5, pal.background),
             );
+        }
+    }
+    if overlays.events {
+        if let Some(events) = floor.environment.as_ref().and_then(|e| e.events.as_ref()) {
+            // A coloured badge with the first letter of the kind at the top right of each room, side by side when several share one.
+            let mut slot = vec![0usize; floor.rooms.len()];
+            for (k, kind) in events.kinds.iter().enumerate() {
+                let color = event_color(k);
+                let letter = kind
+                    .name
+                    .chars()
+                    .next()
+                    .map_or("?".to_string(), |c| c.to_uppercase().to_string());
+                for &i in &kind.nodes {
+                    if let Node::Room { room } = &floor.nodes[i] {
+                        let r = &floor.rooms[*room];
+                        let at = xf.pt([r.bounds.hi[0], r.bounds.lo[1]])
+                            + eframe::egui::vec2(-9.0 - 15.0 * slot[*room] as f32, 9.0);
+                        slot[*room] += 1;
+                        painter.circle_filled(at, 7.0, color);
+                        painter.circle_stroke(at, 7.0, eframe::egui::Stroke::new(1.0, pal.ink));
+                        painter.text(
+                            at,
+                            eframe::egui::Align2::CENTER_CENTER,
+                            letter.clone(),
+                            eframe::egui::FontId::proportional(9.0),
+                            Color32::WHITE,
+                        );
+                    }
+                }
+            }
+        }
+    }
+    if overlays.light {
+        if let Some(light) = floor.environment.as_ref().and_then(|e| e.light.as_ref()) {
+            // A warm dot at the corner of each room with a direct source, a pale one at each opening to the surface (the middle holds the label).
+            for (nodes, color) in [
+                (&light.torches, Color32::from_rgb(0xf2, 0xb1, 0x2c)),
+                (&light.openings, Color32::from_rgb(0xe8, 0xf1, 0xff)),
+            ] {
+                for &i in nodes {
+                    if let Node::Room { room } = &floor.nodes[i] {
+                        let at = xf.pt(floor.rooms[*room].bounds.lo) + eframe::egui::vec2(9.0, 9.0);
+                        painter.circle_filled(at, 6.0, color);
+                        painter.circle_stroke(at, 6.0, eframe::egui::Stroke::new(1.0, pal.ink));
+                    }
+                }
+            }
         }
     }
     if overlays.labels {
