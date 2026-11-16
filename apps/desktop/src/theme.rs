@@ -490,40 +490,131 @@ pub fn apply_density(ctx: &egui::Context, density: Density) {
     }
 }
 
-fn preference_file() -> Option<std::path::PathBuf> {
-    let base = std::env::var_os("XDG_CONFIG_HOME")
-        .map(std::path::PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|h| std::path::Path::new(&h).join(".config")))?;
-    Some(base.join("tapiti").join("theme"))
+/// How the window is dressed: in the light theme, in the dark theme, or as the system says. Following the system is the default.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Appearance {
+    System,
+    Light,
+    Dark,
 }
 
-/// The theme chosen last time (`light`, `dark` or `system`); light when none was saved.
-pub fn saved_preference() -> egui::ThemePreference {
-    match preference_file()
-        .and_then(|f| std::fs::read_to_string(f).ok())
-        .as_deref()
-        .map(str::trim)
-    {
-        Some("dark") => egui::ThemePreference::Dark,
-        Some("system") => egui::ThemePreference::System,
-        _ => egui::ThemePreference::Light,
+impl Appearance {
+    /// The choice kept in `~/.config/tapiti/theme`; the system's when there is none.
+    pub fn saved() -> Self {
+        match crate::prefs::load("theme").as_deref() {
+            Some("light") => Self::Light,
+            Some("dark") => Self::Dark,
+            _ => Self::System,
+        }
+    }
+
+    pub fn save(self) {
+        crate::prefs::save(
+            "theme",
+            match self {
+                Self::System => "system",
+                Self::Light => "light",
+                Self::Dark => "dark",
+            },
+        );
     }
 }
 
-/// Changes the theme and remembers it; a file that cannot be written only means the choice is not kept.
-pub fn set_preference(ctx: &egui::Context, pref: egui::ThemePreference) {
-    if ctx.options(|o| o.theme_preference) == pref {
-        return;
+/// What the system says its colour scheme is, read from the desktop portal (`org.freedesktop.appearance`), which GNOME, KDE and COSMIC
+/// all answer. egui cannot ask: on Wayland the window toolkit does not report it, so "follow the system" would never change. `None`
+/// when the system has no preference or cannot be asked (no `busctl`, no portal, not Linux).
+#[cfg(target_os = "linux")]
+pub fn system_dark() -> Option<bool> {
+    let out = std::process::Command::new("busctl")
+        .args([
+            "--user",
+            "call",
+            "org.freedesktop.portal.Desktop",
+            "/org/freedesktop/portal/desktop",
+            "org.freedesktop.portal.Settings",
+            "Read",
+            "ss",
+            "org.freedesktop.appearance",
+            "color-scheme",
+        ])
+        .output()
+        .ok()?;
+    out.status
+        .success()
+        .then(|| parse_color_scheme(&String::from_utf8_lossy(&out.stdout)))
+        .flatten()
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn system_dark() -> Option<bool> {
+    None
+}
+
+/// The answer of the portal is `v v u 1` (dark), `v v u 2` (light) or `v v u 0` (no preference): the number at the end.
+fn parse_color_scheme(answer: &str) -> Option<bool> {
+    match answer.split_whitespace().last()? {
+        "1" => Some(true),
+        "2" => Some(false),
+        _ => None,
     }
-    ctx.set_theme(pref);
-    let name = match pref {
-        egui::ThemePreference::Dark => "dark",
-        egui::ThemePreference::Light => "light",
-        egui::ThemePreference::System => "system",
+}
+
+/// The system's colour scheme, kept up to date by a thread that asks again every two seconds and wakes the window when it changes.
+#[derive(Clone)]
+pub struct SystemTheme(std::sync::Arc<std::sync::atomic::AtomicU8>);
+
+impl SystemTheme {
+    const UNKNOWN: u8 = 0;
+    const LIGHT: u8 = 1;
+    const DARK: u8 = 2;
+
+    fn code(dark: Option<bool>) -> u8 {
+        match dark {
+            None => Self::UNKNOWN,
+            Some(false) => Self::LIGHT,
+            Some(true) => Self::DARK,
+        }
+    }
+
+    /// Asks once now, so the first frame is already in the right theme, then keeps asking in the background.
+    pub fn watch(ctx: &egui::Context) -> Self {
+        use std::sync::atomic::Ordering::Relaxed;
+        let value =
+            std::sync::Arc::new(std::sync::atomic::AtomicU8::new(Self::code(system_dark())));
+        let (shared, ctx) = (value.clone(), ctx.clone());
+        std::thread::spawn(move || loop {
+            std::thread::sleep(std::time::Duration::from_secs(2));
+            let now = Self::code(system_dark());
+            if shared.swap(now, Relaxed) != now {
+                ctx.request_repaint();
+            }
+        });
+        Self(value)
+    }
+
+    pub fn dark(&self) -> Option<bool> {
+        match self.0.load(std::sync::atomic::Ordering::Relaxed) {
+            Self::LIGHT => Some(false),
+            Self::DARK => Some(true),
+            _ => None,
+        }
+    }
+}
+
+/// Puts the window in the theme `appearance` asks for; cheap enough to call every frame. When the system cannot be asked, egui's own
+/// guess at the system theme is used.
+pub fn apply_appearance(ctx: &egui::Context, appearance: Appearance, system: &SystemTheme) {
+    let wanted = match appearance {
+        Appearance::Light => egui::ThemePreference::Light,
+        Appearance::Dark => egui::ThemePreference::Dark,
+        Appearance::System => match system.dark() {
+            Some(true) => egui::ThemePreference::Dark,
+            Some(false) => egui::ThemePreference::Light,
+            None => egui::ThemePreference::System,
+        },
     };
-    if let Some(file) = preference_file() {
-        let _ = file.parent().map(std::fs::create_dir_all);
-        let _ = std::fs::write(file, name);
+    if ctx.options(|o| o.theme_preference) != wanted {
+        ctx.set_theme(wanted);
     }
 }
 
@@ -600,6 +691,15 @@ mod tests {
             }
             assert!(ratio(ON_PRIMARY, c.primary) >= 7.0, "dark={dark} primary");
         }
+    }
+
+    #[test]
+    fn the_portal_answer_is_read() {
+        assert_eq!(parse_color_scheme("v v u 1\n"), Some(true));
+        assert_eq!(parse_color_scheme("v v u 2\n"), Some(false));
+        assert_eq!(parse_color_scheme("v v u 0\n"), None);
+        assert_eq!(parse_color_scheme(""), None);
+        assert_eq!(parse_color_scheme("Failed to call method"), None);
     }
 
     #[test]

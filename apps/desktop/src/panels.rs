@@ -134,15 +134,17 @@ pub fn menu_bar(app: &mut App, ui: &mut Ui) {
                     }
                 });
                 ui.menu_button("View", |ui| {
-                    let mut theme = ui.options(|o| o.theme_preference);
+                    let before = app.appearance;
                     for (value, name) in [
-                        (egui::ThemePreference::Dark, "Dark theme"),
-                        (egui::ThemePreference::Light, "Light theme"),
-                        (egui::ThemePreference::System, "Follow the system"),
+                        (theme::Appearance::System, "Follow the system"),
+                        (theme::Appearance::Light, "Light theme"),
+                        (theme::Appearance::Dark, "Dark theme"),
                     ] {
-                        ui.radio_value(&mut theme, value, name);
+                        ui.radio_value(&mut app.appearance, value, name);
                     }
-                    theme::set_preference(ui.ctx(), theme);
+                    if app.appearance != before {
+                        app.appearance.save();
+                    }
                     ui.separator();
                     if ui
                         .checkbox(&mut app.reduce_motion, "Reduce motion")
@@ -359,12 +361,12 @@ pub fn top_bar(app: &mut App, ui: &mut Ui) {
                         .on_hover_text("Switch between the light theme and the dark theme")
                         .clicked()
                     {
-                        let next = if dark {
-                            egui::ThemePreference::Light
+                        app.appearance = if dark {
+                            theme::Appearance::Light
                         } else {
-                            egui::ThemePreference::Dark
+                            theme::Appearance::Dark
                         };
-                        theme::set_preference(ui.ctx(), next);
+                        app.appearance.save();
                     }
                 });
             });

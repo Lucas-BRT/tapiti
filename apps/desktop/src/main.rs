@@ -190,6 +190,9 @@ pub struct App {
     pub skip_reveal: bool,
     /// No reveal and no other motion of the interface, kept between runs.
     pub reduce_motion: bool,
+    /// Light, dark or the system's, kept between runs, and what the system says now.
+    pub appearance: theme::Appearance,
+    pub system_theme: theme::SystemTheme,
     /// The room picked on the plan (an index of the floor's rooms).
     pub selected: Option<usize>,
     /// A room to pick as soon as the first floor is on screen (`TAPITI_SELECT`, for pictures).
@@ -272,6 +275,8 @@ impl App {
             reveal_start: None,
             skip_reveal: false,
             reduce_motion: prefs::load("motion").as_deref() == Some("reduce"),
+            appearance: theme::Appearance::saved(),
+            system_theme: theme::SystemTheme::watch(&cc.egui_ctx),
             selected: None,
             select_after: std::env::var("TAPITI_SELECT")
                 .ok()
@@ -374,8 +379,8 @@ impl App {
             self.params.environment.water.enabled = true;
         }
         match std::env::var("TAPITI_THEME").as_deref() {
-            Ok("light") => self.ctx.set_theme(egui::ThemePreference::Light),
-            Ok("dark") => self.ctx.set_theme(egui::ThemePreference::Dark),
+            Ok("light") => self.appearance = theme::Appearance::Light,
+            Ok("dark") => self.appearance = theme::Appearance::Dark,
             _ => {}
         }
         if let Some(zoom) = std::env::var("TAPITI_ZOOM")
@@ -990,6 +995,7 @@ impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         self.poll_events();
+        theme::apply_appearance(&ctx, self.appearance, &self.system_theme);
         self.shortcuts(&ctx);
         self.apply_due(&ctx);
         panels::menu_bar(self, ui);
@@ -1016,7 +1022,6 @@ fn skipped_defaults() -> Value {
 }
 
 fn setup_style(ctx: &egui::Context) {
-    ctx.set_theme(theme::saved_preference());
     theme::apply(ctx);
 }
 
