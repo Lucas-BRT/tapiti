@@ -1,7 +1,7 @@
 /* The lab: Operate mode. Controls on the left, the map in the middle, the reading of the floor on the right. Colours come from the site's
    tokens. Below 1280px the reading becomes a drawer; below 1000px the map comes first and the two panels become tabs. */
 .lab {
-  --role-entrance: var(--ok); --role-exit: var(--link); --role-plain: var(--plate);
+  --role-entrance: var(--ok); --role-exit: var(--amber); --role-plain: var(--plate);
   --lab-top: var(--header-h);
   position: relative;
   display: grid;
@@ -9,22 +9,14 @@
   height: calc(100dvh - var(--lab-top));
   min-height: 480px;
   border-bottom: 1px solid var(--rule);
-  font-size: 1rem;
-  line-height: 1.5;
+  font: 13px/1.5 var(--font-mono);
 }
 .lab [hidden] { display: none !important; }
 .lab-noscript { grid-column: 1 / -1; margin: 0; padding: 16px var(--gutter); }
 .lab-tabs { display: none; }
 
-.lab-panel { min-width: 0; min-height: 0; overflow: auto; padding: 24px 20px 32px; background: var(--surface); scrollbar-width: thin; scrollbar-color: var(--rule-strong) transparent; }
+.lab-panel { min-width: 0; min-height: 0; overflow: auto; padding: 16px 20px 28px; background: var(--surface); scrollbar-width: thin; scrollbar-color: var(--rule-strong) transparent; }
 #controls { border-right: 1px solid var(--rule); }
-/* The controls are one corridor, as on the landing page: a pink line down the panel (it scrolls with the content) and a hollow square
-   for the title and for each section. */
-#controls { --node: 20px; --line-x: 26px; padding-left: 54px; background: var(--surface) linear-gradient(var(--accent), var(--accent)) no-repeat calc(var(--line-x) - var(--line) / 2) 44px / var(--line) calc(100% - 44px); background-attachment: local; background-origin: padding-box; }
-#controls h1, #controls .section-title { position: relative; }
-#controls h1::before, #controls .section-title::before { content: ""; position: absolute; left: calc(var(--line-x) - var(--node) / 2 - 54px); width: var(--node); height: var(--node); box-sizing: border-box; border: var(--line) solid var(--accent); border-radius: var(--radius-md); background: var(--surface); }
-#controls h1::before { top: 8px; }
-#controls .section-title::before { top: 3px; }
 #results { border-left: 1px solid var(--rule); }
 #view { position: relative; min-width: 0; min-height: 0; overflow: hidden; background: var(--bg-sunk); background-image: linear-gradient(var(--map-grid) 1px, transparent 1px), linear-gradient(90deg, var(--map-grid) 1px, transparent 1px); background-size: 24px 24px; }
 #floor-map { display: block; width: 100%; height: 100%; touch-action: none; }
@@ -32,13 +24,13 @@
 #floor-map.dragging { cursor: grabbing; }
 .lab :focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
 
-.lab h1 { margin: 0 0 8px; font: 400 2.4rem/1 var(--font-display); font-synthesis: none; }
-.lab h2 { margin: 0; font: 400 1.2rem/1.3 var(--font-display); font-synthesis: none; letter-spacing: 0; color: var(--ink); }
-.lab h3 { margin: 0 0 8px; font: 700 .92rem/1.3 var(--font-ui); letter-spacing: 0; }
+.lab h1 { margin: 0 0 6px; font: 600 1.9rem/1.05 var(--font-display); font-synthesis: none; }
+.lab h2 { margin: 0; font: 600 14px/1.3 var(--font-display); font-synthesis: none; letter-spacing: 0; color: var(--ink); }
+.lab h3 { margin: 0 0 8px; font: 600 14px/1.3 var(--font-display); letter-spacing: 0; }
 .panel-meta { margin: 2px 0 0; color: var(--ink-2); font-size: .92rem; font-variant-numeric: tabular-nums; }
-.intro-copy { margin: 0 0 20px; color: var(--ink-2); font-size: .98rem; }
-.section-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 36px 0 10px; padding-top: 0; }
-.size-section .section-title { margin-top: 0; }
+.intro-copy { margin: 0 0 12px; color: var(--ink-2); font: 400 14px/1.5 var(--font-sans); }
+.section-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 24px -20px 10px; padding: 5px 20px; background: var(--element); border-block: 1px solid var(--hair); }
+.size-section .section-title { margin-top: 12px; }
 
 .lab button, .lab input, .lab select { color: inherit; font: inherit; }
 .lab button { cursor: pointer; }
@@ -80,7 +72,7 @@ details > summary:hover { background: var(--control); }
 details > :not(summary) { margin-left: 12px; margin-right: 12px; }
 details > :last-child { margin-bottom: 12px; }
 .howto p, .group-intro { margin-top: 0; color: var(--ink-2); font-size: .88rem; }
-.group-count { padding: 1px 7px; color: var(--ink-2); background: var(--surface); border-radius: 999px; font-size: .8rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.group-count { padding: 1px 7px; color: var(--ink-2); background: var(--surface); border-radius: 0; font-size: .8rem; font-weight: 700; font-variant-numeric: tabular-nums; }
 .text-button { margin-bottom: 8px; padding: 3px 8px; font-size: .8rem; }
 
 .overlay-list { display: grid; gap: 4px; }
@@ -99,7 +91,7 @@ details > :last-child { margin-bottom: 12px; }
 .field-error { color: var(--danger); font-size: .82rem; }
 .readonly-setting { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 
-.help-button { flex: none; width: 20px; height: 20px; padding: 0; border: 1px solid var(--rule-strong); border-radius: 50%; background: transparent; color: var(--ink-2); font-size: .74rem; font-weight: 700; line-height: 1; }
+.help-button { flex: none; width: 20px; height: 20px; padding: 0; border: 1px solid var(--rule-strong); border-radius: 0; background: transparent; color: var(--ink-2); font-size: .74rem; font-weight: 700; line-height: 1; }
 .help-button:hover, .help-button[aria-expanded=true] { border-color: var(--link); color: var(--link); }
 .help-tooltip { position: fixed; z-index: 40; padding: 9px 11px; border: 1px solid var(--rule-strong); border-radius: var(--radius-sm); background: var(--surface); box-shadow: var(--shadow-float); font-size: .88rem; pointer-events: none; }
 
@@ -108,7 +100,7 @@ details > :last-child { margin-bottom: 12px; }
 .map-tool-button { min-width: 36px; min-height: 34px; padding: 0 11px; font-weight: 700; font-size: .92rem; }
 .reading-toggle { display: none; }
 .zoom-label { min-width: 3.4em; text-align: center; color: var(--ink-2); font-size: .85rem; }
-.map-instructions { position: absolute; bottom: 12px; left: 50%; margin: 0; padding: 4px 12px; transform: translateX(-50%); white-space: nowrap; color: var(--ink-2); background: var(--bg); border-radius: 999px; font-size: .88rem; pointer-events: none; }
+.map-instructions { position: absolute; bottom: 12px; left: 50%; margin: 0; padding: 4px 12px; transform: translateX(-50%); white-space: nowrap; color: var(--ink-2); background: var(--bg); border-radius: 0; font-size: .88rem; pointer-events: none; }
 .map-tooltip { position: absolute; z-index: 5; max-width: 260px; padding: 8px 10px; border: 1px solid var(--rule-strong); border-radius: var(--radius-sm); background: var(--surface); font-size: .85rem; white-space: pre-line; pointer-events: none; }
 .toast { position: fixed; bottom: 18px; left: 50%; z-index: 50; transform: translateX(-50%); padding: 9px 14px; border: 1px solid var(--rule-strong); border-radius: var(--radius-sm); background: var(--surface); box-shadow: var(--shadow-float); }
 
@@ -116,8 +108,8 @@ details > :last-child { margin-bottom: 12px; }
 .panel-header { margin-bottom: 14px; }
 .validity-card { display: flex; gap: 10px; padding: 14px; border: 1px solid var(--rule); border-radius: var(--radius-md); background: var(--control); }
 .validity-card p { margin: 2px 0 0; color: var(--ink-2); font-size: .88rem; }
-.validity-card.valid { border-color: var(--ok); background: #e2ecdd; }
-.validity-card.invalid { border-color: var(--danger); background: #f7e0dc; }
+.validity-card.valid { border-color: var(--ok); background: color-mix(in srgb, var(--ok) 14%, var(--panel)); }
+.validity-card.invalid { border-color: var(--danger); background: color-mix(in srgb, var(--danger) 14%, var(--panel)); }
 .validity-card.valid .status-icon { color: var(--ok); }
 .validity-card.invalid .status-icon { color: var(--danger); }
 .status-icon { font-weight: 700; }
@@ -130,13 +122,13 @@ details > :last-child { margin-bottom: 12px; }
 .result-section { margin-top: 14px; }
 .chip-list, .legend-list { display: flex; flex-wrap: wrap; gap: 6px 12px; }
 .shape-chip, .legend-item { display: inline-flex; align-items: center; gap: 6px; font-size: .85rem; }
-.shape-chip i, .legend-item i { width: 12px; height: 12px; border-radius: 3px; }
+.shape-chip i, .legend-item i { width: 12px; height: 12px; border-radius: 0; }
 .legend-block { display: grid; gap: 8px; }
 
 /* Below 1280px: the reading is a drawer, opened from the map's toolbar. */
 @media (max-width: 1279px) {
   .lab { grid-template-columns: 356px minmax(0, 1fr); }
-  #results { position: absolute; top: 0; right: 0; bottom: 0; z-index: 15; width: min(340px, 90%); transform: translateX(100%); visibility: hidden; transition: transform .2s var(--ease-out), visibility 0s .2s; box-shadow: -12px 0 32px rgb(0 0 0 / .45); }
+  #results { position: absolute; top: 0; right: 0; bottom: 0; z-index: 15; width: min(340px, 90%); transform: translateX(100%); visibility: hidden; transition: transform .2s var(--ease-out), visibility 0s .2s; border-left: 1px solid var(--rule-strong); }
   .lab[data-reading="open"] #results { transform: none; visibility: visible; transition: transform .2s var(--ease-out); }
   .reading-toggle { display: inline-flex; align-items: center; }
 }
@@ -150,7 +142,7 @@ details > :last-child { margin-bottom: 12px; }
   #view { order: 0; position: sticky; top: var(--lab-top); z-index: 8; flex: none; height: 55dvh; min-height: 320px; border-bottom: 1px solid var(--rule); }
   .lab-tabs { order: 1; position: sticky; top: calc(var(--lab-top) + 55dvh); z-index: 7; display: flex; background: var(--surface); border-bottom: 1px solid var(--rule); }
   .lab-tabs button { flex: 1; padding: 12px 8px; border: 0; border-bottom: 3px solid transparent; background: transparent; font-weight: 700; color: var(--ink-2); }
-  .lab-tabs [aria-selected=true] { color: var(--ink); border-bottom-color: var(--link); }
+  .lab-tabs [aria-selected=true] { color: var(--ink); border-bottom-color: var(--accent); }
   #controls, #results { order: 2; overflow: visible; border: 0; }
   .lab[data-tab="controls"] #results, .lab[data-tab="reading"] #controls { display: none; }
   #results { position: static; width: auto; transform: none; visibility: visible; box-shadow: none; }

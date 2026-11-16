@@ -50,15 +50,34 @@ await sleep(1500)
 const heavy = await run("return performance.getEntriesByType('resource').map((r) => r.name).filter((n) => /tapiti_bg\\.wasm/.test(n)).length")
 check('docs load no wasm', heavy === 0, heavy)
 
-// Accessibility, when axe-core is at hand: AXE_JS=/path/to/axe.min.js (CI installs it into a temp dir). No serious or critical violation.
+// The theme button cycles the system's theme, light and dark, and keeps the choice.
+await open('/')
+await run("localStorage.removeItem('tapiti-theme'); document.documentElement.removeAttribute('data-theme')")
+await open('/')
+const shows = await run("return !document.querySelector('.theme-toggle').hidden && document.querySelector('.theme-toggle').textContent")
+check('the theme button shows the system choice', shows === 'system', shows)
+const after = async () => run("document.querySelector('.theme-toggle').click(); return document.documentElement.dataset.theme ?? 'none'")
+check('the first click chooses light', (await after()) === 'light')
+check('the second click chooses dark', (await after()) === 'dark')
+check('the third click goes back to the system', (await after()) === 'none')
+await run("localStorage.setItem('tapiti-theme', 'dark')")
+await open('/')
+check('a chosen theme is on the page before it is painted', (await run("return document.documentElement.dataset.theme")) === 'dark')
+await run("localStorage.removeItem('tapiti-theme')")
+
+// Accessibility, when axe-core is at hand: AXE_JS=/path/to/axe.min.js (CI installs it into a temp dir). No serious or critical violation,
+// in the light theme and in the dark one.
 if (process.env.AXE_JS) {
   const axe = readFileSync(process.env.AXE_JS, 'utf8')
   for (const path of ['/', '/docs/model', '/search?q=seed', '/lab']) {
-    await open(path)
-    await sleep(path === '/lab' ? 5000 : 1000)
-    const found = await run(`${axe}\n; const r = await axe.run(document, { runOnly: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'] }); return JSON.stringify(r.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical').map((v) => v.id + ' x' + v.nodes.length))`)
-    const list = JSON.parse(found ?? '["no result"]')
-    check(`axe: no serious or critical violation on ${path}`, Array.isArray(list) && list.length === 0, found)
+    for (const theme of ['light', 'dark']) {
+      await open(path)
+      await run(`document.documentElement.dataset.theme = '${theme}'`)
+      await sleep(path === '/lab' ? 5000 : 1000)
+      const found = await run(`${axe}\n; const r = await axe.run(document, { runOnly: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'] }); return JSON.stringify(r.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical').map((v) => v.id + ' x' + v.nodes.length))`)
+      const list = JSON.parse(found ?? '["no result"]')
+      check(`axe: no serious or critical violation on ${path} (${theme})`, Array.isArray(list) && list.length === 0, found)
+    }
   }
 }
 

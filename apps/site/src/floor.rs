@@ -34,6 +34,130 @@ const HERO_SIZE: Size = Size::Medium;
 /// How many seeds a figure may skip to find a floor that passes every check.
 const SEARCH: u32 = 400;
 
+/// Rulers numbered in grid cells along the top and left edges of the plan, and a faint grid of the cells, written into the SVG so the
+/// page needs no script: the cells are the unit the desktop app and the lab count in.
+fn with_rulers(mut svg: String, floor: &Floor) -> String {
+    use std::fmt::Write;
+    let (xs, ys) = (&floor.grid_x, &floor.grid_y);
+    if xs.len() < 2 || ys.len() < 2 {
+        return svg;
+    }
+    let (x0, x1) = (xs[0], xs[xs.len() - 1]);
+    let (y0, y1) = (ys[0], ys[ys.len() - 1]);
+    let mut grid = String::from("<g class=\"cellgrid\" aria-hidden=\"true\">");
+    let mut rule = String::from("<g class=\"rule\" aria-hidden=\"true\">");
+    for (i, x) in xs.iter().enumerate() {
+        let _ = write!(
+            grid,
+            "<line x1=\"{x}\" y1=\"{y0}\" x2=\"{x}\" y2=\"{y1}\"/>"
+        );
+        let _ = write!(
+            rule,
+            "<line x1=\"{x}\" y1=\"{}\" x2=\"{x}\" y2=\"{}\"/>",
+            y0 - 30.0,
+            y0 - 6.0
+        );
+        if i + 1 < xs.len() {
+            let _ = write!(
+                rule,
+                "<text x=\"{}\" y=\"{}\">{i}</text>",
+                x + 10.0,
+                y0 - 12.0
+            );
+        }
+    }
+    for (j, y) in ys.iter().enumerate() {
+        let _ = write!(
+            grid,
+            "<line x1=\"{x0}\" y1=\"{y}\" x2=\"{x1}\" y2=\"{y}\"/>"
+        );
+        let _ = write!(
+            rule,
+            "<line x1=\"{}\" y1=\"{y}\" x2=\"{}\" y2=\"{y}\"/>",
+            x0 - 30.0,
+            x0 - 6.0
+        );
+        if j + 1 < ys.len() {
+            let _ = write!(
+                rule,
+                "<text x=\"{}\" y=\"{}\" text-anchor=\"end\">{j}</text>",
+                x0 - 12.0,
+                y + 26.0
+            );
+        }
+    }
+    grid.push_str("</g>");
+    rule.push_str("</g>");
+    // The grid goes under the floor (right after the opening tag), the rulers over it (before the closing tag).
+    if let Some(open_end) = svg.find('>') {
+        svg.insert_str(open_end + 1, &grid);
+    }
+    if let Some(close) = svg.rfind("</svg>") {
+        svg.insert_str(close, &rule);
+    }
+    svg
+}
+
+/// One row of the readout beside the hero: a label, a value and, when the value is a share of a whole, that share from 0 to 1.
+pub struct ReadRow {
+    pub label: &'static str,
+    pub value: String,
+    pub share: Option<f32>,
+}
+
+/// The measures of a floor in the order the desktop app reads them (its `measure_rows`), with a bar only where the value is a share of
+/// a whole that exists.
+pub fn readout(m: &Metrics) -> Vec<ReadRow> {
+    let rooms = (m.rooms + m.leaf_chambers) as f64;
+    let row = |label, value: String, whole: f64, part: f64| ReadRow {
+        label,
+        value,
+        share: (whole > 0.0).then(|| (part / whole).clamp(0.0, 1.0) as f32),
+    };
+    let plain = |label, value: String| ReadRow {
+        label,
+        value,
+        share: None,
+    };
+    let dash = || "—".to_string();
+    vec![
+        plain("rooms", format!("{}+{}", m.rooms, m.leaf_chambers)),
+        plain("corridors", m.edges.to_string()),
+        row(
+            "loops β",
+            format!("{} / {}", m.beta, m.beta_max),
+            f64::from(m.beta_max),
+            f64::from(m.beta),
+        ),
+        row("dead ends", m.leaves.to_string(), rooms, m.leaves as f64),
+        row(
+            "bridges",
+            format!("{} · {:.0}%", m.bridges, m.bridge_share * 100.0),
+            1.0,
+            m.bridge_share,
+        ),
+        match m.hops_to_exit {
+            Some(h) => row("exit hops", format!("{h:.0}"), m.diameter, h),
+            None => plain("exit hops", dash()),
+        },
+        plain(
+            "routes → exit",
+            m.routes_to_exit.map_or_else(dash, |n| n.to_string()),
+        ),
+        plain("diameter", format!("{:.0}", m.diameter)),
+        plain("λ₂", format!("{:.3}", m.lambda2)),
+        plain("mean doors", format!("{:.2}", m.mean_degree)),
+    ]
+}
+
+/// The groups of the parameter tree, with how many settings each holds, from the same schema the apps are built from.
+pub fn tree_groups() -> Vec<(String, usize)> {
+    tapiti_schema::groups()
+        .iter()
+        .map(|g| (g.title.as_str().to_string(), g.fields.len()))
+        .collect()
+}
+
 /// One drawn floor and what a caption may say about it.
 pub struct Figure {
     pub svg: TrustedHtml,
@@ -72,9 +196,10 @@ fn figure(
     from: u32,
     label: String,
     channel: Option<Channel>,
-    pin: bool,
+    hero: bool,
 ) -> Figure {
-    let (seed, floor) = if pin {
+    // The hero keeps its seed (it is not searched for) and its plan carries rulers numbered in cells.
+    let (seed, floor) = if hero {
         (from, stage(from, params, 8).d)
     } else {
         let (seed, floor, _) = first_valid(params, from);
@@ -93,6 +218,7 @@ fn figure(
             channel,
         },
     );
+    let svg = if hero { with_rulers(svg, &floor) } else { svg };
     let range = channel.and_then(|c| {
         view::scale(&floor, c).map(|(low, high)| Range {
             label: c.label(),
@@ -269,6 +395,51 @@ mod tests {
             assert!(f.valid, "{channel:?} seed {}", f.seed);
             assert!(f.range.is_some(), "{channel:?} has no layer");
         }
+    }
+
+    #[test]
+    fn the_hero_plan_has_rulers_numbered_in_cells() {
+        let g = gallery();
+        let svg = &g.hero.svg.0;
+        assert!(svg.contains("class=\"cellgrid\"") && svg.contains("class=\"rule\""));
+        // The medium grid is 6 columns by 5 rows: the numbers 0 to 5 and 0 to 4 are written, and no 6 on either ruler.
+        let rule = &svg[svg.find("class=\"rule\"").unwrap()..];
+        for n in 0..6 {
+            assert!(rule.contains(&format!(">{n}</text>")), "{n}");
+        }
+        assert!(!rule.contains(">6</text>"));
+        // The other plates have none.
+        assert!(!g.layouts[0].1.svg.0.contains("class=\"rule\""));
+    }
+
+    #[test]
+    fn the_readout_holds_the_numbers_of_the_metrics() {
+        let g = gallery();
+        let m = &g.hero.metrics;
+        let rows = readout(m);
+        let get = |label: &str| rows.iter().find(|r| r.label == label).unwrap();
+        assert_eq!(
+            get("rooms").value,
+            format!("{}+{}", m.rooms, m.leaf_chambers)
+        );
+        assert_eq!(get("loops β").value, format!("{} / {}", m.beta, m.beta_max));
+        assert_eq!(get("dead ends").value, m.leaves.to_string());
+        assert_eq!(
+            get("exit hops").value,
+            format!("{:.0}", m.hops_to_exit.unwrap())
+        );
+        assert!(
+            rows.iter()
+                .all(|r| r.share.is_none_or(|s| (0.0..=1.0).contains(&s)))
+        );
+        assert!(get("rooms").share.is_none() && get("corridors").share.is_none());
+    }
+
+    #[test]
+    fn the_tree_lists_every_group_of_the_schema() {
+        let groups = tree_groups();
+        assert_eq!(groups.len(), tapiti_schema::groups().len());
+        assert!(groups.iter().all(|(title, n)| !title.is_empty() && *n > 0));
     }
 
     #[test]

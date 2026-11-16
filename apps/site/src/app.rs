@@ -143,41 +143,42 @@ pub fn healthcheck() -> bool {
 const GITHUB: &str = "https://github.com/Lucas-BRT/tapiti";
 pub(crate) const GITHUB_ISSUES: &str = "https://github.com/Lucas-BRT/tapiti/issues";
 
-// Self-hosted: the font files are bundled as assets and served by this app.
+// Self-hosted: the font files are bundled as assets and served by this app. IBM Plex, as in the desktop app: Mono for the interface and
+// the numbers, Sans Condensed for titles, Sans for the prose of the documentation.
 // rustfmt and `topcoat fmt` wrap this macro differently; keep the Topcoat layout.
 #[rustfmt::skip]
-const SOURCE_SERIF: Font =
+const PLEX_MONO: Font =
     fontsource_font!(
-        SOURCE_SERIF_4,
-        weight: [400, 600, 700],
+        IBM_PLEX_MONO,
+        weight: [400, 500],
         style: Normal,
         subset: [Latin],
         host: Asset,
     );
 #[rustfmt::skip]
-const VARELA_ROUND: Font =
+const PLEX_CONDENSED: Font =
     fontsource_font!(
-        VARELA_ROUND,
-        weight: [400],
+        IBM_PLEX_SANS_CONDENSED,
+        weight: [600],
         style: Normal,
         subset: [Latin],
         host: Asset,
     );
 #[rustfmt::skip]
-const SOURCE_SERIF_ITALIC: Font =
+const PLEX_SANS: Font =
     fontsource_font!(
-        SOURCE_SERIF_4,
+        IBM_PLEX_SANS,
+        weight: [400, 600],
+        style: Normal,
+        subset: [Latin],
+        host: Asset,
+    );
+#[rustfmt::skip]
+const PLEX_SANS_ITALIC: Font =
+    fontsource_font!(
+        IBM_PLEX_SANS,
         weight: [400],
         style: Italic,
-        subset: [Latin],
-        host: Asset,
-    );
-#[rustfmt::skip]
-const JETBRAINS_MONO: Font =
-    fontsource_font!(
-        JETBRAINS_MONO,
-        weight: [400],
-        style: Normal,
         subset: [Latin],
         host: Asset,
     );
@@ -193,7 +194,6 @@ async fn language(cx: &Cx, body: Body, next: Next<'_>) -> Result<Response> {
     with(Metadata::new()
         .title(t!(title))
         .description(t!(description))
-        .theme_color("#fff4ec")
         .canonical(Url::Current)
         .open_graph(
             OpenGraph::new().site_name("Tapiti").image(asset!("assets/brand/og.png")),
@@ -204,12 +204,23 @@ async fn layout(cx: &Cx, slot: Slot<'_>) -> Result<impl View> {
         <!DOCTYPE html>
         <html lang="en">
             <head>
-                <meta name="color-scheme" content="light">
+                <meta name="color-scheme" content="light dark">
+                <meta
+                    name="theme-color"
+                    content="#f3f5f7"
+                    media="(prefers-color-scheme: light)"
+                >
+                <meta
+                    name="theme-color"
+                    content="#131619"
+                    media="(prefers-color-scheme: dark)"
+                >
+                <script src=(asset!("assets/theme.js"))></script>
                 topcoat::metadata::tags()
-                topcoat::font::link(font: VARELA_ROUND)
-                topcoat::font::link(font: SOURCE_SERIF)
-                topcoat::font::link(font: SOURCE_SERIF_ITALIC)
-                topcoat::font::link(font: JETBRAINS_MONO)
+                topcoat::font::link(font: PLEX_MONO)
+                topcoat::font::link(font: PLEX_CONDENSED)
+                topcoat::font::link(font: PLEX_SANS)
+                topcoat::font::link(font: PLEX_SANS_ITALIC)
                 <link
                     rel="icon"
                     href=(asset!("assets/brand/icon.svg"))
@@ -245,8 +256,8 @@ async fn header(cx: &Cx) -> Result<impl View> {
                 <img
                     src=(asset!("assets/brand/logo.svg"))
                     alt=""
-                    width="25"
-                    height="30"
+                    width="17"
+                    height="20"
                 >
                 "tapiti"
             </a>
@@ -268,6 +279,12 @@ async fn header(cx: &Cx) -> Result<impl View> {
                     (t!(nav_lab))
                 </a>
                 <a href=(GITHUB)>"GitHub"</a>
+                <button
+                    class="theme-toggle"
+                    type="button"
+                    hidden=(true)
+                    aria-label=(t!(theme_toggle))
+                ></button>
             </nav>
         </header>
     })

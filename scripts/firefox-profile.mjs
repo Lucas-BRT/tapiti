@@ -3,7 +3,9 @@ import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-const PREFS = []
+// SCHEME=dark or SCHEME=light makes the pages see that colour scheme (the site follows prefers-color-scheme), whatever the system says.
+const SCHEMES = { dark: 0, light: 1 }
+const PREFS = process.env.SCHEME in SCHEMES ? [['layout.css.prefers-color-scheme.content-override', SCHEMES[process.env.SCHEME]]] : []
 
 export const freshProfile = (name) => {
   const dir = mkdtempSync(join(tmpdir(), `tapiti-${name}-`))

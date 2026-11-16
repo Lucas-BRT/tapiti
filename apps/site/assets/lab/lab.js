@@ -773,3 +773,7 @@ syncForm()
 updateSizeButtons()
 updateChanged()
 regenerate()
+
+// The plan is drawn from the page's colours, so it is drawn again when the theme changes (the theme button, or the system's scheme).
+addEventListener('themechange', () => draw())
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => draw())

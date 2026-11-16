@@ -42,61 +42,194 @@ fn facts(cx: &Cx, fig: &Figure) -> String {
 pub async fn page(cx: &Cx) -> Result<impl View> {
     let g = floor::gallery();
     let m = &g.hero.metrics;
-    let hero_meta = if g.hero.valid {
-        format!(
-            "{} · {}",
-            facts(cx, &g.hero),
-            t!(home_block_valid).resolve(cx)
-        )
-    } else {
-        facts(cx, &g.hero)
-    };
+    let readout = floor::readout(m);
+    let groups = floor::tree_groups();
+    let hero_svg = floor::TrustedHtml(g.hero.svg.0.clone());
+    // The five rules, each with a few words on what it checks (the model has the rest).
+    let rules = [
+        (
+            "V1",
+            t!(home_rule_1).resolve(cx).into_owned(),
+            t!(home_rule_d1).resolve(cx).into_owned(),
+            t!(home_rule_1_text).resolve(cx).into_owned(),
+        ),
+        (
+            "V2",
+            t!(home_rule_2).resolve(cx).into_owned(),
+            t!(home_rule_d2).resolve(cx).into_owned(),
+            t!(home_rule_2_text).resolve(cx).into_owned(),
+        ),
+        (
+            "V3",
+            t!(home_rule_3).resolve(cx).into_owned(),
+            t!(home_rule_d3).resolve(cx).into_owned(),
+            t!(home_rule_3_text).resolve(cx).into_owned(),
+        ),
+        (
+            "V4",
+            t!(home_rule_4).resolve(cx).into_owned(),
+            t!(home_rule_d4).resolve(cx).into_owned(),
+            t!(home_rule_4_text).resolve(cx).into_owned(),
+        ),
+        (
+            "V5",
+            t!(home_rule_5).resolve(cx).into_owned(),
+            t!(home_rule_d5).resolve(cx).into_owned(),
+            t!(home_rule_5_text).resolve(cx).into_owned(),
+        ),
+    ];
     let model = |fragment: &'static str| {
         href!(crate::app::docs::slug::_page::page, crate::app::docs::slug::slug: "model")
             .fragment(fragment)
     };
     Ok(view! {
-        <div class="sheet">
-            <section class="hero">
-                <div class="hero-text">
-                    <p class="meta">(t!(home_meta, version: VERSION))</p>
-                    <h1>(t!(home_title))</h1>
-                    <p class="lead">(t!(home_lead))</p>
-                    <form
-                        class="seed-form"
-                        action=(href!(crate::app::lab::page))
-                        method="get"
-                    >
-                        <label for="home-seed">(t!(home_seed_label))</label>
-                        <input
-                            id="home-seed"
-                            name="seed"
-                            type="number"
-                            inputmode="numeric"
-                            min="0"
-                            max="4294967295"
-                            required=(true)
-                            value=(HERO_SEED)
-                        >
-                        <button type="submit">(t!(home_seed_submit))</button>
-                        <a href=(href!(crate::app::lab::page))>(t!(home_lab))</a>
-                    </form>
-                </div>
-                plan(
-                    id: "P-0".to_string(),
-                    title: t!(home_fig_hero, seed: HERO_SEED).resolve(cx).into_owned(),
-                    fig: &g.hero,
-                    meta: hero_meta
-                )
+        <div class="landing">
+            <section class="intro">
+                <p class="meta">(t!(home_meta, version: VERSION))</p>
+                <h1>(t!(home_title))</h1>
+                <p class="lead">(t!(home_lead))</p>
+                <p class="links">
+                    <a href=(href!(crate::app::lab::page))>(t!(home_lab))</a>
+                    " · "
+                    <a href=(href!(crate::app::docs::_page::page))>(t!(nav_docs))</a>
+                </p>
             </section>
 
-            <ul class="shapes" aria-label=(t!(home_shapes_title))>
-                <li data-shape="rect">(t!(home_shape_rect))</li>
-                <li data-shape="disc">(t!(home_shape_disc))</li>
-                <li data-shape="oct">(t!(home_shape_oct))</li>
-                <li data-shape="L">(t!(home_shape_L))</li>
-                <li data-shape="star">(t!(home_shape_star))</li>
-            </ul>
+            <section class="bench" aria-label=(t!(home_bench_label))>
+                <div class="bench-bar">
+                    <span>
+                        (t!(home_bar_seed))
+                        <b>(HERO_SEED)</b>
+                    </span>
+                    <span>(t!(home_bar_size))</span>
+                    <span>
+                        (t!(home_bar_rooms))
+                        <b>(g.hero.rooms)</b>
+                    </span>
+                    <span class="sp"></span>
+                    <span>
+                        "V1 V2 V3 V4 V5 "
+                        if g.hero.valid {
+                            <span class="valid-word">(t!(home_bar_valid))</span>
+                        } else {
+                            <span>(t!(home_bar_invalid))</span>
+                        }
+                    </span>
+                </div>
+                <div class="bench-cols">
+                    <aside class="bench-tree" aria-label=(t!(home_tree_label))>
+                        <div class="group-bar">
+                            "Λ"
+                            <span>(groups.len())</span>
+                        </div>
+                        <ul class="tree-list">
+                            for (title, count) in &groups {
+                                <li>
+                                    <a
+                                        href=(href!(
+                                            crate::app::docs::slug::_page::page,
+                                            crate::app::docs::slug::slug: "parameters",
+                                        ))
+                                    >
+                                        (title.as_str())
+                                        <span>(*count)</span>
+                                    </a>
+                                </li>
+                            }
+                        </ul>
+                    </aside>
+                    <div class="bench-canvas">
+                        (hero_svg)
+                        <div class="bench-hud">
+                            <span data-shape="rect">
+                                <i></i>
+                                (t!(home_shape_rect))
+                            </span>
+                            <span data-shape="disc">
+                                <i></i>
+                                (t!(home_shape_disc))
+                            </span>
+                            <span data-shape="oct">
+                                <i></i>
+                                (t!(home_shape_oct))
+                            </span>
+                            <span data-shape="L">
+                                <i></i>
+                                (t!(home_shape_L))
+                            </span>
+                            <span data-shape="star">
+                                <i></i>
+                                (t!(home_shape_star))
+                            </span>
+                            <span class="in">
+                                <i></i>
+                                (t!(home_hud_entrance))
+                            </span>
+                            <span class="out">
+                                <i></i>
+                                (t!(home_hud_exit))
+                            </span>
+                        </div>
+                    </div>
+                    <aside class="bench-read" aria-label=(t!(home_read_label))>
+                        <div class="group-bar">(t!(home_rules_group))</div>
+                        <div class="readout">
+                            for (code, name, detail, long) in &rules {
+                                <div class="rule-row" title=(long.as_str())>
+                                    <svg class="tick" viewBox="0 0 12 12" aria-hidden="true">
+                                        <path d="M1.5 6.5 4.5 9.5 10.5 2.5"></path>
+                                    </svg>
+                                    <b>(*code)</b>
+                                    <span>(name.as_str())</span>
+                                    <span>(detail.as_str())</span>
+                                </div>
+                            }
+                            <p class="plan-note">
+                                (t!(home_rules_note))
+                                " "
+                                <a href=(model("65-when-a-floor-is-valid"))>
+                                    (t!(home_rules_link))
+                                </a>
+                            </p>
+                        </div>
+                        <div class="group-bar">(t!(home_measures_group))</div>
+                        <ul class="readout">
+                            for row in &readout {
+                                <li
+                                    class=(if row.share.is_some() { "has-bar" } else { "" })
+                                >
+                                    <span>(row.label)</span>
+                                    if let Some(share) = row.share {
+                                        <span class="track">
+                                            <i style=(format!("width: {:.0}%", share * 100.0))></i>
+                                        </span>
+                                    }
+                                    <span class="val">(row.value.as_str())</span>
+                                </li>
+                            }
+                        </ul>
+                    </aside>
+                </div>
+                <form
+                    class="bench-cmd"
+                    action=(href!(crate::app::lab::page))
+                    method="get"
+                >
+                    <span class="prompt" aria-hidden="true">"›"</span>
+                    <label for="home-seed">(t!(home_seed_label))</label>
+                    <input
+                        id="home-seed"
+                        name="seed"
+                        type="number"
+                        inputmode="numeric"
+                        min="0"
+                        max="4294967295"
+                        required=(true)
+                        value=(HERO_SEED)
+                    >
+                    <button type="submit">(t!(home_seed_submit))</button>
+                </form>
+            </section>
 
             <section class="band">
                 <div class="band-head">
@@ -179,106 +312,6 @@ pub async fn page(cx: &Cx) -> Result<impl View> {
                             }
                         </div>
                     }
-                </div>
-            </section>
-
-            <section class="band two">
-                <div>
-                    <div class="band-head"><h2>(t!(home_read_title))</h2></div>
-                    <p class="plan-note">(t!(home_read_note))</p>
-                    <dl class="facts">
-                        <div>
-                            <dt>
-                                (t!(home_read_rooms))
-                                <small>(t!(home_read_rooms_text))</small>
-                            </dt>
-                            <dd>(g.hero.rooms)</dd>
-                        </div>
-                        <div>
-                            <dt>
-                                (t!(home_read_edges))
-                                <small>(t!(home_read_edges_text))</small>
-                            </dt>
-                            <dd>(m.edges)</dd>
-                        </div>
-                        <div>
-                            <dt>
-                                (t!(home_read_loops))
-                                <small>(t!(home_read_loops_text))</small>
-                            </dt>
-                            <dd>(m.beta)</dd>
-                        </div>
-                        <div>
-                            <dt>
-                                (t!(home_read_leaves))
-                                <small>(t!(home_read_leaves_text))</small>
-                            </dt>
-                            <dd>(m.leaves)</dd>
-                        </div>
-                        <div>
-                            <dt>
-                                (t!(home_read_hops))
-                                <small>(t!(home_read_hops_text))</small>
-                            </dt>
-                            <dd>
-                                (m.hops_to_exit.map_or(
-                                    "—".to_string(),
-                                    |h| format!("{h:.0}"),
-                                ))
-                            </dd>
-                        </div>
-                        <div>
-                            <dt>
-                                (t!(home_read_routes))
-                                <small>(t!(home_read_routes_text))</small>
-                            </dt>
-                            <dd>
-                                (m.routes_to_exit.map_or(
-                                    "—".to_string(),
-                                    |r| r.to_string(),
-                                ))
-                            </dd>
-                        </div>
-                        <div>
-                            <dt>
-                                (t!(home_read_bridges))
-                                <small>(t!(home_read_bridges_text))</small>
-                            </dt>
-                            <dd>(m.bridges)</dd>
-                        </div>
-                    </dl>
-                    <p><a href=(model("6-navigable-graph"))>(t!(home_read_link))</a></p>
-                </div>
-                <div>
-                    <div class="band-head"><h2>(t!(home_rules_title))</h2></div>
-                    <p class="plan-note">(t!(home_rules_note))</p>
-                    <ol class="rules">
-                        <li>
-                            <b>(t!(home_rule_1))</b>
-                            (t!(home_rule_1_text))
-                        </li>
-                        <li>
-                            <b>(t!(home_rule_2))</b>
-                            (t!(home_rule_2_text))
-                        </li>
-                        <li>
-                            <b>(t!(home_rule_3))</b>
-                            (t!(home_rule_3_text))
-                        </li>
-                        <li>
-                            <b>(t!(home_rule_4))</b>
-                            (t!(home_rule_4_text))
-                        </li>
-                        <li>
-                            <b>(t!(home_rule_5))</b>
-                            (t!(home_rule_5_text))
-                        </li>
-                    </ol>
-                    <p>
-                        <a href=(model("65-when-a-floor-is-valid"))>
-                            (t!(home_rules_link))
-                        </a>
-                    </p>
                 </div>
             </section>
 

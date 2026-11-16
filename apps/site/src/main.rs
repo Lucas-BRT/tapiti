@@ -3,6 +3,8 @@
 mod app;
 mod docs;
 mod floor;
+#[cfg(test)]
+mod tokens;
 
 #[tokio::main]
 async fn main() {
