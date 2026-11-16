@@ -1035,6 +1035,8 @@ fn main() -> eframe::Result {
                     .expect("assets/icon.png is a valid PNG"),
             )
             .with_inner_size([1360.0, 860.0])
+            // Maximized, not full screen: the window fills the screen and keeps its title bar.
+            .with_maximized(true)
             .with_min_inner_size([1000.0, 640.0]),
         ..Default::default()
     };
