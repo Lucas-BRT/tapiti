@@ -21,13 +21,8 @@ pub(crate) fn muted(ui: &Ui, text: impl Into<String>) -> RichText {
 }
 
 pub(crate) fn card(ui: &mut Ui, title: &str, body: impl FnOnce(&mut Ui)) {
-    theme::card_frame(ui).show(ui, |ui| {
-        ui.set_width(ui.available_width());
-        ui.label(RichText::new(title).strong().size(15.0));
-        ui.add_space(theme::GAP);
-        body(ui);
-    });
-    ui.add_space(theme::GAP + 2.0);
+    theme::section(ui, title, body);
+    ui.add_space(theme::GAP * 4.0);
 }
 
 fn primary(ui: &Ui, text: &str) -> Button<'static> {
@@ -166,7 +161,7 @@ pub fn top_bar(app: &mut App, ui: &mut Ui) {
         .show(ui, |ui| {
             ui.add_space(4.0);
             ui.horizontal(|ui| {
-                ui.heading("Tapiti");
+                theme::brand(ui);
                 ui.separator();
                 size_picker(app, ui);
                 ui.separator();
@@ -229,7 +224,7 @@ pub fn top_bar(app: &mut App, ui: &mut Ui) {
                     let dark = ui.visuals().dark_mode;
                     if ui
                         .button(if dark { "Light" } else { "Dark" })
-                        .on_hover_text("Switch between the paper theme and the dark theme")
+                        .on_hover_text("Switch between the light theme and the dark theme")
                         .clicked()
                     {
                         let next = if dark {

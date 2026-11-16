@@ -1,6 +1,7 @@
-//! Fieldnotes: warm paper, graphite controls and a pink marker. The dark variant keeps the same room pigments.
+//! Drawn like the logo: one pink line of constant weight on cream (light) or plum (dark), a hollow square for every room. The same
+//! tokens as the website; the room pigments are the generator's and do not change between themes.
 
-use eframe::egui::{self, Color32, CornerRadius, Margin, Stroke, Theme};
+use eframe::egui::{self, Color32, CornerRadius, FontFamily, FontId, Margin, Stroke, Theme};
 
 /// Shared 4 px spacing base, in points.
 pub const GAP: f32 = 4.0;
@@ -8,8 +9,13 @@ pub const GAP_MEDIUM: f32 = 6.0;
 pub const PAD: f32 = 8.0;
 /// Tab bar height, in points.
 pub const TAB_HEIGHT: f32 = 32.0;
-pub const RADIUS: u8 = 3;
-pub const ON_PRIMARY: Color32 = Color32::from_rgb(0x28, 0x10, 0x1a);
+pub const RADIUS: u8 = 4;
+/// Weight of the pink line (rails, tab marks, node outlines), in points.
+pub const LINE: f32 = 3.0;
+/// Width reserved at the left of a section for its rail, and the size of the hollow square on it.
+pub const RAIL: f32 = 24.0;
+pub const NODE: f32 = 14.0;
+pub const ON_PRIMARY: Color32 = Color32::from_rgb(0x26, 0x12, 0x1a);
 
 const fn rgb(hex: u32) -> Color32 {
     Color32::from_rgb((hex >> 16) as u8, (hex >> 8) as u8, hex as u8)
@@ -41,41 +47,66 @@ pub struct Colors {
 pub fn colors(dark: bool) -> Colors {
     if dark {
         Colors {
-            bar: rgb(0x24201c),
-            panel: rgb(0x28231d),
-            editor: rgb(0x1c1916),
-            element: rgb(0x342d25),
-            element_hover: rgb(0x40372e),
-            element_active: rgb(0x534235),
-            border: rgb(0x8d8272),
-            border_variant: rgb(0x484138),
-            border_focused: rgb(0xff8fab),
-            text: rgb(0xf4f0e5),
-            text_muted: rgb(0xc8c0b0),
-            accent: rgb(0xff8fab),
+            bar: rgb(0x1c0e13),
+            panel: rgb(0x24131a),
+            editor: rgb(0x190c11),
+            element: rgb(0x321b24),
+            element_hover: rgb(0x402430),
+            element_active: rgb(0x5a2a3b),
+            border: rgb(0x9a7d86),
+            border_variant: rgb(0x4a2f38),
+            border_focused: rgb(0xff7a9c),
+            text: rgb(0xfff4ec),
+            text_muted: rgb(0xcdb5bc),
+            accent: rgb(0xff7a9c),
             primary: rgb(0xff2e63),
             success: rgb(0x8eaf91),
-            error: rgb(0xe59b9b),
+            error: rgb(0xff9aa8),
         }
     } else {
         Colors {
-            bar: rgb(0xe9e3d5),
-            panel: rgb(0xf7f3e9),
-            editor: rgb(0xfbf8ee),
-            element: rgb(0xede7d9),
-            element_hover: rgb(0xe1d9c9),
-            element_active: rgb(0xefd0d6),
-            border: rgb(0x7c7568),
-            border_variant: rgb(0xdce1df),
-            border_focused: rgb(0xa51f48),
-            text: rgb(0x302e2b),
-            text_muted: rgb(0x5d584f),
-            accent: rgb(0xa51f48),
+            bar: rgb(0xf5e1d4),
+            panel: rgb(0xfff4ec),
+            editor: rgb(0xfffaf5),
+            element: rgb(0xf7e3d6),
+            element_hover: rgb(0xf0d6c6),
+            element_active: rgb(0xffd0dc),
+            border: rgb(0x8f746b),
+            border_variant: rgb(0xecd3c4),
+            border_focused: rgb(0xb3123f),
+            text: rgb(0x26121a),
+            text_muted: rgb(0x5a4048),
+            accent: rgb(0xb3123f),
             primary: rgb(0xff2e63),
-            success: rgb(0x31533d),
-            error: rgb(0x922d3c),
+            success: rgb(0x2f5a43),
+            error: rgb(0xa3162f),
         }
     }
+}
+
+/// The family of titles, tabs and the brand (Varela Round); the body keeps egui's default face.
+pub fn display() -> FontFamily {
+    FontFamily::Name("display".into())
+}
+
+fn install_fonts(ctx: &egui::Context) {
+    let mut fonts = egui::FontDefinitions::default();
+    fonts.font_data.insert(
+        "varela-round".into(),
+        std::sync::Arc::new(egui::FontData::from_static(include_bytes!(
+            "../assets/fonts/VarelaRound-Regular.ttf"
+        ))),
+    );
+    let mut chain = vec!["varela-round".to_string()];
+    chain.extend(
+        fonts
+            .families
+            .get(&FontFamily::Proportional)
+            .cloned()
+            .unwrap_or_default(),
+    );
+    fonts.families.insert(display(), chain);
+    ctx.set_fonts(fonts);
 }
 
 pub fn of(ui: &egui::Ui) -> Colors {
@@ -98,18 +129,70 @@ pub fn panel_frame(ui: &egui::Ui) -> egui::Frame {
         .inner_margin(Margin::symmetric(PAD as i8, GAP as i8))
 }
 
-/// A card: an element on a panel, with a 1 px border and the radius of the controls, a little larger.
-pub fn card_frame(ui: &egui::Ui) -> egui::Frame {
+/// A section of a panel, drawn like a room on a floor plan: a hollow square on a pink rail at the left, joined to the one above and
+/// below, and the title beside it. No box: the rail is the structure.
+pub fn section(ui: &mut egui::Ui, title: &str, body: impl FnOnce(&mut egui::Ui)) {
     let c = of(ui);
-    egui::Frame::new()
-        .fill(c.element)
-        .stroke(Stroke::new(1.0, c.border_variant))
-        .corner_radius(CornerRadius::same(RADIUS + 2))
-        .inner_margin(Margin::same(PAD as i8 + 2))
+    let frame = egui::Frame::new().inner_margin(Margin {
+        left: RAIL as i8,
+        right: 0,
+        top: 0,
+        bottom: 0,
+    });
+    let out = frame.show(ui, |ui| {
+        ui.set_width(ui.available_width());
+        let title = ui.label(
+            egui::RichText::new(title)
+                .font(FontId::new(17.0, display()))
+                .color(c.text),
+        );
+        ui.add_space(GAP);
+        body(ui);
+        title.rect
+    });
+    let rect = out.response.rect;
+    let x = rect.left() + (RAIL - NODE) / 2.0 + NODE / 2.0 - 3.0;
+    let y = out.inner.center().y;
+    let painter = ui.painter();
+    // The rail runs a little past the section on both sides, so neighbouring sections are joined.
+    painter.rect_filled(
+        egui::Rect::from_min_max(
+            egui::pos2(x - LINE / 2.0, rect.top() - GAP - 2.0),
+            egui::pos2(x + LINE / 2.0, rect.bottom() + GAP + 2.0),
+        ),
+        CornerRadius::same((LINE / 2.0) as u8),
+        c.primary,
+    );
+    let node = egui::Rect::from_center_size(egui::pos2(x, y), egui::vec2(NODE, NODE));
+    painter.rect(
+        node,
+        CornerRadius::same(3),
+        c.panel,
+        Stroke::new(LINE, c.primary),
+        egui::StrokeKind::Inside,
+    );
 }
 
-/// The text and surfaces of every widget, in both Fieldnotes variants.
+/// The brand for the top bar: a hollow square (a room) and the name in the display face.
+pub fn brand(ui: &mut egui::Ui) {
+    let c = of(ui);
+    let text = egui::RichText::new("tapiti")
+        .font(FontId::new(22.0, display()))
+        .color(c.text);
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(NODE, NODE), egui::Sense::hover());
+    ui.painter().rect(
+        rect,
+        CornerRadius::same(3),
+        c.bar,
+        Stroke::new(LINE, c.primary),
+        egui::StrokeKind::Inside,
+    );
+    ui.label(text);
+}
+
+/// The text and surfaces of every widget, in the light and the dark variant.
 pub fn apply(ctx: &egui::Context) {
+    install_fonts(ctx);
     for (theme, dark) in [(Theme::Dark, true), (Theme::Light, false)] {
         let c = colors(dark);
         ctx.style_mut_of(theme, |style| {
@@ -169,7 +252,7 @@ pub fn apply(ctx: &egui::Context) {
                 .insert(egui::TextStyle::Button, egui::FontId::proportional(14.0));
             style
                 .text_styles
-                .insert(egui::TextStyle::Heading, egui::FontId::proportional(18.0));
+                .insert(egui::TextStyle::Heading, FontId::new(20.0, display()));
             style
                 .text_styles
                 .insert(egui::TextStyle::Monospace, egui::FontId::monospace(13.0));
@@ -177,35 +260,30 @@ pub fn apply(ctx: &egui::Context) {
     }
 }
 
-/// One tab: 32 px high, the active one on the editor surface with the accent along its bottom edge, the
-/// others on the bar in muted text, a 1 px border under all of them. Returns the response for clicks.
+/// One tab: 32 px high, in the display face; the active one has a round pink line along its bottom edge, the others sit in muted text
+/// over a 1 px rule. Returns the response for clicks.
 pub fn tab(ui: &mut egui::Ui, label: &str, selected: bool) -> egui::Response {
     let c = of(ui);
-    let font = egui::TextStyle::Body.resolve(ui.style());
-    let galley = ui.painter().layout_no_wrap(
-        label.to_string(),
-        font,
-        if selected { c.text } else { c.text_muted },
-    );
+    let font = FontId::new(15.0, display());
+    let galley = ui.painter().layout_no_wrap(label.to_string(), font, c.text);
     let size = egui::vec2(galley.size().x + 2.0 * PAD, TAB_HEIGHT);
     let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
-    let fill = if selected {
-        c.editor
-    } else if response.hovered() {
-        c.element_hover
-    } else {
-        c.panel
-    };
     let painter = ui.painter();
-    painter.rect_filled(rect, 0.0, fill);
+    if response.hovered() && !selected {
+        painter.rect_filled(rect, CornerRadius::same(RADIUS), c.element_hover);
+    }
     painter.line_segment(
         [rect.left_bottom(), rect.right_bottom()],
         Stroke::new(1.0, c.border_variant),
     );
     if selected {
-        painter.line_segment(
-            [rect.left_bottom(), rect.right_bottom()],
-            Stroke::new(2.0, c.accent),
+        painter.rect_filled(
+            egui::Rect::from_min_max(
+                egui::pos2(rect.left() + 2.0, rect.bottom() - LINE),
+                egui::pos2(rect.right() - 2.0, rect.bottom()),
+            ),
+            CornerRadius::same((LINE / 2.0) as u8),
+            c.primary,
         );
     }
     let color = if selected || response.hovered() {
@@ -214,7 +292,10 @@ pub fn tab(ui: &mut egui::Ui, label: &str, selected: bool) -> egui::Response {
         c.text_muted
     };
     painter.galley(
-        egui::pos2(rect.left() + PAD, rect.center().y - galley.size().y / 2.0),
+        egui::pos2(
+            rect.left() + PAD,
+            rect.center().y - galley.size().y / 2.0 - 1.0,
+        ),
         galley,
         color,
     );

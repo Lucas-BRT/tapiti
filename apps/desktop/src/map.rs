@@ -73,10 +73,10 @@ impl Palette {
         let c = crate::theme::colors(dark);
         Self {
             background: c.editor,
-            corridor: Color32::from_rgb(0x85, 0x7d, 0x70),
+            corridor: Color32::from_rgb(0x8a, 0x7a, 0x72),
             grid: c.border_variant,
             ink: c.text,
-            hatch: Color32::from_rgb(0x49, 0x46, 0x3f),
+            hatch: Color32::from_rgb(0x3e, 0x2a, 0x30),
             accent: c.accent,
             success: c.success,
             danger: c.error,
@@ -96,9 +96,9 @@ impl Palette {
         Color32::from_rgb(r, g, b)
     }
 
-    /// Graphite labels on the light room washes.
+    /// Plum labels on the light room washes.
     fn on_room(&self) -> Color32 {
-        Color32::from_rgb(0x25, 0x24, 0x21)
+        Color32::from_rgb(0x26, 0x12, 0x1a)
     }
 
     fn role(&self, role: Role) -> Color32 {

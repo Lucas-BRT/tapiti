@@ -7,18 +7,25 @@ use crate::{
     class_label, size_label, summary, translate_log, translate_violation, App, BenchmarkKind,
     GeneratedMap,
 };
-use eframe::egui::{self, Align, Button, Color32, Frame, Grid, Layout, RichText, Ui};
+use eframe::egui::{self, Align, Button, Color32, Grid, Layout, RichText, Stroke, Ui};
 
-/// A number with what it counts, in a rounded box.
+/// A number with what it counts, under a thin rule.
 fn tile(ui: &mut Ui, value: String, title: &str, caption: &str) {
-    Frame::group(ui.style()).inner_margin(10.0).show(ui, |ui| {
-        ui.set_width(ui.available_width());
-        // Not the justified layout of `ui.columns`: it spreads the words of a wrapped caption across the line.
-        ui.with_layout(Layout::top_down(Align::LEFT), |ui| {
-            ui.label(RichText::new(value).strong().size(24.0));
-            ui.label(RichText::new(title).strong());
-            ui.label(muted(ui, caption));
-        });
+    let c = crate::theme::of(ui);
+    // No box: a thin rule above, the number in the display face, then what it counts.
+    let top = ui.available_rect_before_wrap();
+    ui.painter()
+        .hline(top.x_range(), top.top(), Stroke::new(1.0, c.border_variant));
+    ui.add_space(6.0);
+    // Not the justified layout of `ui.columns`: it spreads the words of a wrapped caption across the line.
+    ui.with_layout(Layout::top_down(Align::LEFT), |ui| {
+        ui.label(
+            RichText::new(value)
+                .font(egui::FontId::new(28.0, crate::theme::display()))
+                .color(c.text),
+        );
+        ui.label(RichText::new(title).strong());
+        ui.label(muted(ui, caption));
     });
 }
 
