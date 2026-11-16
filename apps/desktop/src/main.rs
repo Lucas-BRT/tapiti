@@ -1040,8 +1040,8 @@ fn main() -> eframe::Result {
                     .expect("assets/icon.png is a valid PNG"),
             )
             .with_inner_size([1360.0, 860.0])
-            // Maximized, not full screen: the window fills the screen and keeps its title bar.
-            .with_maximized(true)
+            // Only the screenshot runs fill the screen (maximized, so the title bar stays): a normal start is a normal window.
+            .with_maximized(std::env::var_os("TAPITI_SCREENSHOT").is_some())
             .with_min_inner_size([1000.0, 640.0]),
         ..Default::default()
     };
