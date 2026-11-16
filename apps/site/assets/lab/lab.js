@@ -69,7 +69,7 @@ const roleName = (name) => dict[`lab_role_${name}`] ?? name
 const DIRS = [[1, 0], [Math.SQRT1_2, Math.SQRT1_2], [0, 1], [-Math.SQRT1_2, Math.SQRT1_2], [-1, 0], [-Math.SQRT1_2, -Math.SQRT1_2], [0, -1], [Math.SQRT1_2, -Math.SQRT1_2]]
 
 const state = { size: 1, seed: 1, P: JSON.parse(default_params(1)), defaults: JSON.parse(default_params(1)) }
-const overlays = { cells: true, labels: true, ports: false, pairs: false, candidates: false }
+const overlays = { cells: true, labels: false, ports: false, pairs: false, candidates: false }
 const view = { zoom: 1, x: 0, y: 0 }
 let current = null
 let regenTimer = 0
@@ -442,14 +442,14 @@ const draw = () => {
     ctx.stroke()
   }
   if (overlays.labels) {
-    ctx.font = `${12 * px}px ${css('--font-ui') || 'system-ui, sans-serif'}`
+    ctx.font = `500 ${11 * px}px ${css('--font-mono') || 'monospace'}`
     ctx.textAlign = 'center'
     ctx.textBaseline = 'alphabetic'
     const text = css('--ink')
     const halo = css('--bg')
     for (const room of d.rooms) {
       if (!room.alive) continue
-      const label = `#${room.id} ${className(room.cls)}${room.role !== 'plain' ? ` · ${roleName(room.role)}` : ''}`
+      const label = `#${room.id}${room.role !== 'plain' ? ` ${roleName(room.role)}` : ''}`
       ctx.lineWidth = 2.2 * px
       ctx.strokeStyle = halo
       ctx.strokeText(label, room.center[0], room.center[1] + 4 * px)

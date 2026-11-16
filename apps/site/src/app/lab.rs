@@ -156,7 +156,7 @@ pub async fn page(cx: &Cx) -> Result<impl View> {
             "labels",
             e!(lab_overlay_labels),
             e!(lab_overlay_labels_help),
-            true,
+            false,
         ),
         (
             "ports",
