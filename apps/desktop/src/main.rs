@@ -182,6 +182,18 @@ pub struct App {
     pub density: theme::Density,
     /// The reading column: `None` follows the window (shown from 1180 points wide), `Some` is the user's choice.
     pub reading_open: Option<bool>,
+    /// The floor on show is identified by its seed and size; when that changes the plan is revealed from the entrance.
+    pub reveal_key: Option<(u32, Size)>,
+    /// When the reveal began, in the clock of the window; `None` when nothing is being revealed.
+    pub reveal_start: Option<f64>,
+    /// Set while the progressive preview is on, so the floor that follows it is not revealed a second time.
+    pub skip_reveal: bool,
+    /// No reveal and no other motion of the interface, kept between runs.
+    pub reduce_motion: bool,
+    /// The room picked on the plan (an index of the floor's rooms).
+    pub selected: Option<usize>,
+    /// A room to pick as soon as the first floor is on screen (`TAPITI_SELECT`, for pictures).
+    pub select_after: Option<usize>,
 }
 
 struct Shot {
@@ -256,6 +268,14 @@ impl App {
             command: String::new(),
             density: theme::Density::saved(),
             reading_open: None,
+            reveal_key: None,
+            reveal_start: None,
+            skip_reveal: false,
+            reduce_motion: prefs::load("motion").as_deref() == Some("reduce"),
+            selected: None,
+            select_after: std::env::var("TAPITI_SELECT")
+                .ok()
+                .and_then(|n| n.parse().ok()),
             scroll_to: std::env::var("TAPITI_SCROLL")
                 .ok()
                 .and_then(|v| v.parse().ok()),
@@ -377,6 +397,11 @@ impl App {
     }
 
     /// Asks the window for a picture once the first floor is on it, writes it as a PPM and quits.
+    /// Whether a screenshot was asked for with `TAPITI_SCREENSHOT`: then nothing animates, so the picture is of the finished frame.
+    pub fn capturing(&self) -> bool {
+        self.shot.is_some()
+    }
+
     fn take_screenshot(&mut self, ctx: &egui::Context) {
         let ready = !self.busy && self.generated.is_some();
         let Some(shot) = &mut self.shot else { return };

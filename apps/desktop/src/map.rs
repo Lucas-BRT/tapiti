@@ -62,6 +62,8 @@ pub struct Palette {
     pub grid: Color32,
     pub ink: Color32,
     pub hatch: Color32,
+    /// The outline of a room with no role; the entrance and the exit are outlined in green and amber.
+    pub edge: Color32,
     pub accent: Color32,
     pub success: Color32,
     pub danger: Color32,
@@ -73,10 +75,27 @@ impl Palette {
         let c = crate::theme::colors(dark);
         Self {
             background: c.editor,
-            corridor: Color32::from_rgb(0x8a, 0x7a, 0x72),
-            grid: c.border_variant,
+            corridor: if dark {
+                Color32::from_rgb(0x3d, 0x48, 0x52)
+            } else {
+                Color32::from_rgb(0xb4, 0xbe, 0xc7)
+            },
+            grid: if dark {
+                Color32::from_rgb(0x1b, 0x21, 0x27)
+            } else {
+                Color32::from_rgb(0xe3, 0xe8, 0xec)
+            },
             ink: c.text,
-            hatch: Color32::from_rgb(0x3e, 0x2a, 0x30),
+            hatch: if dark {
+                Color32::from_rgba_unmultiplied(8, 10, 12, 150)
+            } else {
+                Color32::from_rgba_unmultiplied(27, 33, 39, 105)
+            },
+            edge: if dark {
+                Color32::from_rgb(0x0e, 0x10, 0x12)
+            } else {
+                Color32::from_rgb(0x1b, 0x21, 0x27)
+            },
             accent: c.accent,
             success: c.success,
             danger: c.error,
@@ -96,16 +115,16 @@ impl Palette {
         Color32::from_rgb(r, g, b)
     }
 
-    /// Plum labels on the light room washes.
+    /// Graphite labels on the light room washes.
     fn on_room(&self) -> Color32 {
-        Color32::from_rgb(0x26, 0x12, 0x1a)
+        Color32::from_rgb(0x0e, 0x10, 0x12)
     }
 
     fn role(&self, role: Role) -> Color32 {
         match role {
             Role::Entrance => self.success,
             Role::Exit => self.accent,
-            Role::Plain => self.hatch,
+            Role::Plain => self.edge,
         }
     }
 }
@@ -392,7 +411,52 @@ pub fn channel_color(c: Channel, t: f32) -> Color32 {
     Color32::from_rgb(r, g, b)
 }
 
-pub fn draw_floor(painter: &Painter, xf: &Xf, floor: &Floor, overlays: Overlays, pal: &Palette) {
+/// How much of a node at `hop` rooms from the entrance is shown when the reveal front is at `front` rooms: nothing before the front
+/// reaches it, everything when it has passed by one room.
+fn reveal_alpha(front: f64, hop: f64) -> f32 {
+    (front - hop).clamp(0.0, 1.0) as f32
+}
+
+/// Draws the plan with the floor revealed outwards from the entrance: `reveal` runs from 0 (nothing) to 1 (all of it), and each room and
+/// corridor fades in when the front reaches its distance in rooms from the entrance.
+pub fn draw_floor(
+    painter: &Painter,
+    xf: &Xf,
+    floor: &Floor,
+    overlays: Overlays,
+    pal: &Palette,
+    reveal: f32,
+) {
+    let hops = (reveal < 1.0)
+        .then(|| tapiti_core::generate::room_hops(&floor.nodes, &floor.edges, floor.origin()));
+    let front = hops.as_ref().map_or(0.0, |h| {
+        let far = h
+            .iter()
+            .copied()
+            .filter(|v| v.is_finite())
+            .fold(0.0, f64::max);
+        f64::from(reveal) * (far + 1.5)
+    });
+    // How much of a node is shown: 1 when the front has passed it by a whole room.
+    let shown = |node: usize| -> f32 {
+        match &hops {
+            None => 1.0,
+            Some(h) => {
+                let d = h
+                    .get(node)
+                    .copied()
+                    .filter(|v| v.is_finite())
+                    .unwrap_or(0.0);
+                reveal_alpha(front, d)
+            }
+        }
+    };
+    let mut room_node = vec![0usize; floor.rooms.len()];
+    for (i, node) in floor.nodes.iter().enumerate() {
+        if let Node::Room { room } = node {
+            room_node[*room] = i;
+        }
+    }
     // A stacked floor is drawn one level at a time: levels overlap in plan, and drawn together they cannot be read.
     let view = overlays.level.filter(|_| floor.stack.is_some());
     let on = |room: &tapiti_core::generate::Room| view.is_none_or(|v| room.level == v);
@@ -431,11 +495,15 @@ pub fn draw_floor(painter: &Painter, xf: &Xf, floor: &Floor, overlays: Overlays,
         if view.is_some_and(|v| node_level[edge.u] != v) {
             continue;
         }
+        let a = shown(edge.u).max(shown(edge.v));
+        if a <= 0.0 {
+            continue;
+        }
         polyline(
             painter,
             xf,
             &edge.pts,
-            pal.corridor,
+            pal.corridor.gamma_multiply(a),
             floor.params.width.max(2.0) as f32,
             false,
         );
@@ -443,19 +511,29 @@ pub fn draw_floor(painter: &Painter, xf: &Xf, floor: &Floor, overlays: Overlays,
     let tints = Tints::new(floor, overlays);
     for room in floor.rooms.iter().filter(|r| on(r)) {
         if room.alive {
+            let a = shown(room_node[room.id]);
+            if a <= 0.0 {
+                continue;
+            }
             let alpha = if room.leaf { 0.65 } else { 0.92 };
             let fill = tints.fill(pal.shape(room.cls.name()), room.id);
+            let outline = if room.role == Role::Plain { 2.5 } else { 5.0 };
             room_shape(
                 painter,
                 xf,
                 &room.shape,
-                Some(fill.gamma_multiply(alpha)),
-                pal.role(room.role),
-                4.0,
+                Some(fill.gamma_multiply(alpha * a)),
+                pal.role(room.role).gamma_multiply(a),
+                outline,
                 false,
             );
             let spacing = 10.0 / f64::from(xf.scale.max(0.01));
-            for mark in tapiti_render::hatch(&room.shape, room.cls.name(), spacing) {
+            let hatches = if a < 0.6 {
+                Vec::new()
+            } else {
+                tapiti_render::hatch(&room.shape, room.cls.name(), spacing)
+            };
+            for mark in hatches {
                 match mark {
                     tapiti_render::HatchMark::Dot(p) => {
                         painter.circle_filled(xf.pt(p), 1.2, pal.hatch);
@@ -482,25 +560,27 @@ pub fn draw_floor(painter: &Painter, xf: &Xf, floor: &Floor, overlays: Overlays,
         }
     }
     for room in floor.rooms.iter().filter(|r| on(r)) {
+        let a = shown(room_node[room.id]);
         for port in &room.used {
             let d = dir_of(port.k);
             polyline(
                 painter,
                 xf,
                 &[port.p, [port.p[0] + d[0] * 14.0, port.p[1] + d[1] * 14.0]],
-                pal.ink,
+                pal.ink.gamma_multiply(a),
                 5.0,
                 false,
             );
         }
     }
-    for node in &floor.nodes {
+    for (i, node) in floor.nodes.iter().enumerate() {
         if let Node::Junction { p } = node {
+            let a = shown(i);
             painter.circle(
                 xf.pt(**p),
                 (7.0 * xf.scale).max(2.5),
-                pal.ink,
-                Stroke::new(1.5, pal.background),
+                pal.ink.gamma_multiply(a),
+                Stroke::new(1.5, pal.background.gamma_multiply(a)),
             );
         }
     }
@@ -644,33 +724,192 @@ pub fn scales(
     }
 }
 
+/// The thickness of the rulers on the top and left edges of the plan, and the height of the strip under it, in points.
+pub const RULER: f32 = 18.0;
+pub const HUD: f32 = 24.0;
+
+/// Where `v` falls on a grid, in cells and fractions of a cell (3.5 is the middle of the fourth cell), or `None` outside the grid.
+pub fn cell_coord(grid: &[f64], v: f64) -> Option<f64> {
+    let (first, last) = (*grid.first()?, *grid.last()?);
+    if v < first || v > last {
+        return None;
+    }
+    let i = grid.windows(2).position(|w| v >= w[0] && v <= w[1])?;
+    Some(i as f64 + (v - grid[i]) / (grid[i + 1] - grid[i]).max(1e-9))
+}
+
+/// Rulers along the top and left edges of `rect`, numbered in grid cells like a drafting sheet. The ticks follow the pan and the zoom;
+/// `xf` is the transform of the plan, whose rect leaves room for the rulers.
+pub fn rulers(painter: &Painter, rect: Rect, xf: &Xf, floor: &Floor, pal: &Palette) {
+    let c = crate::theme::colors(pal.dark);
+    let inner = xf.rect();
+    let top = Rect::from_min_max(
+        Pos2::new(inner.left(), rect.top()),
+        Pos2::new(rect.right(), inner.top()),
+    );
+    let left = Rect::from_min_max(
+        Pos2::new(rect.left(), inner.top()),
+        Pos2::new(inner.left(), rect.bottom()),
+    );
+    let corner = Rect::from_min_max(rect.min, inner.min);
+    for band in [top, left, corner] {
+        painter.rect_filled(band, 0.0, c.bar);
+    }
+    let hair = Stroke::new(1.0, c.border_variant);
+    painter.hline(rect.x_range(), inner.top(), hair);
+    painter.vline(inner.left(), rect.y_range(), hair);
+    let font = FontId::new(10.0, crate::theme::medium());
+    let tick = Stroke::new(1.0, c.text_muted);
+    let (Some(&y0), Some(&x0)) = (floor.grid_y.first(), floor.grid_x.first()) else {
+        return;
+    };
+    let cells = |grid: &[f64]| grid.len().saturating_sub(1);
+    for (i, &x) in floor.grid_x.iter().enumerate() {
+        let sx = xf.pt([x, y0]).x;
+        if sx < inner.left() || sx > rect.right() {
+            continue;
+        }
+        painter.vline(sx, (top.bottom() - 7.0)..=top.bottom(), tick);
+        let wide = floor
+            .grid_x
+            .get(i + 1)
+            .is_some_and(|n| (n - x) as f32 * xf.scale >= 20.0);
+        if i < cells(&floor.grid_x) && wide {
+            painter.text(
+                Pos2::new(sx + 3.0, top.center().y - 1.0),
+                Align2::LEFT_CENTER,
+                i.to_string(),
+                font.clone(),
+                c.text_muted,
+            );
+        }
+    }
+    for (j, &y) in floor.grid_y.iter().enumerate() {
+        let sy = xf.pt([x0, y]).y;
+        if sy < inner.top() || sy > rect.bottom() {
+            continue;
+        }
+        painter.hline((left.right() - 7.0)..=left.right(), sy, tick);
+        let tall = floor
+            .grid_y
+            .get(j + 1)
+            .is_some_and(|n| (n - y) as f32 * xf.scale >= 16.0);
+        if j < cells(&floor.grid_y) && tall {
+            painter.text(
+                Pos2::new(left.center().x, sy + 9.0),
+                Align2::CENTER_CENTER,
+                j.to_string(),
+                font.clone(),
+                c.text_muted,
+            );
+        }
+    }
+}
+
+/// The room picked on the plan: a thick amber outline round it, with a thin dark one inside so it reads on any fill.
+pub fn selection(painter: &Painter, xf: &Xf, shape: &Shape, pal: &Palette) {
+    room_shape(painter, xf, shape, None, pal.accent, 7.0, false);
+    room_shape(painter, xf, shape, None, pal.edge, 1.5, false);
+}
+
+/// The strip under the plan: the pointer in cells on the left, what is under it, and on the right what is picked.
+pub fn hud(painter: &Painter, rect: Rect, pal: &Palette, pointer: &str, under: &str, picked: &str) {
+    let c = crate::theme::colors(pal.dark);
+    let strip = Rect::from_min_max(Pos2::new(rect.left(), rect.bottom() - HUD), rect.max);
+    painter.rect_filled(strip, 0.0, c.bar);
+    painter.hline(
+        strip.x_range(),
+        strip.top(),
+        Stroke::new(1.0, c.border_variant),
+    );
+    let font = FontId::new(11.0, crate::theme::medium());
+    let mid = strip.center().y;
+    painter.text(
+        Pos2::new(strip.left() + 12.0, mid),
+        Align2::LEFT_CENTER,
+        pointer,
+        font.clone(),
+        c.text,
+    );
+    painter.text(
+        Pos2::new(strip.left() + 150.0, mid),
+        Align2::LEFT_CENTER,
+        under,
+        font.clone(),
+        c.text_muted,
+    );
+    painter.text(
+        Pos2::new(strip.right() - 12.0, mid),
+        Align2::RIGHT_CENTER,
+        picked,
+        font,
+        c.accent,
+    );
+}
+
+/// What a room is, in a line: its role, its shape, its size in cells and its distance from the entrance in rooms.
+pub fn describe(floor: &Floor, room: &tapiti_core::generate::Room) -> String {
+    let role = match room.role {
+        Role::Entrance => "entrance",
+        Role::Exit => "exit",
+        Role::Plain if room.leaf => "dead-end chamber",
+        Role::Plain => "room",
+    };
+    let (w, h) = match &room.shape {
+        Shape::Disc { r, .. } => (2.0 * r, 2.0 * r),
+        Shape::Poly { .. } => (
+            room.bounds.hi[0] - room.bounds.lo[0],
+            room.bounds.hi[1] - room.bounds.lo[1],
+        ),
+    };
+    let size = format!(
+        "{:.1} × {:.1} cells",
+        w / floor.params.cell_w.max(1.0),
+        h / floor.params.cell_h.max(1.0)
+    );
+    let hops = tapiti_core::generate::room_hops(&floor.nodes, &floor.edges, floor.origin());
+    let at = floor
+        .nodes
+        .iter()
+        .position(|n| matches!(n, Node::Room { room: r } if *r == room.id))
+        .and_then(|i| hops.get(i).copied())
+        .filter(|h| h.is_finite())
+        .map_or(String::new(), |h| format!(" · {h:.0} hops"));
+    format!(
+        "#{} {role} · {} · {size}{at}",
+        room.id,
+        class_label(room.cls.name())
+    )
+}
+
 /// Small key over the map: what the fills and outlines mean, for the shapes the floor has.
 pub fn legend(painter: &Painter, rect: Rect, pal: &Palette, text_color: Color32, present: &[&str]) {
-    let font = FontId::proportional(12.0);
-    let row = 18.0;
+    let c = crate::theme::colors(pal.dark);
+    let font = FontId::new(11.0, crate::theme::medium());
+    let row = 17.0;
     let items: Vec<(Color32, String)> = SHAPE_CLASSES
         .iter()
-        .filter(|c| present.contains(c))
-        .map(|c| (pal.shape(c), class_label(c).to_string()))
+        .filter(|class| present.contains(class))
+        .map(|class| (pal.shape(class), class_label(class).to_string()))
         .collect();
-    let height = row * (items.len() as f32 + 1.0) + 14.0;
+    let height = row * (items.len() as f32 + 3.0) + 12.0;
     let panel = Rect::from_min_size(
         Pos2::new(rect.left() + 10.0, rect.bottom() - height - 10.0),
-        Vec2::new(200.0, height),
+        Vec2::new(176.0, height),
     );
-    let bg = if pal.dark {
-        Color32::from_black_alpha(150)
-    } else {
-        Color32::from_white_alpha(200)
-    };
-    painter.rect_filled(panel, 8.0, bg);
-    let mut y = panel.top() + 12.0;
-    for (color, name) in items {
-        painter.rect_filled(
-            Rect::from_min_size(Pos2::new(panel.left() + 10.0, y - 6.0), Vec2::splat(12.0)),
-            3.0,
-            color,
-        );
+    painter.rect_filled(panel, 0.0, c.panel.gamma_multiply(0.94));
+    painter.rect_stroke(
+        panel,
+        0.0,
+        Stroke::new(1.0, c.border_variant),
+        eframe::egui::StrokeKind::Inside,
+    );
+    let mut y = panel.top() + 14.0;
+    let entry = |y: f32, draw: &dyn Fn(Rect), name: &str| {
+        draw(Rect::from_min_size(
+            Pos2::new(panel.left() + 10.0, y - 6.0),
+            Vec2::splat(12.0),
+        ));
         painter.text(
             Pos2::new(panel.left() + 30.0, y),
             Align2::LEFT_CENTER,
@@ -678,21 +917,103 @@ pub fn legend(painter: &Painter, rect: Rect, pal: &Palette, text_color: Color32,
             font.clone(),
             text_color,
         );
+    };
+    for (color, name) in items {
+        entry(
+            y,
+            &|r| {
+                painter.rect_filled(r, 0.0, color);
+            },
+            &name,
+        );
         y += row;
     }
-    painter.circle_filled(Pos2::new(panel.left() + 16.0, y), 4.0, pal.ink);
-    painter.text(
-        Pos2::new(panel.left() + 30.0, y),
-        Align2::LEFT_CENTER,
-        "junction · outline = role",
-        font,
-        text_color,
+    entry(
+        y,
+        &|r| {
+            painter.rect_stroke(
+                r.shrink(1.0),
+                0.0,
+                Stroke::new(2.5, pal.success),
+                eframe::egui::StrokeKind::Inside,
+            );
+        },
+        "entrance",
+    );
+    y += row;
+    entry(
+        y,
+        &|r| {
+            painter.rect_stroke(
+                r.shrink(1.0),
+                0.0,
+                Stroke::new(2.5, pal.accent),
+                eframe::egui::StrokeKind::Inside,
+            );
+        },
+        "exit",
+    );
+    y += row;
+    entry(
+        y,
+        &|r| {
+            painter.circle_filled(r.center(), 4.0, pal.ink);
+        },
+        "junction",
     );
 }
 
 #[cfg(test)]
 mod tests {
-    use super::triangulate;
+    use super::{cell_coord, describe, reveal_alpha, triangulate};
+    use tapiti_core::generate::Role;
+    use tapiti_core::params::{rich_of_size, Size};
+    use tapiti_core::stage::stage;
+
+    #[test]
+    fn cells_are_counted_from_the_grid() {
+        let grid = [0.0, 10.0, 30.0];
+        assert_eq!(cell_coord(&grid, 5.0), Some(0.5));
+        assert_eq!(cell_coord(&grid, 20.0), Some(1.5));
+        assert_eq!(cell_coord(&grid, 30.0), Some(2.0));
+        assert_eq!(cell_coord(&grid, -0.1), None);
+        assert_eq!(cell_coord(&grid, 30.1), None);
+        assert_eq!(cell_coord(&[], 1.0), None);
+    }
+
+    #[test]
+    fn the_reveal_runs_outwards_from_the_entrance() {
+        // Nothing is shown at the start, everything at the end, and a nearer room is never less shown than a farther one.
+        assert_eq!(reveal_alpha(0.0, 0.0), 0.0);
+        assert_eq!(reveal_alpha(10.0, 8.0), 1.0);
+        for front in [0.5, 1.5, 3.0, 6.5] {
+            let shown: Vec<f32> = (0..9)
+                .map(|hop| reveal_alpha(front, f64::from(hop)))
+                .collect();
+            assert!(shown.windows(2).all(|w| w[0] >= w[1]), "{shown:?}");
+            assert!(shown.iter().all(|a| (0.0..=1.0).contains(a)));
+        }
+    }
+
+    #[test]
+    fn a_room_is_described_by_role_shape_size_and_distance() {
+        let floor = stage(279, &rich_of_size(Size::Medium), 8).d;
+        let room_of = |role: Role| {
+            floor
+                .rooms
+                .iter()
+                .find(|r| r.alive && r.role == role)
+                .unwrap()
+        };
+        let entrance = describe(&floor, room_of(Role::Entrance));
+        assert!(
+            entrance.contains("entrance") && entrance.contains(" 0 hops"),
+            "{entrance}"
+        );
+        let exit = describe(&floor, room_of(Role::Exit));
+        assert!(exit.contains("exit") && exit.contains("cells"), "{exit}");
+        assert!(!exit.contains(" 0 hops"), "{exit}");
+    }
 
     fn area(pts: &[[f64; 2]]) -> f64 {
         (0..pts.len())

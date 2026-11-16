@@ -111,6 +111,19 @@ pub fn menu_bar(app: &mut App, ui: &mut Ui) {
                         ui.radio_value(&mut theme, value, name);
                     }
                     theme::set_preference(ui.ctx(), theme);
+                    ui.separator();
+                    if ui
+                        .checkbox(&mut app.reduce_motion, "Reduce motion")
+                        .on_hover_text(
+                            "Show a new floor at once instead of revealing it from the entrance",
+                        )
+                        .changed()
+                    {
+                        crate::prefs::save(
+                            "motion",
+                            if app.reduce_motion { "reduce" } else { "full" },
+                        );
+                    }
                 });
                 ui.menu_button("Tools", |ui| {
                     ui.label(muted(ui, "Guided experiments"));
@@ -1256,6 +1269,18 @@ pub fn central(app: &mut App, ui: &mut Ui) {
             let painter = ui.painter_at(rect);
             painter.rect_filled(rect, 0.0, pal.background);
 
+            // The plan has rulers along its top and left edges and a strip of readings under it; the floor is fitted in what is left.
+            let plan = app.view_mode == crate::ViewMode::Plan && !app.showing_building();
+            let ruler = if plan { map::RULER } else { 0.0 };
+            let strip = if app.showing_building() || app.view_mode == crate::ViewMode::Solid {
+                0.0
+            } else {
+                map::HUD
+            };
+            let inner = egui::Rect::from_min_max(
+                rect.min + Vec2::new(ruler, ruler),
+                rect.max - Vec2::new(0.0, strip),
+            );
             let Some((min, max)) =
                 (if app.view_mode == crate::ViewMode::Iso && !app.showing_building() {
                     app.generated
@@ -1275,7 +1300,7 @@ pub fn central(app: &mut App, ui: &mut Ui) {
                 );
                 return;
             };
-            let mut xf = Xf::new(rect, min, max, app.zoom, app.pan);
+            let mut xf = Xf::new(inner, min, max, app.zoom, app.pan);
             let ctx = ui.ctx().clone();
 
             if response.double_clicked() {
@@ -1288,7 +1313,7 @@ pub fn central(app: &mut App, ui: &mut Ui) {
                 if (factor - 1.0).abs() > 1e-6 {
                     if let Some(pos) = response.hover_pos() {
                         zoom_at(app, &xf, pos, factor);
-                        xf = Xf::new(rect, min, max, app.zoom, app.pan);
+                        xf = Xf::new(inner, min, max, app.zoom, app.pan);
                     }
                 }
             }
@@ -1304,7 +1329,7 @@ pub fn central(app: &mut App, ui: &mut Ui) {
                 let scale = f64::from(xf.scale).max(1e-6);
                 app.pan[0] -= f64::from(delta.x) / scale;
                 app.pan[1] -= f64::from(delta.y) / scale;
-                xf = Xf::new(rect, min, max, app.zoom, app.pan);
+                xf = Xf::new(inner, min, max, app.zoom, app.pan);
             }
             if response.hovered() && app.view_mode == crate::ViewMode::Iso {
                 // The arrow keys turn and tilt the oblique view, for those without a right button.
@@ -1329,6 +1354,58 @@ pub fn central(app: &mut App, ui: &mut Ui) {
                     CursorIcon::Grab
                 });
             }
+
+            if plan && response.clicked() && !response.double_clicked() {
+                if let (Some(pos), Some(generated)) =
+                    (response.interact_pointer_pos(), &app.generated)
+                {
+                    app.selected = tapiti_render::mesh::room_at(
+                        &generated.floor,
+                        xf.to_world(pos),
+                        app.overlays.level,
+                    )
+                    .map(|room| room.id);
+                }
+            }
+
+            // A new floor (another seed or size) is revealed outwards from the entrance in about 0.6 s, unless motion is reduced, the
+            // progressive preview has just shown it being built, or a picture is being taken.
+            let now = ctx.input(|i| i.time);
+            if app.showing_building() {
+                app.skip_reveal = true;
+            }
+            if let Some(g) = &app.generated {
+                let key = (g.seed, g.size);
+                if app.reveal_key != Some(key) {
+                    app.reveal_key = Some(key);
+                    app.selected = app.select_after.take();
+                    app.reveal_start =
+                        (!app.reduce_motion && !app.capturing() && !app.skip_reveal).then_some(now);
+                    app.skip_reveal = false;
+                }
+            }
+            let reveal = match app.reveal_start {
+                Some(start) => {
+                    let t = ((now - start) / 0.6) as f32;
+                    if t >= 1.0 {
+                        app.reveal_start = None;
+                        1.0
+                    } else {
+                        ctx.request_repaint();
+                        1.0 - (1.0 - t.max(0.0)).powi(2)
+                    }
+                }
+                None => 1.0,
+            };
+            // For pictures: `TAPITI_REVEAL=0.4` freezes the reveal at 40 %.
+            let reveal = if app.capturing() {
+                std::env::var("TAPITI_REVEAL")
+                    .ok()
+                    .and_then(|v| v.parse::<f32>().ok())
+                    .map_or(1.0, |v| v.clamp(0.0, 1.0))
+            } else {
+                reveal
+            };
 
             // While the map moves the detail layers are dropped, so each frame stays cheap.
             let mut overlays = app.overlays;
@@ -1357,10 +1434,16 @@ pub fn central(app: &mut App, ui: &mut Ui) {
                     crate::ViewMode::Iso => {
                         crate::iso::draw(&painter, &xf, &floor, &app.iso, overlays, &pal);
                     }
-                    crate::ViewMode::Plan => map::draw_floor(&painter, &xf, &floor, overlays, &pal),
+                    crate::ViewMode::Plan => {
+                        map::draw_floor(&painter, &xf, &floor, overlays, &pal, reveal);
+                        if let Some(room) = app.selected.and_then(|id| floor.rooms.get(id)) {
+                            map::selection(&painter, &xf, &room.shape, &pal);
+                        }
+                        map::rulers(&painter, rect, &xf, &floor, &pal);
+                    }
                 }
             }
-            if app.overlays.legend && rect.width() > 520.0 && rect.height() > 380.0 {
+            if app.overlays.legend && inner.width() > 440.0 && inner.height() > 320.0 {
                 if let Some(generated) = &app.generated {
                     let present: Vec<&str> = generated
                         .floor
@@ -1369,17 +1452,17 @@ pub fn central(app: &mut App, ui: &mut Ui) {
                         .filter(|room| room.alive)
                         .map(|room| room.cls.name())
                         .collect();
-                    map::legend(&painter, rect, &pal, ui.visuals().text_color(), &present);
+                    map::legend(&painter, inner, &pal, ui.visuals().text_color(), &present);
                     map::scales(
                         &painter,
-                        rect,
+                        inner,
                         ui.visuals().text_color(),
                         &generated.floor,
                         app.overlays,
                     );
                 }
             }
-            map_controls(app, ui, rect);
+            map_controls(app, ui, inner);
             if app.view_mode != app.saved_view {
                 app.saved_view = app.view_mode;
                 crate::prefs::save(
@@ -1393,12 +1476,44 @@ pub fn central(app: &mut App, ui: &mut Ui) {
             }
             if app.busy {
                 painter.text(
-                    rect.right_top() + Vec2::new(-14.0, 16.0),
+                    inner.right_top() + Vec2::new(-14.0, 16.0),
                     egui::Align2::RIGHT_CENTER,
                     "Generating…",
                     egui::FontId::proportional(13.0),
                     pal.ink.gamma_multiply(0.7),
                 );
+            }
+
+            if strip > 0.0 {
+                let floor = app.generated.as_ref().map(|g| &g.floor);
+                let pointer = response
+                    .hover_pos()
+                    .filter(|p| inner.contains(*p))
+                    .zip(floor);
+                let (xy, under) = match pointer {
+                    Some((pos, floor)) if plan => {
+                        let w = xf.to_world(pos);
+                        let cell = |grid: &[f64], v: f64| {
+                            map::cell_coord(grid, v)
+                                .map_or("—".to_string(), |c| format!("{c:.2}"))
+                        };
+                        let room = tapiti_render::mesh::room_at(floor, w, app.overlays.level);
+                        (
+                            format!(
+                                "x {}  y {}",
+                                cell(&floor.grid_x, w[0]),
+                                cell(&floor.grid_y, w[1])
+                            ),
+                            room.map_or(String::new(), |r| map::describe(floor, r)),
+                        )
+                    }
+                    _ => ("x —  y —".to_string(), String::new()),
+                };
+                let picked = floor
+                    .zip(app.selected)
+                    .and_then(|(f, id)| f.rooms.get(id).map(|r| map::describe(f, r)))
+                    .unwrap_or_default();
+                map::hud(&painter, rect, &pal, &xy, &under, &picked);
             }
 
             if response.hovered()
