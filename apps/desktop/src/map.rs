@@ -298,11 +298,11 @@ fn label(painter: &Painter, xf: &Xf, text: &str, at: [f64; 2], color: Color32, w
     };
     let galley = painter.layout_no_wrap(
         text.to_string(),
-        FontId::proportional(size.clamp(9.0, 40.0)),
+        FontId::monospace(size.clamp(9.0, 13.0)),
         color,
     );
     let rect = Rect::from_center_size(xf.pt(at), galley.size());
-    painter.rect_filled(rect.expand(2.0), 2.0, Color32::from_rgb(0xff, 0xfc, 0xf3));
+    painter.rect_filled(rect.expand(2.0), 0.0, Color32::from_rgb(0xff, 0xfc, 0xf3));
     painter.galley(rect.min, galley, color);
 }
 

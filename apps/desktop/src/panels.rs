@@ -329,7 +329,6 @@ pub fn top_bar(app: &mut App, ui: &mut Ui) {
                     ui.spinner();
                 }
                 ui.with_layout(egui::Layout::right_to_left(Align::Center), |ui| {
-                    let dark = ui.visuals().dark_mode;
                     let reading = reading_visible(app, ui);
                     if ui
                         .selectable_label(reading, "Reading")
@@ -341,9 +340,9 @@ pub fn top_bar(app: &mut App, ui: &mut Ui) {
                     let comfortable = app.density == theme::Density::Comfortable;
                     if ui
                         .button(if comfortable {
-                            "Compact"
+                            "Spacing: comfortable"
                         } else {
-                            "Comfortable"
+                            "Spacing: compact"
                         })
                         .on_hover_text("Switch between compact and comfortable spacing")
                         .clicked()
@@ -357,15 +356,11 @@ pub fn top_bar(app: &mut App, ui: &mut Ui) {
                         theme::apply_density(ui.ctx(), app.density);
                     }
                     if ui
-                        .button(if dark { "Light" } else { "Dark" })
-                        .on_hover_text("Switch between the light theme and the dark theme")
+                        .button(format!("Theme: {}", app.appearance.name()))
+                        .on_hover_text("Cycle the theme: system, light, dark")
                         .clicked()
                     {
-                        app.appearance = if dark {
-                            theme::Appearance::Light
-                        } else {
-                            theme::Appearance::Dark
-                        };
+                        app.appearance = app.appearance.next();
                         app.appearance.save();
                     }
                 });
@@ -446,7 +441,7 @@ fn show_layer(app: &mut App, layer: command::Layer) {
         format!("Layer {}.", layer.name())
     } else {
         format!(
-            "This floor has no {} layer: turn it on in Environment.",
+            "This floor has no {} layer: turn it on in Environment layers.",
             layer.name()
         )
     };
@@ -862,7 +857,7 @@ fn environment_card(app: &mut App, ui: &mut Ui) {
     let counts = group_counts(app, |p| {
         p.starts_with("environment.") && in_environment_card(p)
     });
-    tree_group(ui, "environment", "Environment", counts, |ui| {
+    tree_group(ui, "environment", "Environment layers", counts, |ui| {
         ui.label(muted(
             ui,
             "Layers laid over the floor. All are off until you turn them on.",

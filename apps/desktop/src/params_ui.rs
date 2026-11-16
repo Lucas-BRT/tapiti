@@ -24,6 +24,8 @@ pub fn field_row(
     let control_width = (width - label_width - 14.0).max(80.0);
     let height = ui.spacing().interact_size.y;
     ui.allocate_ui(egui::vec2(label_width, height), |ui| {
+        // A cell takes the width of what it holds unless told otherwise, and every group of rows would then have its own columns.
+        ui.set_min_width(label_width);
         if differs {
             let (mark, _) = ui.allocate_exact_size(egui::vec2(6.0, 6.0), egui::Sense::hover());
             ui.painter().rect_filled(mark, 0.0, amber);
@@ -36,6 +38,7 @@ pub fn field_row(
         egui::vec2(control_width, height),
         egui::Layout::right_to_left(egui::Align::Center),
         |ui| {
+            ui.set_min_width(control_width);
             if differs
                 && ui
                     .small_button("×")

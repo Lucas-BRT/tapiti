@@ -244,7 +244,7 @@ impl App {
                 light: false,
                 events: true,
                 level: Some(0),
-                labels: true,
+                labels: false,
                 ports: false,
                 pairs: false,
                 candidates: false,

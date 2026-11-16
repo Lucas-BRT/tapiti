@@ -508,6 +508,23 @@ impl Appearance {
         }
     }
 
+    /// The next choice when the button is pressed: system, light, dark, and back to the system.
+    pub fn next(self) -> Self {
+        match self {
+            Self::System => Self::Light,
+            Self::Light => Self::Dark,
+            Self::Dark => Self::System,
+        }
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::System => "System",
+            Self::Light => "Light",
+            Self::Dark => "Dark",
+        }
+    }
+
     pub fn save(self) {
         crate::prefs::save(
             "theme",
