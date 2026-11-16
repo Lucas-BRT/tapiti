@@ -139,7 +139,7 @@ pub fn healthcheck() -> bool {
 }
 
 const GITHUB: &str = "https://github.com/Lucas-BRT/tapiti";
-const GITHUB_ISSUES: &str = "https://github.com/Lucas-BRT/tapiti/issues";
+pub(crate) const GITHUB_ISSUES: &str = "https://github.com/Lucas-BRT/tapiti/issues";
 
 // Self-hosted: the font files are bundled as assets and served by this app.
 // rustfmt and `topcoat fmt` wrap this macro differently; keep the Topcoat layout.
