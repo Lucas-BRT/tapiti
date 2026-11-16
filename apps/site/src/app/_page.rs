@@ -76,7 +76,7 @@ pub async fn page(cx: &Cx) -> Result<impl View> {
                 <dt>(t!(home_run_desktop))</dt>
                 <dd>
                     (t!(home_run_desktop_text))
-                    <pre><code>(INSTALL_COMMAND)</code></pre>
+                    <pre tabindex="0"><code>(INSTALL_COMMAND)</code></pre>
                     <a
                         href=(href!(
                             crate::app::docs::slug::_page::page,
@@ -91,7 +91,7 @@ pub async fn page(cx: &Cx) -> Result<impl View> {
                 <dt>(t!(home_run_crate))</dt>
                 <dd>
                     (t!(home_run_crate_text))
-                    <pre>
+                    <pre tabindex="0">
                         <code>
                             "tapiti-core = { git = \"https://github.com/Lucas-BRT/tapiti\" }"
                         </code>
@@ -100,7 +100,7 @@ pub async fn page(cx: &Cx) -> Result<impl View> {
                 <dt>(t!(home_run_docker))</dt>
                 <dd>
                     (t!(home_run_docker_text))
-                    <pre>
+                    <pre tabindex="0">
                         <code>"docker compose -f compose.local.yml up --build"</code>
                     </pre>
                 </dd>
