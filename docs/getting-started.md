@@ -4,15 +4,27 @@
 
 Every [release](https://github.com/Lucas-BRT/tapiti/releases/latest) has the desktop app for each platform. Pick one:
 
-**Linux, any distribution** (x86_64, glibc 2.35 or newer: Ubuntu 22.04+, Debian 12+, Fedora 36+; not Alpine), without `sudo`:
+### Linux, any distribution
+
+x86_64, glibc 2.35 or newer (Ubuntu 22.04+, Debian 12+, Fedora 36+; not Alpine), without `sudo`:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/Lucas-BRT/tapiti/main/install.sh | bash
 ```
 
-The script downloads the latest release, checks it against the release's `SHA256SUMS` and installs `tapiti` in `~/.local/bin`, with a launcher entry and an icon in `~/.local/share`. It tells you how to put `~/.local/bin` on your `PATH` when that is needed, and never edits your files. After `bash -s --` it takes `--version X.Y.Z`, `--prefix DIR`, `--update` (installs only when there is a newer release), `--verify` (also checks the build provenance; needs the GitHub CLI 2.49 or newer) and `--uninstall`.
+The script downloads the latest release, checks it against the release's `SHA256SUMS` and installs `tapiti` in `~/.local/bin`, with a launcher entry and an icon in `~/.local/share`. It tells you how to put `~/.local/bin` on your `PATH` when that is needed, and never edits your files.
 
-**Debian and Ubuntu**, a `.deb`; **Fedora and openSUSE**, an `.rpm`:
+After `bash -s --` it takes:
+
+- `--version X.Y.Z`: install that release instead of the latest.
+- `--prefix DIR`: install in `DIR/bin` and `DIR/share` (default `~/.local`).
+- `--update`: install the release only if it is not the version already installed.
+- `--verify`: also check the build provenance, a GitHub attestation (needs the GitHub CLI 2.49 or newer).
+- `--uninstall`: remove Tapiti.
+
+### Debian, Ubuntu, Fedora and openSUSE
+
+A `.deb` for Debian and Ubuntu, an `.rpm` for Fedora and openSUSE:
 
 ```sh
 sudo apt install ./tapiti_<version>-1_amd64.deb
@@ -21,9 +33,15 @@ sudo dnf install ./tapiti-<version>-1.x86_64.rpm
 
 Both install `/usr/bin/tapiti`, the launcher entry and the icon. There is no apt or dnf repository yet, so `apt update` does not bring a new release: download the new package and install it the same way, or use `install.sh --update`.
 
-**Windows:** download `tapiti-x86_64-pc-windows-msvc.exe` and run it, or the `.zip` with the same program, the licence and the README. It needs a graphics driver with OpenGL 2. Windows may ask for confirmation, as the program is not signed with a certificate.
+### Windows
 
-**macOS (Apple silicon):** `tapiti-aarch64-apple-darwin.tar.gz` holds `Tapiti.app`; drag it to Applications. It is not signed with a developer certificate, so the first start needs a right-click and Open.
+Download `tapiti-x86_64-pc-windows-msvc.exe` and run it, or the `.zip` with the same program, the licence and the README. It needs a graphics driver with OpenGL 2. Windows may ask for confirmation, as the program is not signed with a certificate.
+
+### macOS (Apple silicon)
+
+`tapiti-aarch64-apple-darwin.tar.gz` holds `Tapiti.app`; drag it to Applications. It is not signed with a developer certificate, so the first start needs a right-click and Open.
+
+### Verifying a download
 
 Each release also has `SHA256SUMS`, and the files carry a signed build provenance: `gh attestation verify FILE --repo Lucas-BRT/tapiti`.
 
@@ -42,9 +60,36 @@ cd tapiti
 cargo run --release
 ```
 
-Pick a layout (grid, or growth, where rooms grow one from another) and a size (small, medium, large or huge) in the top bar, next to the seed and the Generate button; the grid, the leaf chambers and, for growth, where it starts are in their group of the Parameters tab. Change the seed and edit any parameter: the floor is dug again a moment after each change. A very large floor can be stopped with the Cancel button (or <kbd>Esc</kbd>), and the floor on the screen stays. The side panel has two tabs: the parameters (one collapsible group each: Grid and size and Room shapes open, then Corridors and junctions…, plus Growth with the growth layout, with the number of changed ones in the title), and the analysis (charts and plain explanations of what the floor is). A search box opens the groups that have a match. The menu bar has File (open and save a Λ as a JSON file, copy the JSON, copy the floor as SVG, quit), Edit (reset all to the size), View (the theme), Tools (the guided experiments and the JSON editor, in a window) and Help (the shortcuts); the status bar shows how many parameters changed, with a Reset.
+### Generating a floor
 
-Shortcuts: <kbd>Alt</kbd>+<kbd>1</kbd> to <kbd>4</kbd> switch the size, <kbd>Alt</kbd>+<kbd>R</kbd> draws a random seed, <kbd>Alt</kbd>+<kbd>←</kbd> and <kbd>→</kbd> step the seed. Drag the map to pan, scroll to zoom, double-click to fit.
+Pick a layout (grid, or growth, where rooms grow one from another) and a size (small, medium, large or huge) in the top bar, next to the seed and the Generate button. Change the seed and edit any parameter: the floor is generated again a moment after each change. A very large floor can be stopped with the Cancel button (or <kbd>Esc</kbd>), and the floor on the screen stays.
+
+### The side panel
+
+The side panel has three tabs:
+
+- **Design**: the layout, the exploration intent and the environment layers.
+- **Advanced**: every parameter, one collapsible group each, with the number of changed parameters in the title. A search box opens the groups that have a match. The grid, the leaf chambers and, for growth, where it starts are in their group here.
+- **Analysis**: charts and plain explanations of what the floor is.
+
+### Menus and the status bar
+
+The menu bar has:
+
+- **File**: open and save a Λ as a JSON file, copy the JSON, copy the floor as SVG, quit.
+- **Edit**: reset all to the size.
+- **View**: the theme.
+- **Tools**: the guided experiments and the JSON editor, in a window.
+- **Help**: the shortcuts.
+
+The status bar shows how many parameters changed, with a Reset.
+
+### Shortcuts and the map
+
+- <kbd>Alt</kbd>+<kbd>1</kbd> to <kbd>4</kbd> switch the size.
+- <kbd>Alt</kbd>+<kbd>R</kbd> draws a random seed.
+- <kbd>Alt</kbd>+<kbd>←</kbd> and <kbd>→</kbd> step the seed.
+- On the map, drag to pan, scroll to zoom, double-click to fit.
 
 ## The website and the lab
 

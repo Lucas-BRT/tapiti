@@ -40,6 +40,8 @@ hashes 150 stages (the four sizes × 30 seeds, then 30 grown floors) and the has
 
 ## Layout of the repository
 
+### The generator
+
 | file | what |
 |---|---|
 | `crates/tapiti-core/src/geom.rs` | directions Θ₈, shapes, distances (exact and with a limit), corridor bands and joints |
@@ -50,12 +52,17 @@ hashes 150 stages (the four sizes × 30 seeds, then 30 grown floors) and the has
 | `crates/tapiti-core/src/stage.rs` | a valid stage: redraws from a derived seed when the validator objects |
 | `crates/tapiti-core/src/par.rs` | the one place that decides parallel or sequential (rayon, or plain loops) |
 | `crates/tapiti-core/src/clock.rs` | `performance.now()` in the browser, the system clock natively |
+| `crates/tapiti-core/tests/`, `benches/`, `examples/` | model tests, Criterion benchmarks, profiling and deterministic dumps |
+
+Floats: only `+ − × ÷`, `sqrt` and the libm inside the module, so every browser rounds the same.
+
+### Applications and support crates
+
+| file | what |
+|---|---|
 | `apps/desktop/` | native desktop application (egui); selected by bare `cargo run` |
 | `apps/site/` | the website: landing page, docs and the lab (Topcoat; `topcoat dev -p tapiti-site`) |
 | `crates/tapiti-render/` | SVG rendering of floors for the site, docs and social images |
 | `crates/tapiti-schema/` | the parameters of Λ as data (groups, ranges, help), shared by the desktop app and the docs |
 | `docs/` | the documentation (Markdown, math as `$…$`), rendered by the site and readable on GitHub |
 | `crates/tapiti-wasm/` | the WASM API: `default_params(size)`, `rich_params(size)`, `stage_json(seed, params)`, `bench(size, from, count)`, `threads()` |
-| `crates/tapiti-core/tests/`, `benches/`, `examples/` | model tests, Criterion benchmarks, profiling and deterministic dumps |
-
-Floats: only `+ − × ÷`, `sqrt` and the libm inside the module, so every browser rounds the same.

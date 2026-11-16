@@ -47,7 +47,11 @@ pub async fn page(cx: &Cx) -> Result<impl View> {
                             (t!(docs_toc_label))
                         </p>
                         <ul>
-                            for entry in &page.toc {
+                            // The outline stops at h3: the h4 are for reading in place, and still have anchors.
+                            for entry in page
+                                .toc
+                                .iter()
+                                .filter(|entry| entry.level <= 3) {
                                 <li class=(if entry.level > 2 { "sub" } else { "" })>
                                     <a href=(format!("#{}", entry.id))>
                                         (entry.text.as_str())

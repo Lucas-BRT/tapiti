@@ -6,6 +6,8 @@ Generation cost depends on Λ: the current model evaluates corridor candidates,
 βmax with junction actions, topology constraints and leaf chambers.
 Do not compare it with measurements from the earlier, smaller model.
 
+### Recent measurements
+
 Recent native release measurements on the development machine (14 Rayon threads)
 show level 5 generation around 22–28 ms and generation plus validation around
 24–27 ms. The `scale` benchmark measured:
@@ -16,6 +18,8 @@ show level 5 generation around 22–28 ms and generation plus validation around
 | 16×12 grid, about 130 rooms | 4,668 ms/map | 966 ms/map |
 | batch of 200 level-5 maps | 12,958 ms | 2,114 ms |
 
+### Measuring it yourself
+
 The small default map has limited independent work, so its speedup is modest.
 Large maps and batches expose enough work to benefit from the Rayon pool. Use
 Criterion for comparable single-map measurements and `scale` for throughput:
@@ -25,6 +29,8 @@ cargo bench --release -p tapiti-core --bench generator
 cargo test --release -p tapiti-core scale -- --nocapture
 cargo test --release -p tapiti-core --no-default-features scale -- --nocapture
 ```
+
+### What paid
 
 Profile first: one distance query with a limit (instead of testing every segment pair) gave the 10×. SIMD and WebAssembly threads were measured and did not pay.
 

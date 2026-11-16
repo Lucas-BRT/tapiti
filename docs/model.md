@@ -89,6 +89,8 @@ To keep doors aligned with the alphabet, the reference specification restricts t
 
 ## 4. Doors and room capacity
 
+### 4.1 Admissible doors
+
 A door is a pair $p=(x,\theta)$: the point $x$ on the room's outline and the direction $\theta$ in which the corridor leaves.
 
 On a polygon edge, not every point is admissible. The door must stay away from the corners and its exit must not cross the room itself. We define the inset
@@ -99,11 +101,13 @@ $$
 
 For an edge of length $L$, the admissible points initially lie in the interval $[\iota,L-\iota]$. In the mathematical model, any point of that interval can be chosen; the implementation samples positions in `portStep` steps and also adjusts doors when it resolves some intersections.
 
+### 4.2 The exit strip
+
 A door's exit strip can be represented as
 
 $$
 F(x,\theta)=\{x+s\,u(\theta)+r\,u(\theta+\tfrac\pi2):
-0\leq s\leq\ell_s,\ |r|\leq w/2\},
+0\leq s\leq\ell_s,\; |r|\leq w/2\},
 $$
 
 where $u(\theta)=(\cos\theta,\sin\theta)$. Intuitively, $F$ is the rectangle the corridor occupies right after leaving the wall.
@@ -113,6 +117,8 @@ Two doors used in the same room must keep their strips apart:
 $$
 \operatorname{dist}(F(p_i),F(p_j))\geq\sigma\quad(i\ne j).
 $$
+
+### 4.3 Room capacity
 
 We call **capacity** of the room the largest number of doors that satisfies this condition:
 
@@ -142,6 +148,8 @@ Between two doors, the specification considers three kinds of route:
 | L | 1 | two rays that meet in front of the doors |
 | Z/U | 2 | two exit stretches joined by an intermediate segment |
 
+#### A straight route
+
 For example, for a straight route between $(p_a,\theta_a)$ and $(p_b,\theta_b)$, the doors must face each other, $p_b-p_a$ must be aligned with the exit direction, and the distance must allow the two minimum stretches:
 
 $$
@@ -152,6 +160,8 @@ $$
 
 L and Z routes impose similar conditions of alignment, direction and minimum length for each segment. In the [Rust generator](../crates/tapiti-core/src/generate.rs), direct routes follow the same I/L/Z family, with the bend limit controlled by `maxBends`.
 
+#### An L route
+
 For an L route, let $u_a=u(\theta_a)$, $u_b=u(\theta_b)$, $d=p_b-p_a$. If $u_a\times u_b\neq0$, the rays meet at the parameters
 
 $$
@@ -159,7 +169,9 @@ t=\frac{d\times u_b}{u_a\times u_b},\qquad
 s=\frac{d\times u_a}{u_a\times u_b}.
 $$
 
-The route is feasible only if $t,s\geq\ell_s$ and the bend formed by the directions is allowed. For Z, we choose an intermediate direction $u(\delta)$ and solve
+The route is feasible only if $t,s\geq\ell_s$ and the bend formed by the directions is allowed. #### A Z route
+
+For Z, we choose an intermediate direction $u(\delta)$ and solve
 
 $$
 p_b-p_a=t_a u_a+t_c u(\delta)-t_bu_b,
@@ -240,7 +252,11 @@ $$
 
 By Menger's theorem, this number is also the minimum size of a set of edges whose removal separates $s$ from $t$.
 
+#### Cycles without alternative routes
+
 So $\beta(H)>0$ does **not** imply $\lambda_H(s,t)>1$. For example, consider the path $s-a-t$ and a wing in a cycle $a-b-c-a$. The graph has 5 vertices and 5 edges, so $\beta=5-5+1=1$, but every route from $s$ to $t$ still uses the edge $a-t$: $\lambda_H(s,t)=1$. By contrast, two routes $s-a-t$ and $s-b-t$ have $\beta=1$ and $\lambda_H(s,t)=2$. The profile of a floor must specify "how many cycles exist" and "how many routes reach the exit" separately.
+
+#### Other measures
 
 Other useful measures include:
 
@@ -340,13 +356,21 @@ A conflict-free selection is an **independent set** of $X$. To form a connected 
 
 ### 8.4 Tree, cycles and leaf rooms
 
+#### Growing the tree
+
 The crate chooses a first room and grows a spanning tree. At each step, a candidate link must connect an already reached room to a new room. The choice is weighted by the candidates' weights. If the current list does not allow progress, the generator widens the set of proximity pairs and tries to continue.
+
+#### Adding cycles
 
 After connecting the rooms, the generator builds a `betaMax` reference by filling a copy of the graph with the highest-weight valid actions. This search considers direct links and T/X junction actions. The reference is greedy: it depends on earlier choices and does not prove the global maximum.
 
 In the real cycles phase, the target is $\beta^*=\operatorname{round}(\delta_{target}\beta_{ref})$, where `delta` is the crate's parameter. Valid actions are drawn until the target is reached or exceeded, or until no actions remain. A direct or T link adds one independent cycle; an X crossing can add two, since it closes a new path and splits the crossed corridor into two branches. So $\beta^*$ is a target, not a guarantee of exact equality.
 
+#### Leaf chambers
+
 Leaf chambers are added afterwards: each is a room linked by a single corridor. In the graph, the operation adds one vertex and one edge, so $\Delta\beta=0$. It raises the number of dead ends without raising the number of cycles.
+
+#### Entrance and exit
 
 The entrance and the exit are optional (`entrance`, `exitRoom`, in both layouts). The entrance is the first room of the tree; after the tree, the exit is chosen among the leaves farthest from it. If the minimum distance `exitMinHops` is not reached, `stage` may try another seed up to the attempt limit. Without an entrance there is no exit and no main path.
 
@@ -355,6 +379,8 @@ The entrance and the exit are optional (`entrance`, `exitRoom`, in both layouts)
 The `bsp` layout (`layout: "bsp"`) replaces the growth of rooms. The world is cut into $n$ leaves, $n$ being the number of rooms: the largest leaf that is at least two cells long on its longer side is cut across that side at a ratio between $0.38$ and $0.62$, which gives leaves of different proportions. A room stands a `gap` in from each side of its leaf, fills $65\%$ to $100\%$ of each side (up to three cells) and is never smaller than one cell less its two gaps. Sibling subtrees are joined bottom-up by the corridor of least cost between the closest pair of rooms, one from each side. The entrance is the room of the westernmost leaf, and cycles are added as in any other floor. It is a layout, not an intent: the intents that plan their own rooms (Spine with detours, Ring, Hub and wings) need Growth and `Params::intent_error` rejects them with it, while the intents that only state requirements on the graph run with it.
 
 ### Height
+
+#### The slope rule
 
 The `environment.height` layer gives every node of $H$ (rooms and junctions) an elevation $h$, and so every corridor a slope. Corridors are straight ramps between the heights of their two ends, and rooms are flat. The rule is
 
@@ -370,13 +396,21 @@ $$
 
 $d$ being the distance along the corridors. It is always feasible, whatever the cycles, and it needs only sums and comparisons, so it is the same on every platform. Junctions draw no target. With the style *hills*, $t_i$ is uniform between $0$ and the relief; with *descent*, $t_i=-\mathrm{relief}\cdot k_i/k_{max}$ with $k_i$ the number of corridors from the entrance, so the floor goes down.
 
+#### Height after the layout
+
 The layer runs by default after the layout and moves no room: the floor with height on is the floor with it off, plus the heights.
+
+#### Height before the layout
 
 Set to run before the layout, it first makes the ground, a function of the position alone, from integer hashes on a lattice two grid cells wide and a polynomial smoothstep (*hills*: between $0$ and the relief; *descent*: the ground falls from one end of the world to the other along its longer side). The generator then refuses any corridor between two rooms whose ground heights differ by more than $s\,\ell(e)$, so steep ground is a natural barrier and the floor changes. When the layout is done, the rooms stand at the ground height at their centres, and the same largest legal function below those targets lowers a room wherever a junction, or a corridor the generator did not check, would break the rule. The measures give the most a room was lowered (`lowered`). Corridors are straight ramps between the heights of their ends and ignore the ground in between. How often the floor stays valid depends on the layout, the relief and the slope: the corridors of the binary partition are forced, so a harsh ground fails it most. The validator checks the rule (E1) and the measures give the range and the steepest and the mean slope. With the layer off, nothing about it is in the Λ or in the floor.
 
 ### Water and humidity
 
+#### Where the water goes
+
 The `environment.water` layer needs the height layer and runs after the layout, so it moves no room and changes no height. Every node of $H$ drains to its lowest strictly lower neighbour (the lowest index on a tie). A node with none is a *sink*, and the nodes that drain to a sink are its *basin*. `sources` rooms, drawn from a stream of their own and weighted toward high ground, each pour a volume $q=\text{flow}\cdot\bar a$ into the basin they stand in, with $\bar a$ the mean area of a room.
+
+#### How much a basin holds
 
 A basin holds water up to its lowest saddle, $S=\min\max(h_u,h_v)$ over the corridors $\{u,v\}$ that leave it. For a set of nodes sorted by height, the water of volume $V$ stands at the level $L$ where
 
@@ -386,9 +420,13 @@ $$
 
 with $a_i$ the area of node $i$ (a room's area, a junction's corridor width squared); it is solved with prefix sums and one division. What a basin cannot hold crosses its saddle into the next basin. If that basin already stands as high as the saddle, the two merge into one and a single level is solved for both. The surface at a node is $\max(h_i,L)$. Nothing is lost: the water held equals the water poured.
 
+#### Humidity and its checks
+
 Humidity is a number from $0$ to $1$ per node: $1$ at a node under water, then $\max\bigl(0,\,1-d/\text{reach}\bigr)$ with $d$ the distance along the corridors to the nearest wet node. It comes from the water alone; the depth of the floor plays no part. The validator checks (E2) that no surface lies below its floor, that the water held is the water poured, and that a wet node's surface is never above a neighbour's. The water runs only after the layout: a pool as an obstacle for the rooms would need the water on the continuous ground, and is not implemented.
 
 ### Temperature and climate
+
+#### The temperature of a node
 
 The `environment.climate` layer needs the height layer, reads the water layer when it is on, and runs after the layout: it moves nothing and changes no height or water. The temperature of a node $i$ in degrees Celsius is
 
@@ -398,9 +436,13 @@ $$
 
 with $T_{mean}$ and $\sigma$ the mean and the swing of the climate (cold $-2$ and $14$, temperate $12$ and $10$, hot $28$ and $8$), $g$ the gradient in degrees per hundred units of depth, $\delta_i$ the depth below the highest ground in hundreds of units, $\varsigma\in[-1,1]$ the season (winter to summer), $o_i\in[0,1]$ the openness to the surface and $u_i$ the humidity, which takes up to half of the surface's swing away from a node under water.
 
+#### Openings to the surface
+
 The entrance is an opening to the surface, and so are `openings` more rooms, drawn from a stream of their own and weighted toward high ground. The openness is $1$ at an opening and falls linearly with the distance along the corridors to the nearest opening, to $0$ at `reach`, in the same way as humidity falls from the water. With the season at $0$ and no water, the floor only warms with depth. The validator checks (E3) that the temperature of every node is the one this formula gives for its depth, openness and humidity, and that the openness lies between $0$ and $1$. The measures give the coldest, the hottest and the mean temperature of the rooms, and the number of openings. A snapshot, not a simulation: the season is a setting, and time does not pass.
 
 ### Light and placement
+
+#### How light travels
 
 The `environment.light` layer gives every node an intensity $I$ from $0$ to $1$ and runs after the layout, so it moves nothing and needs no other layer (it uses the heights, when there are any, to place sources on high or low ground). A source has a power $P$: the sun at an opening to the surface, and the power of each direct source. The sun is `daylight` times a curve of the hour $t$,
 
@@ -416,19 +458,31 @@ $$
 
 solved by sweeps in the order of the corridors. Every $\tau_e<1$, so a cycle never adds light and the sweeps converge. The validator checks (E4) that every intensity lies from $0$ to $1$, that no node is dimmer than what a neighbour lets through or than the source it holds, and that every direct source gives its power.
 
+#### Placing the sources
+
 The openings are the entrance and `openings` rooms more, drawn from the higher ground. The direct sources are drawn with a *placement*, a weight for each room from which rooms are drawn without repeats, from the stream of the layer: anywhere; nearer to the entrance (weight $1/(1+k)$ with $k$ the corridors from it); farther from it ($1+k$); only on the main path; only in dead ends; on high ground; on low ground. A placement that fits no room of the floor at all falls back to anywhere; once rooms fit and are all taken or excluded, fewer than asked are placed. The same placements are what events will use.
 
 ### Events
 
+#### Kinds and placement
+
 The `environment.events` layer scatters kinds of event that you name over the floor, after the layout, moving nothing. It decides nothing about what an event is or does: it says in which rooms each one happens. A kind has a name, a count, a *placement* (the distribution of the previous section: anywhere, near or far from the entrance, on the main path, in dead ends, on high or low ground), and limits: a zone of the map (when zones are on), the fewest corridors between two occurrences of the kind (`minGap`), and keeping off the entrance and the exit. With `exclusive`, a room holds at most one event of any kind. Kinds are placed in the order of the list, each occurrence drawn from the stream of the layer among the rooms the placement and the limits leave; when none is left, fewer than the count are placed, and the measures say how many are missing.
 
+#### Conditions on the layers
+
 A kind can also carry *conditions*: limits on what the layers before it computed. A condition names a field (the height, the depth of the water, the humidity, the temperature, the light or the level, counted from 1) and a range from `min` to `max`, either left open, and the kind happens only in rooms where every condition holds ("dark rooms", "damp rooms", "the second level"). A condition on a layer that is off is refused by `Params::intent_error`.
+
+#### What the events check
 
 The validator checks (E5) that every occurrence is in a live room, within the count, that no kind repeats a room, keeps its gap and its zone, stays off the entrance and the exit when asked, and that no room holds two kinds when they are exclusive.
 
 ### Stacked levels
 
+#### How the levels are built
+
 `levels.count` stacks several levels in the same world: level 0 is the floor generated for the seed, and level $k$ the floor generated for an integer mix of the seed and $k$, each with the whole pipeline and the same Λ, so nothing leaks from one level to the next and one level is the floor as it always was. No level is moved, and rooms of different levels may overlap in plan. Between two consecutive levels, `levels.stairs` stairs are placed, each where a room of one level and a room of the next overlap most (at least two corridor widths each way, the lowest indices on a tie, no room twice, never an entrance, an exit or a leaf chamber). A stair is an edge of the graph with no doors and no geometry. The entrance is that of level 0 and the exit that of the last level, and the main path is the shortest walk between them over the stairs. Levels need an entrance and an exit; if two consecutive levels have no overlap big enough for a stair they stay unjoined, the validator fails (V7, and V1 over the whole) and `stage` draws again.
+
+#### What the levels check
 
 The validator checks every level alone against all the rules of the floor (so a level's own entrance and exit, and the topology requirements, hold per level), the stairs (V7: they join consecutive levels, at overlapping rooms, none more than asked, one at least) and that every room is reached from the entrance over all of them (V1). The environment layers run once on the whole. A stair has the length $\ell=\text{storey}/s$, with $s$ the steepest slope, so a whole storey is always within the slope; with Height on, each level's targets stand one `storey` above the last. Height before the layout is not available with several levels.
 
@@ -436,9 +490,13 @@ The validator checks every level alone against all the rules of the floor (so a 
 
 The `zones` parameter cuts the world into $k$ strips along its longer side, $k$ being `zones.count` (two at least, and no more than half the longer side in cells, four at most, so each strip stays two cells wide or more). Zoning is independent of the layout and of the topology profile. The zone of a point is a pure function of the point and of Λ, so it draws nothing from the generator and a floor without zones draws what it always drew.
 
-**Style.** Every zone favours one shape class: the classes with a positive weight, in turn. When a room's class is drawn, the weight of its zone's class is multiplied by 6. The room's zone is that of its centre. This holds in the grid (both in the first draw and in the homophily sweeps), in Growth and in the binary partition. Turning zones on with rectangles as the only class gives the weights a mix, so that the zones can look different.
+#### Style across zones
 
-**Bottleneck.** With `zones.bottleneck` and a layout that places rooms in free space (Growth or the binary partition), neighbouring zones are joined by exactly one corridor, so removing it splits the floor. In Growth each zone grows inside its strip, from a room of generation 0, and when it has its share of the rooms one short corridor lands a room in the next strip; the zones are then the clumps of the islands mechanism, which keeps cycles, and the chambers of dead ends, inside a zone. In the binary partition layout the first cuts are the zone boundaries, so each boundary is crossed by one sibling join. The grid only gets the style: its tree is not built zone by zone. Independent routes to the exit are left out with a bottleneck, as with several islands. Ring, Hub and wings and Spine with detours cross every boundary, so `Params::intent_error` rejects a bottleneck with them; their zones are style only.
+Every zone favours one shape class: the classes with a positive weight, in turn. When a room's class is drawn, the weight of its zone's class is multiplied by 6. The room's zone is that of its centre. This holds in the grid (both in the first draw and in the homophily sweeps), in Growth and in the binary partition. Turning zones on with rectangles as the only class gives the weights a mix, so that the zones can look different.
+
+#### Bottleneck between zones
+
+With `zones.bottleneck` and a layout that places rooms in free space (Growth or the binary partition), neighbouring zones are joined by exactly one corridor, so removing it splits the floor. In Growth each zone grows inside its strip, from a room of generation 0, and when it has its share of the rooms one short corridor lands a room in the next strip; the zones are then the clumps of the islands mechanism, which keeps cycles, and the chambers of dead ends, inside a zone. In the binary partition layout the first cuts are the zone boundaries, so each boundary is crossed by one sibling join. The grid only gets the style: its tree is not built zone by zone. Independent routes to the exit are left out with a bottleneck, as with several islands. Ring, Hub and wings and Spine with detours cross every boundary, so `Params::intent_error` rejects a bottleneck with them; their zones are style only.
 
 ## 9. Topology profiles
 
@@ -460,7 +518,7 @@ Let $\Phi(H)$ be the vector of metrics, for example
 
 $$
 \Phi(H)=
-(\beta,\ g(H),\ \lambda_H(s,t),\ d_{room}(s,t),\ d_{geom}(s,t),\
+(\beta,\; g(H),\; \lambda_H(s,t),\; d_{room}(s,t),\; d_{geom}(s,t),\;
 \text{bridges},\text{articulations},\text{degrees},\text{branches}).
 $$
 
@@ -474,7 +532,9 @@ where $\rho_i$ penalizes the distance from the target. The mandatory constraints
 
 ### 9.1 Example profiles
 
-**Spine with optional wings.** We choose a main path $P$ from $s$ to $t$. We remove the vertices of $P$ from $H$ and examine each remaining component $C$. We define its neighborhood on the spine by
+#### Spine with optional wings
+
+We choose a main path $P$ from $s$ to $t$. We remove the vertices of $P$ from $H$ and examine each remaining component $C$. We define its neighborhood on the spine by
 
 $$
 \partial_P C=\{e\in E:e\text{ has one end in }C\text{ and the other in }V(P)\}.
@@ -482,17 +542,29 @@ $$
 
 If $|\partial_P C|=1$, $C$ is a simple side branch: a single edge links the component to the spine. If $|\partial_P C|\geq2$, $C$ offers a detour that returns to the spine — a shortcut or cycle, not a simple branch. We count edges, not just contact vertices: two parallel passages to the same vertex of $P$ already form a second link and must not be classified as a simple branch.
 
-**Two routes to the exit.** Require $\lambda_H(s,t)\geq2$. This guarantees that no single edge is enough to separate entrance and exit.
+#### Two routes to the exit
 
-**Explorable loop.** Require a simple cycle $C\subseteq H$ with at least $L_{loop}$ edges. The condition $\beta\geq1$ alone would allow the only cycle to be very small.
+Require $\lambda_H(s,t)\geq2$. This guarantees that no single edge is enough to separate entrance and exit.
 
-**Hub.** Require a room or junction $h$ with degree $d(h)\geq d_{hub}$, or favor a degree distribution that concentrates several options in one region.
+#### Explorable loop
 
-**Ring.** The `ring` profile plants $n=2\max(h,2)$ rooms on an ellipse round the middle of the world, with $h$ the value of `exitMinHops`. The entrance is the room at the north, the rooms follow clockwise and the last one is joined back to the entrance, so the ring is the floor's only cycle and its girth is $n$. The exit is the room opposite the entrance, $n/2\geq h$ hops away by either way round, so it has two independent routes and needs `exitDoors` of at least 2. The inner half of the ellipse is a court that no room, corridor or leaf chamber may enter, and no further corridors are added, because they would cross it. Ordinary growth hangs the remaining rooms off the outside of the ring. The profile needs Growth starting at the north border, an entrance and an exit and one island; `Params::intent_error` names what is missing, and the ring must fit round the world. Cross passages between opposite rooms are not implemented.
+Require a simple cycle $C\subseteq H$ with at least $L_{loop}$ edges. The condition $\beta\geq1$ alone would allow the only cycle to be very small.
 
-**Hub and wings.** The `hubAndWings` profile starts in a hall two cells wide at the centre of the world, which is the entrance, and grows $w$ wings from it, $w$ being the hub degree asked for, from three to four. Each wing is a chain of rooms placed one after another, rooted at the hub through a door of its own. The first wing is the route to the exit: it has $h$ rooms, with $h$ the value of `exitMinHops`, and its last room is the exit. Wing $i$, counting from 0, has $\max(1,h-i)$ rooms, so the wings differ in depth. Wing rooms are reserved: no corridor is added between wings, so each stays a dead end, and the remaining rooms hang off the hub and the route to the exit. The profile needs Growth starting at the centre, an entrance and an exit and one island.
+#### Hub
 
-**Intentional bottleneck.** Require a bridge or articulation at a specified stretch of the main path. This concentrates the route between entrance and exit in one stretch.
+Require a room or junction $h$ with degree $d(h)\geq d_{hub}$, or favor a degree distribution that concentrates several options in one region.
+
+#### Ring
+
+The `ring` profile plants $n=2\max(h,2)$ rooms on an ellipse round the middle of the world, with $h$ the value of `exitMinHops`. The entrance is the room at the north, the rooms follow clockwise and the last one is joined back to the entrance, so the ring is the floor's only cycle and its girth is $n$. The exit is the room opposite the entrance, $n/2\geq h$ hops away by either way round, so it has two independent routes and needs `exitDoors` of at least 2. The inner half of the ellipse is a court that no room, corridor or leaf chamber may enter, and no further corridors are added, because they would cross it. Ordinary growth hangs the remaining rooms off the outside of the ring. The profile needs Growth starting at the north border, an entrance and an exit and one island; `Params::intent_error` names what is missing, and the ring must fit round the world. Cross passages between opposite rooms are not implemented.
+
+#### Hub and wings
+
+The `hubAndWings` profile starts in a hall two cells wide at the centre of the world, which is the entrance, and grows $w$ wings from it, $w$ being the hub degree asked for, from three to four. Each wing is a chain of rooms placed one after another, rooted at the hub through a door of its own. The first wing is the route to the exit: it has $h$ rooms, with $h$ the value of `exitMinHops`, and its last room is the exit. Wing $i$, counting from 0, has $\max(1,h-i)$ rooms, so the wings differ in depth. Wing rooms are reserved: no corridor is added between wings, so each stays a dead end, and the remaining rooms hang off the hub and the route to the exit. The profile needs Growth starting at the centre, an entrance and an exit and one island.
+
+#### Intentional bottleneck
+
+Require a bridge or articulation at a specified stretch of the main path. This concentrates the route between entrance and exit in one stretch.
 
 These requirements can coexist. For example, a profile can require a long spine, two branches with rewards and two alternative routes in the final stretch.
 
