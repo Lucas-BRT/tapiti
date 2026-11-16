@@ -64,32 +64,37 @@ cargo run --release
 
 Pick a layout (grid, or growth, where rooms grow one from another) and a size (small, medium, large or huge) in the top bar, next to the seed and the Generate button. Change the seed and edit any parameter: the floor is generated again a moment after each change. A very large floor can be stopped with the Cancel button (or <kbd>Esc</kbd>), and the floor on the screen stays.
 
-### The side panel
+### The three columns
 
-The side panel has three tabs:
+The window has three columns:
 
-- **Design**: the layout, the exploration intent and the environment layers.
-- **Advanced**: every parameter, one collapsible group each, with the number of changed parameters in the title. A search box opens the groups that have a match. The grid, the leaf chambers and, for growth, where it starts are in their group here.
-- **Analysis**: charts and plain explanations of what the floor is.
+- **Parameters**, on the left: the layout, the exploration intent and the environment layers first, then every other group, one bar each. A bar says how many settings the group holds and how many of them differ from the size's defaults. A setting that differs is marked in amber, and its `×` puts the default back. One filter searches every parameter.
+- **The map**, in the middle: rulers numbered in grid cells, the pointer in cells and the room under it in the strip below the plan, and a click picks a room.
+- **Reading**, on the right: the rules V1 to V5, the measures of the floor, the shapes, the doors per room and the phases of the generation. The longer explanation of a line is on hover. A narrow window hides this column; the Reading button brings it back.
 
-### Menus and the status bar
+### The command line
+
+At the foot of the window: `seed N`, `size S|M|L|XL`, `step ±N`, `random`, `reset`, `layer NAME`, `filter TEXT` and `group NAME`. <kbd>:</kbd> or <kbd>Ctrl</kbd>+<kbd>K</kbd> goes to it.
+
+### Menus and appearance
 
 The menu bar has:
 
 - **File**: open and save a Λ as a JSON file, copy the JSON, copy the floor as SVG, quit.
 - **Edit**: reset all to the size.
-- **View**: the theme.
+- **View**: the appearance (the system's, light or dark; the system's is the default) and Reduce motion.
 - **Tools**: the guided experiments and the JSON editor, in a window.
 - **Help**: the shortcuts.
 
-The status bar shows how many parameters changed, with a Reset.
+On the right of the same bar are the seed, the number of draws, the time of the stage, a hash of the seed and Λ (two windows with the same hash show the same floor) and V1 to V5. The Comfortable and Compact button changes the spacing.
 
 ### Shortcuts and the map
 
 - <kbd>Alt</kbd>+<kbd>1</kbd> to <kbd>4</kbd> switch the size.
 - <kbd>Alt</kbd>+<kbd>R</kbd> draws a random seed.
 - <kbd>Alt</kbd>+<kbd>←</kbd> and <kbd>→</kbd> step the seed.
-- On the map, drag to pan, scroll to zoom, double-click to fit.
+- <kbd>/</kbd> goes to the filter; <kbd>Tab</kbd> and <kbd>Shift</kbd>+<kbd>Tab</kbd> move between controls, <kbd>Enter</kbd> opens a group, <kbd>↑</kbd> and <kbd>↓</kbd> change a focused number, <kbd>Esc</kbd> leaves a field.
+- On the map, drag to pan, scroll to zoom, double-click to fit. A new seed or size is revealed from the entrance; View > Reduce motion shows it at once.
 
 ## The website and the lab
 

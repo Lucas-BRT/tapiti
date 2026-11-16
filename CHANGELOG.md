@@ -4,12 +4,19 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### Removed
+
+- The 3D walk on the landing page, the lab's 3D view, three.js and the hidden `/leaf` page; the `TAPITI_SCENE` switch; Varela Round, Source Serif 4 and JetBrains Mono; the cream and pink theme; the unused sketch `tapiti-real` of the brand folder.
+
 ### Fixed
 
 - `install.sh --verify` with a GitHub CLI older than 2.49 (no `gh attestation`) now says that it needs 2.49 or newer, before installing anything, instead of reporting that the provenance could not be verified.
 
 ### Changed
 
+- A new look for the desktop app, the lab, the landing page and the docs, from one set of tokens: graphite or cool paper (light and dark, the system's by default, and a switch), amber for what you changed or picked, cyan for measures, square corners and hairlines, IBM Plex for the type, text at 7:1 on every surface (tested). The pink stays in the logo only.
+- The desktop app: the tabs are gone. The parameters are a column on the left (the layout, the intent and the environment first, with the count of changed settings in each group and a mark on each changed one), the reading of the floor a column on the right (rules, measures, shapes, doors, phases; the explanations are on hover), and a command line at the foot (`seed`, `size`, `step`, `random`, `reset`, `layer`, `filter`, `group`). The plan has rulers numbered in grid cells, a strip with the pointer and the room under it, a room can be picked, and a new seed or size is revealed from the entrance (View > Reduce motion). Spacing is compact or comfortable. The window opens maximized, follows the system's colour scheme (read from the desktop portal, since egui cannot on Wayland) and has a title bar that follows the theme (winit's Adwaita frame; nine more crates in the lockfile).
+- The landing page is a bench that is read: the groups of parameters, the hero plan with rulers, its rules and measures, and a row that opens its seed in the lab, then plates of the layouts, the intents and the layers, all drawn by the generator. The docs group their pages in the menu and break the long sections into subsections.
 - The app icon is the rabbit head in cream on a rounded pink tile with transparent corners, instead of a black square that looked like a hole in a launcher (Linux icon, favicon, `.exe`, `Tapiti.app`).
 
 ## [0.1.1] - 2026-11-13

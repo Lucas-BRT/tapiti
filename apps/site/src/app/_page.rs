@@ -14,7 +14,7 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 const INSTALL_COMMAND: &str =
     "curl -fsSL https://raw.githubusercontent.com/Lucas-BRT/tapiti/main/install.sh | bash";
 
-/// One plan on the sheet: the floor on a grid, and under it a title block (an index cell, a title, the facts).
+/// One plate of the page: the floor on a grid, and under it a one-line caption (an index, a title, the facts).
 #[component]
 async fn plan(cx: &Cx, id: String, title: String, fig: &Figure, meta: String) -> Result<impl View> {
     let svg = floor::TrustedHtml(fig.svg.0.clone());
