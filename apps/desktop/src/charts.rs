@@ -140,11 +140,12 @@ pub fn stacked(ui: &mut Ui, parts: &[Bar]) {
         );
     }
     ui.add_space(4.0);
+    // One item per row: two columns of long labels set in a wide face would make the reading column as wide as the map.
     Grid::new("stacked-legend")
-        .num_columns(2)
+        .num_columns(1)
         .spacing([16.0, 4.0])
         .show(ui, |ui| {
-            for (i, part) in parts.iter().enumerate() {
+            for part in parts {
                 ui.horizontal(|ui| {
                     let (dot, _) = ui.allocate_exact_size(Vec2::splat(10.0), Sense::hover());
                     ui.painter().rect_filled(dot, 3.0, part.color);
@@ -155,9 +156,7 @@ pub fn stacked(ui: &mut Ui, parts: &[Bar]) {
                     };
                     ui.label(format!("{} · {share:.0}%", part.label));
                 });
-                if i % 2 == 1 {
-                    ui.end_row();
-                }
+                ui.end_row();
             }
         });
 }

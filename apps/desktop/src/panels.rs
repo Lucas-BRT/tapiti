@@ -1,11 +1,12 @@
 //! The window's layout: top bar, bottom bar, the tabbed side panel and the map.
 
 use crate::analysis::analysis_tab;
+use crate::command::{self, Command};
 use crate::map::{self, Palette, Xf};
 use crate::params_ui::{field_row, FieldKind, ParamField};
 use crate::pick::map_object_at;
 use crate::theme;
-use crate::{get_path, set_path, size_description, size_label, App, Experiment, Tab};
+use crate::{get_path, set_path, size_description, size_label, App, Experiment};
 use eframe::egui::{
     self, Align, Button, Color32, CursorIcon, Frame, Grid, Layout, Panel, RichText, ScrollArea,
     Sense, Stroke, TextEdit, Ui, Vec2,
@@ -37,8 +38,11 @@ fn primary(ui: &Ui, text: &str) -> Button<'static> {
 pub fn menu_bar(app: &mut App, ui: &mut Ui) {
     Panel::top("menu")
         .frame(theme::bar_frame(ui))
+        .exact_size(theme::BAR_HEIGHT)
         .show(ui, |ui| {
             egui::MenuBar::new().ui(ui, |ui| {
+                theme::brand(ui);
+                ui.add_space(14.0);
                 ui.menu_button("File", |ui| {
                     if ui.button("Open Λ…").clicked() {
                         ui.close();
@@ -133,8 +137,64 @@ pub fn menu_bar(app: &mut App, ui: &mut Ui) {
                         ui.close();
                     }
                 });
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    status_readout(app, ui);
+                });
             });
         });
+}
+
+/// FNV-1a of a byte string, as eight hex digits.
+fn fnv1a(bytes: &[u8]) -> String {
+    let mut h: u32 = 0x811c_9dc5;
+    for b in bytes {
+        h ^= u32::from(*b);
+        h = h.wrapping_mul(16_777_619);
+    }
+    format!("{h:08x}")
+}
+
+/// The status line of the menu bar, from the right: the rules, then what produced the floor on the screen. The hash is of the seed and
+/// the full Λ, so two windows that show the same hash show the same floor.
+fn status_readout(app: &App, ui: &mut Ui) {
+    let c = theme::of(ui);
+    let Some(g) = &app.generated else {
+        ui.label(muted(ui, "generating"));
+        return;
+    };
+    let rules = ["V1", "V2", "V3", "V4", "V5"];
+    if g.violations.is_empty() {
+        ui.label(RichText::new("valid").color(c.text_muted));
+        for rule in rules.iter().rev() {
+            ui.label(RichText::new(*rule).color(c.success));
+        }
+    } else {
+        ui.label(RichText::new("violations").color(c.error));
+        for rule in rules.iter().rev() {
+            let broken = g.violations.iter().any(|v| v.starts_with(rule));
+            ui.label(RichText::new(*rule).color(if broken { c.error } else { c.success }));
+        }
+    }
+    ui.separator();
+    let key = format!(
+        "{}{}",
+        g.seed,
+        serde_json::to_string(&app.params).unwrap_or_default()
+    );
+    for (name, value) in [
+        ("hash", fnv1a(key.as_bytes())),
+        ("stage", format!("{:.1} ms", g.elapsed_ms)),
+        ("draws", g.draws.to_string()),
+        ("seed", g.seed.to_string()),
+    ] {
+        ui.label(
+            RichText::new(value)
+                .font(egui::FontId::new(12.0, theme::medium()))
+                .color(c.text),
+        );
+        ui.label(muted(ui, name));
+        ui.add_space(6.0);
+    }
 }
 
 pub fn shortcuts_window(app: &mut App, ctx: &egui::Context) {
@@ -158,11 +218,9 @@ pub fn shortcuts_window(app: &mut App, ctx: &egui::Context) {
 pub fn top_bar(app: &mut App, ui: &mut Ui) {
     Panel::top("top")
         .frame(theme::bar_frame(ui))
+        .exact_size(theme::BAR_HEIGHT + 4.0)
         .show(ui, |ui| {
-            ui.add_space(4.0);
-            ui.horizontal(|ui| {
-                theme::brand(ui);
-                ui.separator();
+            ui.horizontal_centered(|ui| {
                 size_picker(app, ui);
                 ui.separator();
                 ui.label("Seed");
@@ -222,6 +280,32 @@ pub fn top_bar(app: &mut App, ui: &mut Ui) {
                 }
                 ui.with_layout(egui::Layout::right_to_left(Align::Center), |ui| {
                     let dark = ui.visuals().dark_mode;
+                    let reading = reading_visible(app, ui);
+                    if ui
+                        .selectable_label(reading, "Reading")
+                        .on_hover_text("Show or hide the reading of the floor beside the map")
+                        .clicked()
+                    {
+                        app.reading_open = Some(!reading);
+                    }
+                    let comfortable = app.density == theme::Density::Comfortable;
+                    if ui
+                        .button(if comfortable {
+                            "Compact"
+                        } else {
+                            "Comfortable"
+                        })
+                        .on_hover_text("Switch between compact and comfortable spacing")
+                        .clicked()
+                    {
+                        app.density = if comfortable {
+                            theme::Density::Compact
+                        } else {
+                            theme::Density::Comfortable
+                        };
+                        app.density.save();
+                        theme::apply_density(ui.ctx(), app.density);
+                    }
                     if ui
                         .button(if dark { "Light" } else { "Dark" })
                         .on_hover_text("Switch between the light theme and the dark theme")
@@ -236,16 +320,31 @@ pub fn top_bar(app: &mut App, ui: &mut Ui) {
                     }
                 });
             });
-            ui.add_space(4.0);
         });
 }
 
-pub fn bottom_bar(app: &mut App, ui: &mut Ui) {
+/// The command line: a prompt, what the last command said, and on the right the thread count and the changed settings.
+pub fn command_bar(app: &mut App, ui: &mut Ui) {
     Panel::bottom("bottom")
         .frame(theme::bar_frame(ui))
+        .exact_size(theme::BAR_HEIGHT + 4.0)
         .show(ui, |ui| {
-            ui.horizontal(|ui| {
-                ui.label(muted(ui, &app.status));
+            let c = theme::of(ui);
+            ui.horizontal_centered(|ui| {
+                ui.label(RichText::new("›").color(c.accent));
+                let right = 420.0;
+                let field = ui.add(
+                    TextEdit::singleline(&mut app.command)
+                        .id_salt("command")
+                        .frame(egui::Frame::NONE)
+                        .hint_text(command::HELP)
+                        .desired_width((ui.available_width() - right).max(160.0)),
+                );
+                if field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                    let line = std::mem::take(&mut app.command);
+                    run_command(app, &line);
+                    field.request_focus();
+                }
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     ui.label(muted(ui, format!("{} threads", par::threads())));
                     if !app.changed.is_empty() {
@@ -257,11 +356,39 @@ pub fn bottom_bar(app: &mut App, ui: &mut Ui) {
                         {
                             app.reset_all();
                         }
-                        ui.label(muted(ui, format!("{} changed", app.changed.len())));
+                        ui.label(
+                            RichText::new(format!("{} changed", app.changed.len())).color(c.accent),
+                        );
+                        ui.separator();
                     }
+                    ui.add(egui::Label::new(muted(ui, &app.status)).truncate());
                 });
             });
         });
+}
+
+/// Acts on one line typed in the command line; the answer goes to the status text.
+fn run_command(app: &mut App, line: &str) {
+    match command::parse(line) {
+        Ok(Command::Seed(n)) => {
+            app.set_seed(n);
+            app.status = format!("Seed {n}.");
+        }
+        Ok(Command::Size(size)) => {
+            app.set_size(size);
+            app.status = format!("Size {}.", size_label(size).to_lowercase());
+        }
+        Ok(Command::Step(n)) => {
+            let seed = (i64::from(app.seed) + n).clamp(0, i64::from(u32::MAX)) as u32;
+            app.set_seed(seed);
+            app.status = format!("Seed {seed}.");
+        }
+        Ok(Command::Random) => app.random_seed(),
+        Ok(Command::Reset) => app.reset_all(),
+        Ok(Command::Help) => app.status = command::HELP.into(),
+        Err(message) if message.is_empty() => {}
+        Err(message) => app.status = message,
+    }
 }
 
 /// Size changes keep the exploration intent; geometry remains in the side panel.
@@ -519,67 +646,84 @@ fn group_applies(id: &str, layout: tapiti_core::params::Layout) -> bool {
     id != "growth" || layout == tapiti_core::params::Layout::Growth
 }
 
-pub fn side_panel(app: &mut App, ui: &mut Ui) {
-    Panel::right("side")
+/// The first width of a side panel: a share of the window, so the canvas keeps room on a small window.
+fn panel_width(ui: &Ui, share: f32, min: f32, max: f32) -> f32 {
+    (ui.ctx().content_rect().width() * share).clamp(min, max)
+}
+
+/// The left column: the layout, the intent and the environment layers first, then every parameter group, under one filter.
+pub fn tree_panel(app: &mut App, ui: &mut Ui) {
+    Panel::left("tree")
         .frame(theme::panel_frame(ui))
-        .default_size(400.0)
-        .size_range(340.0..=600.0)
+        .default_size(panel_width(ui, 0.32, 300.0, 380.0))
+        .size_range(260.0..=460.0)
         .show(ui, |ui| {
-            ui.add_space(4.0);
-            // Intent and tuning share one panel; analysis keeps the generated result.
-            ui.scope(|ui| {
-                ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
-                ui.horizontal(|ui| {
-                    for (tab, title) in [
-                        (Tab::Settings, "Design"),
-                        (Tab::Advanced, "Advanced"),
-                        (Tab::Analysis, "Analysis"),
-                    ] {
-                        if theme::tab(ui, title, app.tab == tab).clicked() {
-                            app.tab = tab;
-                        }
-                    }
-                });
-            });
             ui.add_space(theme::GAP);
             // The clear button first, from the right, and the box takes what is left: a box sized as "the width left minus a guess" is
             // a few pixels too wide, and in a side panel (which grows to fit its content) that made the panel widen at every repaint.
             // (Inside a `horizontal`, so the right-to-left layout takes the height of one row, not what is left of the panel.)
-            // The search is for the parameters only.
-            if app.tab == Tab::Advanced {
-                ui.horizontal(|ui| {
-                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        if ui
-                            .add_enabled(!app.filter.is_empty(), Button::new("×"))
-                            .on_hover_text("Clear the search")
-                            .clicked()
-                        {
-                            app.filter.clear();
-                        }
-                        ui.add(
-                            TextEdit::singleline(&mut app.filter)
-                                .hint_text("Search every parameter…")
-                                .desired_width(ui.available_width()),
-                        );
-                    });
+            ui.horizontal(|ui| {
+                ui.add_space(theme::PAD);
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    ui.add_space(theme::PAD);
+                    if ui
+                        .add_enabled(!app.filter.is_empty(), Button::new("×"))
+                        .on_hover_text("Clear the filter")
+                        .clicked()
+                    {
+                        app.filter.clear();
+                    }
+                    ui.add(
+                        TextEdit::singleline(&mut app.filter)
+                            .id_salt("filter")
+                            .hint_text("Filter every parameter…")
+                            .desired_width(ui.available_width()),
+                    );
                 });
-            }
-            ui.separator();
-            // Each tab keeps its own scroll position and starts at the top: with one shared area, leaving a long tab (the Analysis, scrolled
-            // down) for a short one left the content to slide back up to fit.
-            let mut area = ScrollArea::vertical()
-                .id_salt(app.tab as u8)
-                .auto_shrink(false);
-            if app.generated.is_some() {
-                if let Some(offset) = app.scroll_to.take() {
-                    area = area.vertical_scroll_offset(offset);
-                }
-            }
-            area.show(ui, |ui| match app.tab {
-                Tab::Settings => design_tab(app, ui),
-                Tab::Advanced => advanced_tab(app, ui),
-                Tab::Analysis => analysis_tab(app, ui),
             });
+            ui.add_space(theme::GAP);
+            let line = theme::of(ui).border_variant;
+            let r = ui.max_rect();
+            ui.painter()
+                .hline(r.x_range(), ui.cursor().top(), Stroke::new(1.0, line));
+            // One scroll position for the tree; a group named by `TAPITI_TAB` scrolls itself into view.
+            let mut area = ScrollArea::vertical().id_salt("tree").auto_shrink(false);
+            if let Some(offset) = app.scroll_to.take() {
+                area = area.vertical_scroll_offset(offset);
+            }
+            area.show(ui, |ui| {
+                if app.filter.trim().is_empty() {
+                    design_tab(app, ui);
+                }
+                advanced_tab(app, ui);
+            });
+        });
+}
+
+/// Whether the reading column is on screen: the user's choice, else on when the window is wide enough to leave the map room.
+fn reading_visible(app: &App, ui: &Ui) -> bool {
+    app.reading_open
+        .unwrap_or_else(|| ui.ctx().content_rect().width() >= 1180.0)
+}
+
+/// The right column: what the generated floor is, in charts and plain words, beside the map. Its width is fixed (a share of the window):
+/// a column that grows to fit its content would take the map's room.
+pub fn reading_panel(app: &mut App, ui: &mut Ui) {
+    if !reading_visible(app, ui) {
+        return;
+    }
+    Panel::right("reading")
+        .frame(theme::panel_frame(ui))
+        .resizable(false)
+        .default_size(panel_width(ui, 0.27, 300.0, 380.0))
+        .show(ui, |ui| {
+            ScrollArea::vertical()
+                .id_salt("reading")
+                .auto_shrink(false)
+                .show(ui, |ui| {
+                    ui.add_space(theme::GAP);
+                    analysis_tab(app, ui);
+                });
         });
 }
 
@@ -947,19 +1091,20 @@ fn design_tab(app: &mut App, ui: &mut Ui) {
     layout_card(app, ui);
     intent_card(app, ui);
     environment_card(app, ui);
-    ui.add_space(theme::GAP);
-    ui.label(muted(
+    theme::note(
         ui,
-        "Everything else that shapes the space, rooms and connections is in the Advanced tab.",
-    ));
+        muted(
+            ui,
+            "Everything else that shapes the space, rooms and connections is in the groups below.",
+        ),
+    );
 }
 
 /// Every parameter group the Design tab does not already show, collapsed; the search finds any parameter, shown elsewhere or not.
 fn advanced_tab(app: &mut App, ui: &mut Ui) {
     let needle = app.filter.trim().to_lowercase();
     if needle.is_empty() {
-        ui.label(muted(ui, "Shape the space, rooms and connections."));
-        ui.add_space(theme::GAP);
+        theme::note(ui, muted(ui, "Shape the space, rooms and connections."));
     }
     let groups = std::mem::take(&mut app.groups);
     let current = serde_json::to_value(&app.params).unwrap_or(Value::Null);
@@ -1004,18 +1149,17 @@ fn advanced_tab(app: &mut App, ui: &mut Ui) {
                 fields.iter().any(|shown| shown.path == f.path) && app.changed.contains(&f.path)
             })
             .count();
-        let title = if changed > 0 {
-            format!("{} · {changed}", group.title.as_str())
-        } else {
-            group.title.as_str().to_string()
-        };
         let focused = focus.as_deref() == Some(group.id.as_str());
         let forced = (focused || !needle.is_empty()).then_some(true);
-        let response = egui::CollapsingHeader::new(RichText::new(title).strong())
-            .id_salt(("advanced_group", &group.id))
-            .default_open(false)
-            .open(forced)
-            .show(ui, |ui| {
+        let id = ui.make_persistent_id(("advanced_group", &group.id));
+        let header = theme::group(
+            ui,
+            id,
+            group.title.as_str(),
+            group.fields.len(),
+            changed,
+            forced,
+            |ui| {
                 ui.label(muted(ui, group.intro.as_str()));
                 ui.add_space(4.0);
                 Grid::new(&group.id)
@@ -1034,15 +1178,15 @@ fn advanced_tab(app: &mut App, ui: &mut Ui) {
                 if changed > 0 && ui.small_button("Reset this group").clicked() {
                     reset = Some(group.id.clone());
                 }
-                ui.add_space(6.0);
-            });
+            },
+        );
         if focused {
-            response.header_response.scroll_to_me(Some(Align::TOP));
+            header.scroll_to_me(Some(Align::TOP));
         }
     }
     app.groups = groups;
     if shown == 0 {
-        ui.label(muted(ui, "No parameter matches the search."));
+        theme::note(ui, muted(ui, "No parameter matches the search."));
     }
     if let Some(id) = reset {
         app.reset_group(&id);
@@ -1104,19 +1248,13 @@ pub fn json_window(app: &mut App, ctx: &egui::Context) {
 
 pub fn central(app: &mut App, ui: &mut Ui) {
     egui::CentralPanel::default()
-        .frame(Frame::new().fill(theme::of(ui).panel).inner_margin(10.0))
+        .frame(Frame::new().fill(theme::of(ui).editor).inner_margin(0.0))
         .show(ui, |ui| {
             let (rect, response) =
                 ui.allocate_exact_size(ui.available_size(), Sense::click_and_drag());
             let pal = Palette::new(ui.visuals().dark_mode);
             let painter = ui.painter_at(rect);
-            painter.rect_filled(rect, 10.0, pal.background);
-            painter.rect_stroke(
-                rect,
-                10.0,
-                Stroke::new(1.0, ui.visuals().widgets.noninteractive.bg_stroke.color),
-                egui::StrokeKind::Inside,
-            );
+            painter.rect_filled(rect, 0.0, pal.background);
 
             let Some((min, max)) =
                 (if app.view_mode == crate::ViewMode::Iso && !app.showing_building() {

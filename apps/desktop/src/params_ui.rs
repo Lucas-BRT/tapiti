@@ -14,11 +14,22 @@ pub fn field_row(
     let differs = default.is_some_and(|d| d != current);
     let label = RichText::new(field.label.as_str());
     let label = if differs {
-        label.color(crate::theme::of(ui).accent).strong()
+        label.color(crate::theme::of(ui).accent)
     } else {
         label
     };
-    ui.label(label).on_hover_text(field.help.as_str());
+    // The label takes what the control and the reset leave, and is cut with an ellipsis when it is longer: a column of fixed width keeps
+    // the panel from growing to fit the longest label (Plex Mono is wide). The full label and the help are on hover.
+    // The control column of a group is as wide as its widest control, a drop-down of 100 points, plus the gaps of the grid.
+    let reserve = 126.0 + if differs { 70.0 } else { 0.0 };
+    let label_width = (crate::theme::body_width(ui) - reserve).max(96.0);
+    ui.allocate_ui(
+        egui::vec2(label_width, ui.spacing().interact_size.y),
+        |ui| {
+            ui.add(egui::Label::new(label).truncate())
+                .on_hover_text(format!("{}\n{}", field.label.as_str(), field.help.as_str()));
+        },
+    );
     let next = control(ui, field, current);
     let mut next = next;
     if differs {
@@ -82,6 +93,7 @@ pub fn control(ui: &mut Ui, field: &ParamField, current: &Value) -> Option<Value
                 .find(|(v, _)| *v == text)
                 .map_or(text.as_str(), |(_, n)| n.as_str());
             egui::ComboBox::from_id_salt(&field.path)
+                .width(100.0)
                 .selected_text(shown)
                 .show_ui(ui, |ui| {
                     for (value, name) in options {

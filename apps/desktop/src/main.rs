@@ -9,6 +9,7 @@
 
 mod analysis;
 mod charts;
+mod command;
 mod iso;
 mod map;
 mod panels;
@@ -91,15 +92,6 @@ pub enum BenchmarkKind {
     Batch,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Tab {
-    /// The layout and the exploration intent.
-    Settings,
-    /// Every other parameter group, with the search.
-    Advanced,
-    Analysis,
-}
-
 /// How the floor is shown on the map.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ViewMode {
@@ -142,7 +134,6 @@ pub struct App {
     ctx: egui::Context,
     tx: Sender<(u64, Event)>,
     rx: Receiver<(u64, Event)>,
-    pub tab: Tab,
     pub size: Size,
     pub seed: u32,
     pub seed_draft: String,
@@ -185,12 +176,22 @@ pub struct App {
     pub scroll_to: Option<f32>,
     /// A group of parameters to open and scroll to once (the screenshots of the docs ask for it).
     pub focus_group: Option<String>,
+    /// What is typed in the command line, and what the last command said.
+    pub command: String,
+    /// Compact or comfortable spacing, kept between runs.
+    pub density: theme::Density,
+    /// The reading column: `None` follows the window (shown from 1180 points wide), `Some` is the user's choice.
+    pub reading_open: Option<bool>,
 }
 
 struct Shot {
     path: String,
     frames: u32,
     requested: bool,
+    /// The window size at the last frame and for how many frames it has not changed: a window that is still being resized would give a
+    /// picture of two layouts.
+    size: [f32; 2],
+    still: u32,
 }
 
 impl App {
@@ -206,7 +207,6 @@ impl App {
             ctx: cc.egui_ctx.clone(),
             tx,
             rx,
-            tab: Tab::Settings,
             size: Size::Small,
             seed: 1,
             seed_draft: "1".into(),
@@ -253,6 +253,9 @@ impl App {
             building: BuildingMap::default(),
             groups: params_ui::groups(),
             focus_group: None,
+            command: String::new(),
+            density: theme::Density::saved(),
+            reading_open: None,
             scroll_to: std::env::var("TAPITI_SCROLL")
                 .ok()
                 .and_then(|v| v.parse().ok()),
@@ -260,6 +263,8 @@ impl App {
                 path,
                 frames: 0,
                 requested: false,
+                size: [0.0, 0.0],
+                still: 0,
             }),
         };
         app.pick_from_env();
@@ -359,15 +364,13 @@ impl App {
         {
             self.ctx.set_zoom_factor(zoom);
         }
+        // `TAPITI_TAB=<id of a group>` opens that group of the tree; the other values name what is always on screen now.
         if let Ok(tab) = std::env::var("TAPITI_TAB") {
-            match tab.as_str() {
-                "floor" | "analysis" => self.tab = Tab::Analysis,
-                "design" => self.tab = Tab::Settings,
-                "advanced" | "parameters" => self.tab = Tab::Advanced,
-                id => {
-                    self.tab = Tab::Advanced;
-                    self.focus_group = Some(id.to_string());
-                }
+            if !matches!(
+                tab.as_str(),
+                "floor" | "analysis" | "design" | "advanced" | "parameters"
+            ) {
+                self.focus_group = Some(tab);
             }
         }
         self.refresh_changed();
@@ -379,7 +382,11 @@ impl App {
         let Some(shot) = &mut self.shot else { return };
         ctx.request_repaint();
         shot.frames += 1;
-        if ready && shot.frames > 20 && !shot.requested {
+        let rect = ctx.content_rect();
+        let size = [rect.width(), rect.height()];
+        shot.still = if size == shot.size { shot.still + 1 } else { 0 };
+        shot.size = size;
+        if ready && shot.frames > 20 && shot.still >= 15 && !shot.requested {
             shot.requested = true;
             let path = shot.path.clone();
             ctx.request_screenshot(move |image| {
@@ -949,8 +956,9 @@ impl eframe::App for App {
         self.apply_due(&ctx);
         panels::menu_bar(self, ui);
         panels::top_bar(self, ui);
-        panels::bottom_bar(self, ui);
-        panels::side_panel(self, ui);
+        panels::command_bar(self, ui);
+        panels::tree_panel(self, ui);
+        panels::reading_panel(self, ui);
         panels::central(self, ui);
         panels::shortcuts_window(self, &ctx);
         panels::json_window(self, &ctx);
@@ -984,7 +992,7 @@ fn main() -> eframe::Result {
                     .expect("assets/icon.png is a valid PNG"),
             )
             .with_inner_size([1360.0, 860.0])
-            .with_min_inner_size([960.0, 640.0]),
+            .with_min_inner_size([1000.0, 640.0]),
         ..Default::default()
     };
     eframe::run_native(
