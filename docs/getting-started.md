@@ -83,7 +83,7 @@ use tapiti_core::{
 
 fn main() {
     let params = params_of_size(Size::Medium);
-    // Up to 8 draws: a floor the validator rejects is dug again from a derived seed.
+    // Up to 8 draws: a floor the validator rejects is generated again from a derived seed.
     let staged = stage(42, &params, 8);
     assert!(staged.violations.is_empty());
     println!("{} rooms, {} corridors", staged.d.rooms.len(), staged.d.edges.len());

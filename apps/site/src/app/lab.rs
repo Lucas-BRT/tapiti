@@ -136,7 +136,7 @@ fn field_help(field: &ParamField) -> String {
     with(Metadata::new()
         .title("Lab")
         .description(
-            "Change a parameter and Tapiti digs the floor again, in your browser, with WebAssembly. Every rule of the model is a field you can edit.",
+            "Generate a floor in your browser with WebAssembly. Every parameter of the model is a field you can edit.",
         ))
 )]
 pub async fn page(cx: &Cx) -> Result<impl View> {

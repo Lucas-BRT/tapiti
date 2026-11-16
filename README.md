@@ -4,8 +4,8 @@
 
 # Tapiti
 
-Floors for games and experiments, dug from a seed: rooms, doors and corridors
-that always connect.
+A floor generator written in Rust: rooms, doors and corridors built from a
+seed and checked against a written model.
 
 [![CI](https://github.com/Lucas-BRT/tapiti/actions/workflows/ci.yml/badge.svg)](https://github.com/Lucas-BRT/tapiti/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/tag/Lucas-BRT/tapiti?filter=v*&label=release&sort=semver)](https://github.com/Lucas-BRT/tapiti/releases/latest)
@@ -15,11 +15,10 @@ that always connect.
 
 </div>
 
-Tapiti digs a floor from a seed: rooms of many shapes joined by doors and
-corridors, with a validator that checks the result and measures that tell how
-the floor plays. Pick a seed, a size and a layout, change any parameter, and
-the floor is dug again in a moment. It runs as a desktop app and in the
-browser.
+Tapiti builds a floor from a seed: rooms of many shapes joined by doors and
+corridors, with a validator that checks the result and measures that describe
+the floor. Pick a seed, a size and a layout, change any parameter, and the
+floor is generated again. It runs as a desktop app and in the browser.
 
 ## Features
 

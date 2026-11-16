@@ -1,6 +1,6 @@
 ## The lab: the page itself
 lab_title = The lab
-lab_intro = Pick a size and a seed, change any rule, and the floor is dug again on the spot, in your browser.
+lab_intro = Pick a size and a seed and edit any parameter; the floor is generated again in your browser.
 lab_loading = Loading the generator…
 lab_needs_js = The lab runs the generator in your browser, with WebAssembly, so it needs JavaScript.
 lab_sizes_title = Choose a size
