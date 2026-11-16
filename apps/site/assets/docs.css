@@ -5,6 +5,17 @@
   .docs-nav { position: sticky; top: calc(var(--header-h) + 24px); align-self: start; max-height: calc(100vh - var(--header-h) - 48px); overflow-y: auto; scrollbar-width: thin; }
   .docs-side-title { margin: 28px 0 8px; color: var(--ink-3); font-size: .9rem; font-weight: 700; }
   .docs-nav ul { margin: 0; padding: 0; list-style: none; }
+
+  /* The pages in groups, as rooms on the pink line: a hollow square for each group, its pages hung on the line below it. */
+  .docs-group { position: relative; padding-bottom: 22px; }
+  .docs-group:last-child { padding-bottom: 0; }
+  .docs-group::before { content: ""; position: absolute; left: 6px; top: 12px; bottom: -2px; width: var(--line); border-radius: var(--line); background: var(--accent); }
+  .docs-group:last-child::before { bottom: 6px; }
+  .docs-group-title { position: relative; margin: 0 0 6px; padding-left: 28px; color: var(--ink); font: 400 1.1rem/1.4 var(--font-display); }
+  .docs-group-title::before { content: ""; position: absolute; left: 0; top: .25em; width: 16px; height: 16px; box-sizing: border-box; border: var(--line) solid var(--accent); border-radius: 4px; background: var(--bg); }
+  /* The links start right of the line, so their background never covers it. */
+  .docs-group > ul li a { margin-left: 16px; padding-left: 20px; }
+  .docs-group > ul li a[aria-current]::before { left: 7px; }
   .docs-nav li a { position: relative; display: block; padding: 7px 10px 7px 22px; border-radius: var(--radius-sm); color: var(--ink-2); text-decoration: none; font-size: 1rem; line-height: 1.35; transition: color .15s, background-color .15s; }
   .docs-nav li a:hover { color: var(--ink); background: var(--surface); }
   .docs-nav li a[aria-current] { color: var(--ink); font-weight: 700; background: var(--surface); }
@@ -95,9 +106,14 @@
     .docs-nav { position: static; max-height: none; overflow: visible; }
     .docs-side-title { margin-top: 18px; }
     /* The page list becomes one scrolling row. */
-    .docs-nav ul { display: flex; gap: 4px; overflow-x: auto; margin-inline: calc(-1 * var(--gutter)); padding: 0 var(--gutter) 10px; scrollbar-width: none; }
-    .docs-nav li { flex: none; }
-    .docs-nav li a { padding: 8px 12px 8px 22px; white-space: nowrap; background: var(--surface); }
+    .docs-groups { display: flex; align-items: center; gap: 4px; overflow-x: auto; margin-inline: calc(-1 * var(--gutter)); padding: 0 var(--gutter) 10px; scrollbar-width: none; }
+    .docs-group, .docs-group > ul { display: contents; }
+    .docs-group { padding: 0; }
+    .docs-group::before, .docs-group-title::before { display: none; }
+    .docs-group-title { flex: none; margin: 0; padding: 0 2px 0 14px; color: var(--ink-3); font-size: .95rem; white-space: nowrap; }
+    .docs-group > ul > li { flex: none; }
+    .docs-group > ul li a { margin-left: 0; padding: 8px 12px 8px 22px; white-space: nowrap; background: var(--surface); }
+    .docs-group > ul li a[aria-current]::before { left: 9px; }
     .docs-article { font-size: 17px; }
   }
 }

@@ -60,6 +60,31 @@ const SOURCES: &[Source] = &[
     },
 ];
 
+/// A group of the sidebar: the pages, by what a reader is doing. Every page is in exactly one group (a test checks it).
+pub struct Group {
+    pub id: &'static str,
+    pub slugs: &'static [&'static str],
+}
+
+pub const GROUPS: &[Group] = &[
+    Group {
+        id: "start",
+        slugs: &["getting-started"],
+    },
+    Group {
+        id: "use",
+        slugs: &["desktop", "parameters"],
+    },
+    Group {
+        id: "how",
+        slugs: &["model", "performance"],
+    },
+    Group {
+        id: "project",
+        slugs: &["development", "roadmap"],
+    },
+];
+
 #[derive(Clone, Debug)]
 pub struct TocEntry {
     pub level: u8,
@@ -105,6 +130,21 @@ pub fn docs() -> &'static Docs {
 impl Docs {
     pub fn pages(&self) -> &[Page] {
         &self.pages
+    }
+
+    /// The sidebar: each group with its pages, in the order of [`GROUPS`].
+    pub fn groups(&self) -> Vec<(&'static str, Vec<&Page>)> {
+        GROUPS
+            .iter()
+            .map(|group| {
+                let pages = group
+                    .slugs
+                    .iter()
+                    .filter_map(|slug| self.page(slug))
+                    .collect();
+                (group.id, pages)
+            })
+            .collect()
     }
 
     pub fn page(&self, slug: &str) -> Option<&Page> {
@@ -631,6 +671,27 @@ mod tests {
             }
         }
         assert!(missing.is_empty(), "broken repository links: {missing:?}");
+    }
+
+    #[test]
+    fn every_page_is_in_exactly_one_group() {
+        let mut seen: Vec<&str> = GROUPS
+            .iter()
+            .flat_map(|g| g.slugs.iter().copied())
+            .collect();
+        for slug in &seen {
+            assert!(
+                docs().page(slug).is_some(),
+                "{slug} is in a group but is not a page"
+            );
+        }
+        seen.sort_unstable();
+        let total = seen.len();
+        seen.dedup();
+        assert_eq!(seen.len(), total, "a page is in two groups");
+        for page in docs().pages() {
+            assert!(seen.contains(&page.slug), "{} is in no group", page.slug);
+        }
     }
 
     #[test]

@@ -12,10 +12,22 @@ use topcoat::{
 use super::search;
 use crate::{app::t, docs::docs};
 
+/// The name of a sidebar group.
+fn group_label(cx: &Cx, id: &str) -> String {
+    match id {
+        "start" => t!(docs_group_start),
+        "use" => t!(docs_group_use),
+        "how" => t!(docs_group_how),
+        _ => t!(docs_group_project),
+    }
+    .resolve(cx)
+    .into_owned()
+}
+
 /// The documentation's frame: the search box and the list of pages beside whatever `child` shows. `current` is the slug being read.
 #[component]
 pub async fn frame(cx: &Cx, current: &str, #[default] child: Child<'_>) -> Result<impl View> {
-    let pages = docs().pages();
+    let groups = docs().groups();
     Ok(view! {
         <link rel="stylesheet" href=(asset!("assets/docs.css"))>
         <div class="docs">
@@ -41,17 +53,29 @@ pub async fn frame(cx: &Cx, current: &str, #[default] child: Child<'_>) -> Resul
                     <p id="docs-nav-title" class="docs-side-title">
                         (t!(docs_nav_label))
                     </p>
-                    <ul>
-                        for page in pages {
-                            <li>
-                                <a
-                                    href=(href!(slug::_page::page, slug: page.slug))
-                                    if page.slug == current {
-                                        aria-current="page"
-                                    }
+                    <ul class="docs-groups">
+                        for (id, pages) in groups {
+                            <li class="docs-group">
+                                <p
+                                    class="docs-group-title"
+                                    id=(format!("docs-group-{id}"))
                                 >
-                                    (page.title.as_str())
-                                </a>
+                                    (group_label(cx, id))
+                                </p>
+                                <ul aria-labelledby=(format!("docs-group-{id}"))>
+                                    for page in pages {
+                                        <li>
+                                            <a
+                                                href=(href!(slug::_page::page, slug: page.slug))
+                                                if page.slug == current {
+                                                    aria-current="page"
+                                                }
+                                            >
+                                                (page.title.as_str())
+                                            </a>
+                                        </li>
+                                    }
+                                </ul>
                             </li>
                         }
                     </ul>
