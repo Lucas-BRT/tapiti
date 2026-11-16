@@ -1,30 +1,30 @@
-/* Fieldnotes: graphite, watercolour and handwritten titles on ivory paper. */
+/* Tapiti: plain paper and ink; the floors carry the only colour. */
 @layer reset, tokens, base, layout, components, pages;
 
 @layer tokens {
   :root {
     color-scheme: light;
 
-    --abyss: #f4f0e5;      /* paper, scene fog */
-    --stone-950: #fbf8ee;  /* map paper */
-    --stone-900: #fffcf3;  /* sheets and panels */
-    --stone-800: #ede7d9;  /* controls */
-    --stone-700: #e1d9c9;  /* hovered controls */
-    --stone-600: #c9c1af;  /* decorative pencil rules */
-    --stone-500: #7c7568;  /* control borders */
-    --bone: #302e2b;       /* graphite text */
-    --ash: #5d584f;
-    --faint: #6c6458;
-    --carrot: #ff2e63;     /* logo and marker fills; the historical token name stays */
-    --carrot-hi: #ff4878;
-    --link: #a51f48;       /* pink pencil, dark enough for small text */
-    --soil: #28101a;       /* text on the marker */
+    --bg: #fbfaf7;
+    --bg-sunk: #f3f1ec;       /* code blocks, quotes */
+    --surface: #fbfaf7;
+    --control: #efece5;
+    --control-hover: #e4e0d6;
+    --rule: #dcd8cf;
+    --rule-strong: #8a857a;   /* control borders: 3:1 on the page */
+    --ink: #1d1c1a;
+    --ink-2: #4f4c46;
+    --ink-3: #66625a;
+    --accent: #ff2e63;        /* the logo pink: fills and the route only */
+    --accent-hi: #ff4878;
+    --link: #a51f48;          /* the same pink, dark enough for text */
+    --on-accent: #28101a;
     --plate: #49463f;
     --ok: #31533d;
     --danger: #922d3c;
     --warn: #695017;
-    --sign-bg: #fffcf3;    /* opaque paper keeps text legible over every scene pixel */
 
+    /* The floor palette: room shapes, corridors, hatches. The SVG, the lab plan and the docs all read these. */
     --map-rect: #719ab0;
     --map-disc: #94b49d;
     --map-oct: #cdbbd2;
@@ -32,34 +32,20 @@
     --map-star: #e8d07d;
     --map-corridor: #857d70;
     --map-hatch: #49463f;
-    --map-grid: #dce1df;
+    --map-grid: #e3e6e3;
 
-    /* Read by the scene: graphite on paper, with restrained watercolour washes. */
-    --scene-wall: #ece6d8;
-    --scene-floor: #f5efdf;
-    --scene-ceiling: #e4dccb;
-    --scene-bone: #e6d9b6;
-    --scene-door: #b8c5c2;
-    --scene-step: #c8bcaa;
-    --scene-ink: #655f55;
-    --scene-route: #b14c68;
-    --light-torch: #eac28e;
-    --light-carried: #fffcf3;
-    --light-fill: #eee9da;
-    --light-below: #dba5b2;
+    --sel: #f6c9d4;
 
-    --sel: #e7c0c8;
-
-    --font-display: "Caveat", cursive;
-    --font-body: "Alegreya Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    --font-serif: "Source Serif 4", Georgia, "Times New Roman", serif;
+    --font-ui: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 
     --radius-xs: 2px;
     --radius-sm: 3px;
     --radius-md: 5px;
-    --shadow-lift: 1px 3px 5px rgb(66 53 32 / .08), 4px 9px 20px rgb(66 53 32 / .07);
+    --shadow-float: 0 2px 10px rgb(0 0 0 / .14);
     --ease-out: cubic-bezier(.2, .7, .2, 1);
-    --header-h: 64px;
+    --header-h: 56px;
     --gutter: clamp(16px, 4vw, 40px);
     --edge: max(var(--gutter), calc((100% - 1280px) / 2));
   }
@@ -70,23 +56,22 @@
 }
 
 @layer base {
-  html { scroll-behavior: smooth; background: var(--abyss); scrollbar-color: var(--stone-500) var(--abyss); accent-color: var(--carrot); scroll-padding-top: calc(var(--header-h) + 16px); }
+  html { scroll-behavior: smooth; background: var(--bg); scrollbar-color: var(--rule-strong) var(--bg); accent-color: var(--accent); scroll-padding-top: calc(var(--header-h) + 16px); }
   body {
     margin: 0;
     min-height: 100vh;
     display: flex;
     flex-direction: column;
-    background: var(--abyss);
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Cpath fill='%23796d57' opacity='.085' filter='url(%23n)' d='M0 0h180v180H0z'/%3E%3C/svg%3E");
-    color: var(--bone);
-    font: 18px/1.6 var(--font-body);
+    background: var(--bg);
+    color: var(--ink);
+    font: 16px/1.6 var(--font-ui);
     -webkit-font-smoothing: antialiased;
-    caret-color: var(--carrot);
+    caret-color: var(--accent);
   }
-  ::selection { background: var(--sel); color: var(--bone); }
+  ::selection { background: var(--sel); color: var(--ink); }
   a { color: inherit; text-underline-offset: .22em; text-decoration-thickness: 1px; }
   :focus-visible { outline: 2px solid var(--link); outline-offset: 3px; border-radius: 2px; }
-  h1, h2, h3, h4 { font-family: var(--font-display); font-weight: 600; letter-spacing: 0; text-wrap: balance; }
+  h1, h2, h3, h4 { font-family: var(--font-serif); font-weight: 600; letter-spacing: 0; text-wrap: balance; }
   p, li, dd { text-wrap: pretty; }
   code, kbd, pre { font-family: var(--font-mono); }
   code { font-size: .86em; }
@@ -98,33 +83,30 @@
 }
 
 @layer layout {
-  .skip-link { position: absolute; left: 12px; top: -64px; padding: 8px 14px; background: var(--carrot); color: var(--soil); font-weight: 700; border-radius: var(--radius-sm); z-index: 30; }
+  .skip-link { position: absolute; left: 12px; top: -64px; padding: 8px 14px; background: var(--accent); color: var(--on-accent); font-weight: 700; border-radius: var(--radius-sm); z-index: 30; }
   .skip-link:focus { top: 12px; }
 
-  .site-header { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 24px; height: var(--header-h); padding: 0 var(--edge); background: var(--stone-900); border-bottom: 1px solid var(--stone-600); }
-  .brand { display: inline-flex; align-items: center; gap: 10px; font: 600 1.6rem/1 var(--font-display); letter-spacing: 0; text-decoration: none; color: var(--bone); }
+  .site-header { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 24px; height: var(--header-h); padding: 0 var(--edge); background: var(--surface); border-bottom: 1px solid var(--rule); }
+  .brand { display: inline-flex; align-items: center; gap: 8px; font: 600 1.25rem/1 var(--font-serif); letter-spacing: 0; text-decoration: none; color: var(--ink); }
   .brand img { display: block; }
   .site-nav { display: flex; align-items: center; gap: 4px; margin-left: auto; }
-  .site-nav a { padding: 8px 12px; border-radius: var(--radius-sm); text-decoration: none; color: var(--ash); font-weight: 500; transition: color .15s, background-color .15s; }
-  .site-nav a:hover { color: var(--bone); background: var(--stone-800); }
-  .site-nav a[aria-current] { color: var(--bone); box-shadow: inset 0 -2px 0 var(--carrot); border-radius: 0; }
+  .site-nav a { padding: 8px 12px; border-radius: var(--radius-sm); text-decoration: none; color: var(--ink-2); font-weight: 500; transition: color .15s, background-color .15s; }
+  .site-nav a:hover { color: var(--ink); background: var(--control); }
+  .site-nav a[aria-current] { color: var(--ink); box-shadow: inset 0 -2px 0 var(--accent); border-radius: 0; }
 
-  .site-footer { position: relative; z-index: 2; padding: 56px var(--edge) 40px; background: var(--stone-950); border-top: 1px solid var(--stone-600); color: var(--ash); font-size: 1rem; }
+  .site-footer { position: relative; z-index: 2; padding: 56px var(--edge) 40px; background: var(--bg-sunk); border-top: 1px solid var(--rule); color: var(--ink-2); font-size: 1rem; }
   .footer-inner { display: grid; grid-template-columns: minmax(0, 1.6fr) repeat(2, minmax(0, 1fr)); gap: 40px; }
-  .footer-about .brand { font-size: 2.4rem; gap: 12px; }
-  .footer-about p { margin: 14px 0 0; max-width: 30rem; }
-  .footer-about .footer-small { margin-top: 10px; color: var(--faint); font-size: .92rem; }
+    .footer-about p { margin: 14px 0 0; max-width: 30rem; }
+  .footer-about .footer-small { margin-top: 10px; color: var(--ink-3); font-size: .92rem; }
   .site-footer nav { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
-  .site-footer h2 { margin: 6px 0 6px; color: var(--bone); font: 700 1rem/1.2 var(--font-body); letter-spacing: 0; }
+  .site-footer h2 { margin: 6px 0 6px; color: var(--ink); font: 700 1rem/1.2 var(--font-ui); letter-spacing: 0; }
   .site-footer nav a { padding: 2px 0; text-decoration: none; }
-  .site-footer nav a:hover { color: var(--bone); text-decoration: underline; }
+  .site-footer nav a:hover { color: var(--ink); text-decoration: underline; }
 }
 
 @layer layout {
   @media (max-width: 640px) {
-    :root { --header-h: 56px; }
     .site-header { gap: 12px; }
-    .brand { font-size: 1.4rem; }
     .site-nav a { padding: 8px 9px; }
   }
   @media (max-width: 860px) {
@@ -134,20 +116,14 @@
 }
 
 @layer components {
-  /* The fixed backdrop of the 3D scene (landing page, leaf chamber): the dimmed map or nothing until the scene is ready. */
   .plain { max-width: 40rem; margin: 0 auto; padding: 64px var(--edge); }
   .plain svg { width: 100%; height: auto; }
-  .walk-backdrop { position: fixed; inset: 0 0 auto 0; height: 100lvh; z-index: 0; display: grid; place-items: center; pointer-events: none; background: var(--abyss); }
-  .walk-backdrop svg { width: min(100%, 1100px); height: 100%; margin-left: auto; opacity: .3; transition: opacity .5s; }
-  .walk-backdrop canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; opacity: 0; transition: opacity .8s var(--ease-out); }
-  html.walk-on .walk-backdrop canvas { opacity: 1; }
-  html.walk-on .walk-backdrop svg { opacity: 0; }
 
-  .button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 48px; padding: 10px 22px; border-radius: var(--radius-sm); font-weight: 700; font-size: 1.05rem; text-decoration: none; border: 1px solid var(--stone-500); background: var(--stone-900); color: var(--bone); transition: background-color .15s, border-color .15s, color .15s; }
-  .button:hover { background: var(--stone-800); border-color: var(--ash); }
+  .button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 48px; padding: 10px 22px; border-radius: var(--radius-sm); font-weight: 700; font-size: 1.05rem; text-decoration: none; border: 1px solid var(--rule-strong); background: var(--surface); color: var(--ink); transition: background-color .15s, border-color .15s, color .15s; }
+  .button:hover { background: var(--control); border-color: var(--ink-2); }
   .button:active { transform: translateY(1px); }
-  .button.primary { background: var(--carrot); border-color: var(--carrot); color: var(--soil); }
-  .button.primary:hover { background: var(--carrot-hi); border-color: var(--carrot-hi); }
+  .button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+  .button.primary:hover { background: var(--accent-hi); border-color: var(--accent-hi); }
   .cta-row { display: flex; flex-wrap: wrap; gap: 12px; }
 
   /* Floor colours: the SVG only carries classes, the tokens colour it. */
@@ -162,15 +138,13 @@
   .tapiti-floor .c-star { fill: var(--map-star); }
   .tapiti-floor .r-entrance { stroke: var(--ok); }
   .tapiti-floor .r-exit { stroke: var(--link); }
-  .tapiti-floor .junction { fill: var(--bone); stroke: var(--plate); }
-  .tapiti-floor .door { stroke: var(--bone); }
+  .tapiti-floor .junction { fill: var(--ink); stroke: var(--plate); }
+  .tapiti-floor .door { stroke: var(--ink); }
 }
 
 @layer components {
   @media (forced-colors: active) {
-    body { background-image: none; }
     .button { border-color: ButtonText; }
     .button.primary { background: Highlight; color: HighlightText; border-color: Highlight; forced-color-adjust: none; }
-    .walk-backdrop { display: none; }
-  }
+    }
 }

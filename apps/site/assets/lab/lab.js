@@ -342,15 +342,15 @@ const draw = () => {
   const px = 1 / k
   const d = current.floor
   const P = d.params
-  const ink = css('--bone')
-  const accent = css('--carrot')
+  const ink = css('--ink')
+  const accent = css('--accent')
   const corridor = css('--map-corridor')
-  const surface = css('--stone-800')
+  const surface = css('--control')
   const colorOf = (cls) => css(`--map-${cls}`) || '#59677a'
   const roleColor = (role) => css(`--role-${role}`)
 
   if (overlays.cells) {
-    ctx.strokeStyle = css('--stone-600')
+    ctx.strokeStyle = css('--rule')
     ctx.globalAlpha = 0.5
     ctx.lineWidth = px
     const gridX = d.gridX?.length === P.cols + 1 ? d.gridX : Array.from({ length: P.cols + 1 }, (_, i) => i * P.cellW)
@@ -442,11 +442,11 @@ const draw = () => {
     ctx.stroke()
   }
   if (overlays.labels) {
-    ctx.font = `${12 * px}px ${css('--font-body') || 'system-ui, sans-serif'}`
+    ctx.font = `${12 * px}px ${css('--font-ui') || 'system-ui, sans-serif'}`
     ctx.textAlign = 'center'
     ctx.textBaseline = 'alphabetic'
-    const text = css('--bone')
-    const halo = css('--abyss')
+    const text = css('--ink')
+    const halo = css('--bg')
     for (const room of d.rooms) {
       if (!room.alive) continue
       const label = `#${room.id} ${className(room.cls)}${room.role !== 'plain' ? ` · ${roleName(room.role)}` : ''}`
