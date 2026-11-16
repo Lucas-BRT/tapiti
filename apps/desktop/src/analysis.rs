@@ -1,4 +1,5 @@
-//! The Analysis tab: what the generated floor is, in charts and plain words first, and every number for the curious below.
+//! The reading: what the generated floor is, in the short labels of a readout, with the long explanation on hover.
+//! Rules first, then the measures, the shapes, the doors, the generation phases and the layers the floor has.
 
 use crate::charts::{self, Bar};
 use crate::map::{Palette, SHAPE_CLASSES};
@@ -7,124 +8,284 @@ use crate::{
     class_label, size_label, summary, translate_log, translate_violation, App, BenchmarkKind,
     GeneratedMap,
 };
-use eframe::egui::{self, Align, Button, Color32, Grid, Layout, RichText, Stroke, Ui};
+use eframe::egui::{self, Button, Color32, Grid, RichText, Stroke, Ui};
 
-/// A number with what it counts, under a thin rule.
-fn tile(ui: &mut Ui, value: String, title: &str, caption: &str) {
-    let c = crate::theme::of(ui);
-    // No box: a thin rule above, the number in the display face, then what it counts.
-    let top = ui.available_rect_before_wrap();
-    ui.painter()
-        .hline(top.x_range(), top.top(), Stroke::new(1.0, c.border_variant));
-    ui.add_space(6.0);
-    // Not the justified layout of `ui.columns`: it spreads the words of a wrapped caption across the line.
-    ui.with_layout(Layout::top_down(Align::LEFT), |ui| {
-        ui.label(
-            RichText::new(value)
-                .font(egui::FontId::new(28.0, crate::theme::display()))
-                .color(c.text),
-        );
-        ui.label(RichText::new(title).strong());
-        ui.label(muted(ui, caption));
-    });
+/// One line of the readout: a short label, the value, and when the value is part of something a bar showing its share, with the
+/// longer explanation for the hover.
+pub struct Measure {
+    pub label: &'static str,
+    pub value: String,
+    /// The share of a whole this value is, from 0 to 1, when there is a whole.
+    pub share: Option<f32>,
+    pub tip: String,
 }
 
-fn explain(ui: &mut Ui, text: &str) {
-    ui.add_space(2.0);
-    ui.label(muted(ui, text));
-}
-
-/// The friendly name of a phase of the generator.
-fn phase_name(name: &str) -> &str {
-    match name {
-        "rooms" => "Placing the rooms",
-        "candidates" => "Looking for corridors",
-        "tree" => "Joining every room",
-        "β_max" => "Measuring the room for loops",
-        "cycles" => "Adding loops",
-        "leaf chambers" => "Adding dead ends",
-        other => other,
+impl Measure {
+    fn new(label: &'static str, value: impl Into<String>, tip: impl Into<String>) -> Self {
+        Self {
+            label,
+            value: value.into(),
+            share: None,
+            tip: tip.into(),
+        }
     }
+
+    fn of(mut self, whole: f64, part: f64) -> Self {
+        self.share = (whole > 0.0).then(|| (part / whole).clamp(0.0, 1.0) as f32);
+        self
+    }
+}
+
+/// The measures of a floor, from `metrics_of`, in the order they are read. A bar is drawn only where the value is a share of a whole
+/// that exists: loops of what fits, dead ends of the rooms, bridges of the corridors, the way to the exit of the diameter.
+pub fn measure_rows(m: &tapiti_core::metrics::Metrics) -> Vec<Measure> {
+    let rooms = (m.rooms + m.leaf_chambers) as f64;
+    let dash = || "—".to_string();
+    vec![
+        Measure::new(
+            "rooms",
+            format!("{}+{}", m.rooms, m.leaf_chambers),
+            format!(
+                "{} main rooms and {} dead-end chambers, linked by a single corridor.",
+                m.rooms, m.leaf_chambers
+            ),
+        ),
+        Measure::new(
+            "corridors",
+            m.edges.to_string(),
+            "Pieces of corridor in the graph; each arm of a junction counts as one.",
+        ),
+        Measure::new(
+            "loops β",
+            format!("{} / {}", m.beta, m.beta_max),
+            format!(
+                "Extra ways round, instead of back: {} now, {} aimed for by the density, room for {}. A tree has none.",
+                m.beta, m.beta_target, m.beta_max
+            ),
+        )
+        .of(f64::from(m.beta_max), f64::from(m.beta)),
+        Measure::new(
+            "dead ends",
+            m.leaves.to_string(),
+            "Rooms with a single door: the dead ends, the entrance and the exit.",
+        )
+        .of(rooms, m.leaves as f64),
+        Measure::new(
+            "bridges",
+            format!("{} · {:.0}%", m.bridges, m.bridge_share * 100.0),
+            "Corridors whose removal would cut part of the floor off.",
+        )
+        .of(1.0, m.bridge_share),
+        {
+            let mut row = Measure::new(
+                "exit hops",
+                m.hops_to_exit.map_or_else(dash, |h| format!("{h:.0}")),
+                "Rooms on the shortest way from the entrance to the exit.",
+            );
+            // A floor with no entrance and exit has no way to show, so no bar either.
+            if let Some(h) = m.hops_to_exit {
+                row = row.of(m.diameter, h);
+            }
+            row
+        },
+        Measure::new(
+            "routes → exit",
+            m.routes_to_exit.map_or_else(dash, |n| n.to_string()),
+            "Ways from the entrance to the exit that share no corridor.",
+        ),
+        Measure::new(
+            "diameter",
+            format!("{:.0}", m.diameter),
+            "The most rooms between two rooms, by the shortest way.",
+        ),
+        Measure::new(
+            "λ₂",
+            format!("{:.3}", m.lambda2),
+            "Connectivity: larger means less depending on a few corridors.",
+        ),
+        Measure::new(
+            "mean doors",
+            format!("{:.2}", m.mean_degree),
+            "Corridors per room, on average.",
+        ),
+    ]
+}
+
+/// Draws the rows of a readout, each of the exact width of the column: the label on the left, the share as a bar in the middle when
+/// there is one, the value on the right.
+fn measures(ui: &mut Ui, rows: &[Measure]) {
+    let c = crate::theme::of(ui);
+    let label_font = egui::FontId::proportional(12.0);
+    let value_font = egui::FontId::new(12.0, crate::theme::medium());
+    for row in rows {
+        let (rect, response) =
+            ui.allocate_exact_size(egui::vec2(ui.available_width(), 20.0), egui::Sense::hover());
+        let painter = ui.painter_at(rect);
+        let mid = rect.center().y;
+        painter.text(
+            egui::pos2(rect.left(), mid),
+            egui::Align2::LEFT_CENTER,
+            row.label,
+            label_font.clone(),
+            c.text_muted,
+        );
+        let value = painter.text(
+            egui::pos2(rect.right(), mid),
+            egui::Align2::RIGHT_CENTER,
+            &row.value,
+            value_font.clone(),
+            c.text,
+        );
+        if let Some(share) = row.share {
+            let from = rect.left() + (rect.width() * 0.34).max(90.0);
+            let to = (value.left() - 8.0).max(from);
+            let track =
+                egui::Rect::from_min_max(egui::pos2(from, mid - 3.0), egui::pos2(to, mid + 3.0));
+            painter.rect_filled(track, 0.0, c.border_variant);
+            let fill = egui::Rect::from_min_size(
+                track.min,
+                egui::vec2(
+                    (track.width() * share).max(if share > 0.0 { 2.0 } else { 0.0 }),
+                    6.0,
+                ),
+            );
+            painter.rect_filled(fill, 0.0, c.measure);
+        }
+        if !row.tip.is_empty() {
+            response.on_hover_text(&row.tip);
+        }
+    }
+}
+
+/// The short name of a phase of the generator.
+fn phase_name(name: &str) -> &'static str {
+    match name {
+        "rooms" => "rooms",
+        "candidates" => "candidates",
+        "tree" => "tree",
+        "β_max" => "β max",
+        "cycles" => "cycles",
+        "leaf chambers" => "dead ends",
+        _ => "other",
+    }
+}
+
+/// The five rules and what each one checks, in few words.
+const RULES: [(&str, &str, &str); 5] = [
+    ("V1", "connectivity", "every room reached"),
+    ("V2", "clearances", "rooms and corridors apart"),
+    ("V3", "doors", "fit and separated"),
+    ("V4", "corridors", "angles, bends, lengths"),
+    ("V5", "entrance, exit", "present, far enough"),
+];
+
+/// A check mark or a cross, drawn: Plex Mono has neither glyph.
+fn mark(ui: &mut Ui, ok: bool) {
+    let c = crate::theme::of(ui);
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(12.0, 12.0), egui::Sense::hover());
+    let p = |x: f32, y: f32| rect.min + egui::vec2(x, y);
+    let (color, points): (Color32, Vec<egui::Pos2>) = if ok {
+        (c.success, vec![p(1.5, 6.5), p(4.5, 9.5), p(10.5, 2.5)])
+    } else {
+        (c.error, vec![p(2.0, 2.0), p(10.0, 10.0)])
+    };
+    let stroke = Stroke::new(1.8, color);
+    ui.painter().add(egui::Shape::line(points, stroke));
+    if !ok {
+        ui.painter()
+            .line_segment([p(10.0, 2.0), p(2.0, 10.0)], stroke);
+    }
+}
+
+/// Which of the five rules a violation breaks, by the code its message starts with.
+fn broken(map: &GeneratedMap, code: &str) -> bool {
+    map.violations.iter().any(|v| v.starts_with(code))
+}
+
+fn rules_section(ui: &mut Ui, app: &App, map: &GeneratedMap) {
+    let c = crate::theme::of(ui);
+    card(ui, "Rules", |ui| {
+        ui.horizontal(|ui| {
+            let (word, color) = if map.violations.is_empty() {
+                ("valid", c.success)
+            } else {
+                ("violations", c.error)
+            };
+            ui.label(
+                RichText::new(word)
+                    .font(egui::FontId::new(13.0, crate::theme::medium()))
+                    .color(color),
+            );
+            ui.label(muted(
+                ui,
+                format!(
+                    "{} · seed {} · {} draw(s)",
+                    size_label(app.size).to_lowercase(),
+                    app.seed,
+                    map.draws
+                ),
+            ));
+        });
+        for (code, name, detail) in RULES {
+            ui.horizontal(|ui| {
+                mark(ui, !broken(map, code));
+                ui.label(RichText::new(format!("{code} {name}")).color(c.text));
+                ui.label(muted(ui, detail));
+            });
+        }
+        // Whatever else the validator said (the intent, the layers, the stairs), in words.
+        let others: Vec<&String> = map
+            .violations
+            .iter()
+            .filter(|v| !RULES.iter().any(|(code, _, _)| v.starts_with(code)))
+            .collect();
+        for violation in others
+            .into_iter()
+            .chain(
+                map.violations
+                    .iter()
+                    .filter(|v| RULES.iter().any(|(code, _, _)| v.starts_with(code))),
+            )
+            .take(12)
+        {
+            ui.label(RichText::new(translate_violation(violation)).color(c.error));
+        }
+    });
 }
 
 pub fn analysis_tab(app: &mut App, ui: &mut Ui) {
     let Some(map) = app.generated.clone() else {
-        ui.label(muted(ui, "Generate a floor to see what is in it."));
+        ui.label(muted(ui, "No floor yet."));
         performance(app, ui);
         return;
     };
     let pal = Palette::new(ui.visuals().dark_mode);
     let m = &map.metrics;
 
-    // ---- the verdict, in words ----
-    card(ui, "Does this floor work?", |ui| {
-        if map.violations.is_empty() {
-            ui.label(
-                RichText::new("Yes: every check passes")
-                    .strong()
-                    .size(17.0)
-                    .color(pal.success),
-            );
-            explain(
-                ui,
-                "Every room can be reached from the others, rooms and corridors keep their distance, and doors and corridors follow the shape rules.",
-            );
-        } else {
-            ui.label(
-                RichText::new(format!(
-                    "Not quite: {n} rule(s) are not met",
-                    n = map.violations.len()
-                ))
-                .strong()
-                .size(17.0)
-                .color(pal.danger),
-            );
-            explain(
-                ui,
-                &format!(
-                    "The generator tried {n} time(s) and kept the best floor. It is drawn, but look at these before relying on it:",
-                    n = map.draws
-                ),
-            );
-            for violation in map.violations.iter().take(12) {
-                ui.label(format!("• {}", translate_violation(violation)));
-            }
-        }
-        ui.add_space(2.0);
-        ui.label(muted(
-            ui,
-            format!(
-                "{size} size · seed {seed}",
-                size = size_label(app.size),
-                seed = app.seed
-            ),
-        ));
-    });
+    rules_section(ui, app, &map);
 
-    // ---- height ----
+    card(ui, "Measures", |ui| measures(ui, &measure_rows(m)));
+
+    // ---- layers: only those the floor has ----
+    let num = |label: &'static str, value: String, tip: String| Measure::new(label, value, tip);
     if let Some(h) = &m.height {
         card(ui, "Height", |ui| {
-            ui.columns(2, |cols| {
-                tile(
-                    &mut cols[0],
-                    format!("{:.0}", h.range),
-                    "Range",
-                    &format!("From {:.0} to {:.0}", h.min, h.max),
-                );
-                tile(
-                    &mut cols[1],
-                    format!("{:.2}", h.max_slope),
-                    "Steepest corridor",
-                    &format!(
-                        "Rise over run; the average is {:.2} (limit {})",
-                        h.mean_slope, map.floor.params.environment.height.max_slope
+            measures(
+                ui,
+                &[
+                    num("range", format!("{:.0}", h.range), format!("From {:.0} to {:.0}.", h.min, h.max)),
+                    num(
+                        "steepest",
+                        format!("{:.2}", h.max_slope),
+                        format!(
+                            "Rise over run of the steepest corridor; the average is {:.2}, the limit {}.",
+                            h.mean_slope, map.floor.params.environment.height.max_slope
+                        ),
                     ),
-                );
-            });
+                ],
+            );
         });
     }
-
-    // ---- events ----
     if let (Some(e), Some(field)) = (
         &m.events,
         map.floor
@@ -140,7 +301,7 @@ pub fn analysis_tab(app: &mut App, ui: &mut Ui) {
                 .enumerate()
             {
                 ui.horizontal(|ui| {
-                    ui.colored_label(crate::map::event_color(k), "●");
+                    ui.colored_label(crate::map::event_color(k), "■");
                     ui.label(format!(
                         "{}: {} of {}",
                         kind.name,
@@ -152,131 +313,79 @@ pub fn analysis_tab(app: &mut App, ui: &mut Ui) {
             if e.missing > 0 {
                 ui.label(muted(
                     ui,
-                    format!(
-                        "{} could not be placed: no room that fits was left",
-                        e.missing
-                    ),
+                    format!("{} not placed: no room that fits was left", e.missing),
                 ));
             }
         });
     }
-
-    // ---- light ----
     if let Some(l) = &m.light {
         card(ui, "Light", |ui| {
-            ui.columns(2, |cols| {
-                tile(
-                    &mut cols[0],
-                    l.dark_rooms.to_string(),
-                    "Rooms in the dark",
-                    &format!(
-                        "Less than a twentieth of full light; the average is {:.0}%",
-                        100.0 * l.mean
+            measures(
+                ui,
+                &[
+                    num(
+                        "dark rooms",
+                        l.dark_rooms.to_string(),
+                        format!(
+                            "Rooms with less than a twentieth of full light; the average is {:.0}%.",
+                            100.0 * l.mean
+                        ),
                     ),
-                );
-                tile(
-                    &mut cols[1],
-                    format!("{} + {}", l.openings, l.torches),
-                    "Openings + direct sources",
-                    "Where light comes from",
-                );
-            });
+                    num(
+                        "sources",
+                        format!("{} + {}", l.openings, l.torches),
+                        "Openings to the surface plus direct sources: where light comes from.".to_string(),
+                    ),
+                ],
+            );
         });
     }
-
-    // ---- climate ----
     if let Some(c) = &m.climate {
         card(ui, "Temperature", |ui| {
-            ui.columns(2, |cols| {
-                tile(
-                    &mut cols[0],
-                    format!("{:.0}° to {:.0}°", c.coldest, c.hottest),
-                    "Range",
-                    &format!("The average is {:.1}°", c.mean),
-                );
-                tile(
-                    &mut cols[1],
-                    c.openings.to_string(),
-                    "Openings to the surface",
-                    "The entrance and the rooms that open outside",
-                );
-            });
+            measures(
+                ui,
+                &[
+                    num(
+                        "range",
+                        format!("{:.0}° to {:.0}°", c.coldest, c.hottest),
+                        format!("The average is {:.1}°.", c.mean),
+                    ),
+                    num(
+                        "openings",
+                        c.openings.to_string(),
+                        "Openings to the surface: the entrance and the rooms that open outside."
+                            .to_string(),
+                    ),
+                ],
+            );
         });
     }
-
-    // ---- water ----
     if let Some(w) = &m.water {
         card(ui, "Water", |ui| {
-            ui.columns(2, |cols| {
-                tile(
-                    &mut cols[0],
-                    w.wet_rooms.to_string(),
-                    "Rooms under water",
-                    &format!(
-                        "{} sources pour; the deepest pool is {:.0}",
-                        w.sources, w.deepest
+            measures(
+                ui,
+                &[
+                    num(
+                        "wet rooms",
+                        w.wet_rooms.to_string(),
+                        format!(
+                            "{} sources pour; the deepest pool is {:.0}.",
+                            w.sources, w.deepest
+                        ),
                     ),
-                );
-                tile(
-                    &mut cols[1],
-                    format!("{:.0}%", 100.0 * w.mean_humidity),
-                    "Humidity",
-                    "The average over the rooms, falling with the distance to water",
-                );
-            });
+                    num(
+                        "humidity",
+                        format!("{:.0}%", 100.0 * w.mean_humidity),
+                        "The average over the rooms, falling with the distance to water."
+                            .to_string(),
+                    ),
+                ],
+            );
         });
     }
 
-    // ---- at a glance ----
-    card(ui, "At a glance", |ui| {
-        ui.columns(2, |cols| {
-            tile(
-                &mut cols[0],
-                (m.rooms + m.leaf_chambers).to_string(),
-                "Rooms",
-                &format!("{} main, {} dead-end chambers", m.rooms, m.leaf_chambers),
-            );
-            tile(
-                &mut cols[1],
-                m.edges.to_string(),
-                "Corridor pieces",
-                "What joins the rooms together",
-            );
-        });
-        ui.add_space(6.0);
-        ui.columns(2, |cols| {
-            tile(
-                &mut cols[0],
-                m.beta.to_string(),
-                "Loops",
-                "Extra ways to walk around instead of back",
-            );
-            tile(
-                &mut cols[1],
-                m.hops_to_exit.map_or("—".into(), |h| format!("{h:.0}")),
-                "Rooms to the exit",
-                "From the entrance, the shortest way",
-            );
-        });
-        ui.add_space(6.0);
-        ui.columns(2, |cols| {
-            tile(
-                &mut cols[0],
-                m.leaves.to_string(),
-                "Rooms with one door",
-                "Dead ends, the entrance and the exit",
-            );
-            tile(
-                &mut cols[1],
-                format!("{:.1} ms", map.elapsed_ms),
-                "Time to build",
-                &format!("{} attempt(s)", map.draws),
-            );
-        });
-    });
-
     // ---- shapes ----
-    card(ui, "Rooms by shape", |ui| {
+    card(ui, "Shapes", |ui| {
         let bars: Vec<Bar> = SHAPE_CLASSES
             .iter()
             .filter_map(|class| {
@@ -286,10 +395,6 @@ pub fn analysis_tab(app: &mut App, ui: &mut Ui) {
             .collect();
         let max = bars.iter().map(|b| b.value).fold(1.0, f64::max);
         charts::hbars(ui, &bars, max);
-        explain(
-            ui,
-            "How varied the floor looks. The shape weights in the Room shapes tab change this mix.",
-        );
     });
 
     // ---- doors per room ----
@@ -299,175 +404,128 @@ pub fn analysis_tab(app: &mut App, ui: &mut Ui) {
             counts[room.used.len().min(4)] += 1;
         }
         let labels = ["0", "1", "2", "3", "4+"];
+        let measure = crate::theme::of(ui).measure;
         let bars: Vec<Bar> = counts
             .iter()
             .enumerate()
             .filter(|(i, n)| *i > 0 || **n > 0)
-            .map(|(i, n)| {
-                let color = match i {
-                    1 => Color32::from_rgb(0xe0, 0x8a, 0x3c),
-                    2 => pal.accent,
-                    _ => pal.success,
-                };
-                Bar::new(labels[i], *n as f64, color)
-            })
+            .map(|(i, n)| Bar::new(labels[i], *n as f64, measure))
             .collect();
         let max = bars.iter().map(|b| b.value).fold(1.0, f64::max);
-        charts::columns(ui, &bars, max, 130.0);
-        explain(
-            ui,
-            "A room with one door is a dead end. Two doors make a hallway. Three or more make a crossroads, where a visitor chooses.",
-        );
-    });
-
-    // ---- loops ----
-    card(ui, "Ways around: loops", |ui| {
-        let max = f64::from(m.beta.max(m.beta_target).max(m.beta_max).max(1));
-        charts::hbars(
-            ui,
-            &[
-                Bar::new("This floor", f64::from(m.beta), pal.accent),
-                Bar::new("Aimed for", f64::from(m.beta_target), pal.success),
-                Bar::new("Room for", f64::from(m.beta_max), pal.corridor),
-            ],
-            max,
-        );
-        explain(
-            ui,
-            "With no loops, every room has exactly one way in: a tree. Each loop gives a second way around. \"Aimed for\" follows the density setting; \"Room for\" is what this floor could hold at most.",
-        );
-    });
-
-    // ---- the walk from the entrance to the exit ----
-    card(ui, "From the entrance to the exit", |ui| {
-        match m.hops_to_exit {
-            None => {
-                explain(
-                ui,
-                "This floor has no entrance and exit (see the Entrance and exit tab), so there is no walk to show.",
+        ui.scope(|ui| charts::columns(ui, &bars, max, 96.0))
+            .response
+            .on_hover_text(
+                "One door is a dead end, two make a hallway, three or more a crossroads.",
             );
-            }
-            Some(hops) => {
-                charts::walk(
-                    ui,
-                    hops.round() as usize,
-                    pal.success,
-                    pal.accent,
-                    pal.corridor,
-                );
-                Grid::new("walk-facts")
-                    .num_columns(2)
-                    .spacing([10.0, 4.0])
-                    .show(ui, |ui| {
-                        ui.label(RichText::new(format!("{hops:.0} rooms")).strong());
-                        ui.label(muted(ui, "on the shortest way"));
-                        ui.end_row();
-                        if let Some(routes) = m.routes_to_exit {
-                            ui.label(RichText::new(format!("{routes} route(s)")).strong());
-                            ui.label(muted(ui, "that share no corridor"));
-                            ui.end_row();
-                        }
-                        if let Some(length) = m.geometric_path_to_exit {
-                            ui.label(RichText::new(format!("{length:.0} px")).strong());
-                            ui.label(muted(ui, "of walking"));
-                            ui.end_row();
-                        }
-                    });
-                explain(
-                ui,
-                "More than one independent route means a corridor that is blocked does not cut the exit off. The whole floor is at most this many rooms across:",
-            );
-                ui.label(RichText::new(format!("{:.0} rooms", m.diameter)).strong());
-            }
-        }
     });
 
-    // ---- time ----
+    // ---- phases ----
     if !map.floor.phases.is_empty() {
-        card(ui, "Where the time went", |ui| {
-            let palette = [
-                pal.accent,
-                pal.success,
-                Color32::from_rgb(0xce, 0x84, 0x3c),
-                Color32::from_rgb(0x9b, 0x78, 0xd1),
-                Color32::from_rgb(0x29, 0xa8, 0x9a),
-                Color32::from_rgb(0xd0, 0xae, 0x38),
-            ];
-            let parts: Vec<Bar> = map
+        let total: f64 = map.floor.phases.iter().map(|(_, ms)| *ms).sum();
+        let longest = map
+            .floor
+            .phases
+            .iter()
+            .map(|(_, ms)| *ms)
+            .fold(0.0, f64::max);
+        card(ui, "Phases", |ui| {
+            let rows: Vec<Measure> = map
                 .floor
                 .phases
                 .iter()
-                .enumerate()
-                .map(|(i, (name, ms))| Bar::new(phase_name(name), *ms, palette[i % palette.len()]))
+                .map(|(name, ms)| {
+                    Measure::new(phase_name(name), format!("{ms:.1} ms"), "The last attempt; a floor that fails a check is built again from a nearby seed.")
+                        .of(longest, *ms)
+                })
                 .collect();
-            charts::stacked(ui, &parts);
-            explain(
-                ui,
-                "The last attempt, step by step. A floor that fails a check is built again from a nearby seed.",
-            );
+            measures(ui, &rows);
+            ui.label(muted(ui, format!("{total:.1} ms in all")));
         });
     }
 
     // ---- the details ----
-    egui::CollapsingHeader::new(RichText::new("All the numbers").strong())
-        .id_salt("all-numbers")
-        .show(ui, |ui| {
-            for (title, rows) in metric_sections(&map) {
-                ui.label(RichText::new(title).strong());
-                Grid::new(title)
-                    .num_columns(2)
-                    .striped(true)
-                    .min_col_width(ui.available_width() / 2.0 - 12.0)
-                    .spacing([16.0, 4.0])
-                    .show(ui, |ui| {
-                        for (label, value, help) in rows {
-                            ui.label(label).on_hover_text(help);
-                            ui.label(RichText::new(value).strong());
-                            ui.end_row();
-                        }
-                    });
-                ui.add_space(6.0);
-            }
-            ui.label(muted(ui, summary(&map)));
-        });
+    let sections = metric_sections(&map);
+    let count = sections.iter().map(|(_, rows)| rows.len()).sum();
+    let bar = crate::theme::GroupBar {
+        title: "All the numbers",
+        count,
+        changed: 0,
+        default_open: false,
+    };
+    crate::theme::group(ui, ui.make_persistent_id("all-numbers"), bar, None, |ui| {
+        for (title, rows) in sections {
+            ui.label(RichText::new(title).font(egui::FontId::new(13.0, crate::theme::display())));
+            Grid::new(title)
+                .num_columns(2)
+                .striped(true)
+                .min_col_width(ui.available_width() / 2.0 - 12.0)
+                .spacing([16.0, 4.0])
+                .show(ui, |ui| {
+                    for (label, value, help) in rows {
+                        ui.label(label).on_hover_text(help);
+                        ui.label(
+                            RichText::new(value)
+                                .font(egui::FontId::new(12.0, crate::theme::medium())),
+                        );
+                        ui.end_row();
+                    }
+                });
+            ui.add_space(6.0);
+        }
+        ui.label(muted(ui, summary(&map)));
+    });
     if !map.floor.log.is_empty() {
-        egui::CollapsingHeader::new(RichText::new("What the generator did").strong())
-            .id_salt("generator-log")
-            .show(ui, |ui| {
+        let bar = crate::theme::GroupBar {
+            title: "Generator log",
+            count: map.floor.log.len(),
+            changed: 0,
+            default_open: false,
+        };
+        crate::theme::group(
+            ui,
+            ui.make_persistent_id("generator-log"),
+            bar,
+            None,
+            |ui| {
                 for line in &map.floor.log {
                     ui.label(muted(ui, translate_log(line)));
                 }
-            });
+            },
+        );
     }
     performance(app, ui);
 }
 
 fn performance(app: &mut App, ui: &mut Ui) {
-    egui::CollapsingHeader::new(RichText::new("Speed of the generator").strong())
-        .id_salt("performance")
-        .show(ui, |ui| {
-            ui.label(muted(
-                ui,
-                "Builds many floors of the selected size with its default settings and tells how fast it goes.",
-            ));
-            ui.horizontal_wrapped(|ui| {
-                if ui
-                    .add_enabled(!app.busy, Button::new("Measure 40 floors"))
-                    .clicked()
-                {
-                    app.start_benchmark(BenchmarkKind::Forty);
-                }
-                if ui
-                    .add_enabled(!app.busy, Button::new("Compare a batch of 800"))
-                    .clicked()
-                {
-                    app.start_benchmark(BenchmarkKind::Batch);
-                }
-            });
-            if let Some(text) = &app.performance_status {
-                ui.label(text);
+    let bar = crate::theme::GroupBar {
+        title: "Speed of the generator",
+        count: 2,
+        changed: 0,
+        default_open: false,
+    };
+    crate::theme::group(ui, ui.make_persistent_id("performance"), bar, None, |ui| {
+        ui.label(muted(
+            ui,
+            "Builds many floors of the selected size with its default settings and tells how fast it goes.",
+        ));
+        ui.horizontal_wrapped(|ui| {
+            if ui
+                .add_enabled(!app.busy, Button::new("Measure 40 floors"))
+                .clicked()
+            {
+                app.start_benchmark(BenchmarkKind::Forty);
+            }
+            if ui
+                .add_enabled(!app.busy, Button::new("Compare a batch of 800"))
+                .clicked()
+            {
+                app.start_benchmark(BenchmarkKind::Batch);
             }
         });
+        if let Some(text) = &app.performance_status {
+            ui.label(text);
+        }
+    });
 }
 
 type Row = (&'static str, String, &'static str);
@@ -600,4 +658,110 @@ fn metric_sections(map: &GeneratedMap) -> Vec<(&'static str, Vec<Row>)> {
             ],
         ),
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tapiti_core::metrics::metrics_of;
+    use tapiti_core::params::{params_of_size, rich_of_size, Size};
+    use tapiti_core::stage::stage;
+
+    fn row<'a>(rows: &'a [Measure], label: &str) -> &'a Measure {
+        rows.iter().find(|r| r.label == label).unwrap()
+    }
+
+    #[test]
+    fn every_number_of_the_readout_is_the_one_the_metrics_hold() {
+        let floor = stage(279, &rich_of_size(Size::Medium), 8).d;
+        let m = metrics_of(&floor);
+        let rows = measure_rows(&m);
+        assert_eq!(
+            row(&rows, "rooms").value,
+            format!("{}+{}", m.rooms, m.leaf_chambers)
+        );
+        assert_eq!(row(&rows, "corridors").value, m.edges.to_string());
+        assert_eq!(
+            row(&rows, "loops β").value,
+            format!("{} / {}", m.beta, m.beta_max)
+        );
+        assert_eq!(row(&rows, "dead ends").value, m.leaves.to_string());
+        assert!(row(&rows, "bridges")
+            .value
+            .starts_with(&m.bridges.to_string()));
+        assert_eq!(
+            row(&rows, "exit hops").value,
+            format!("{:.0}", m.hops_to_exit.unwrap())
+        );
+        assert_eq!(
+            row(&rows, "routes → exit").value,
+            m.routes_to_exit.unwrap().to_string()
+        );
+        assert_eq!(row(&rows, "λ₂").value, format!("{:.3}", m.lambda2));
+    }
+
+    #[test]
+    fn the_explanations_quote_the_numbers_of_the_floor_they_explain() {
+        for seed in 270..275 {
+            let m = metrics_of(&stage(seed, &rich_of_size(Size::Medium), 8).d);
+            let rows = measure_rows(&m);
+            let rooms = &row(&rows, "rooms").tip;
+            assert!(
+                rooms.contains(&format!("{} main rooms", m.rooms)),
+                "{seed}: {rooms}"
+            );
+            assert!(
+                rooms.contains(&format!("{} dead-end chambers", m.leaf_chambers)),
+                "{seed}: {rooms}"
+            );
+            let loops = &row(&rows, "loops β").tip;
+            for part in [
+                format!("{} now", m.beta),
+                format!("{} aimed for", m.beta_target),
+                format!("room for {}", m.beta_max),
+            ] {
+                assert!(loops.contains(&part), "{seed}: {loops}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_bar_is_a_share_of_a_whole_that_exists() {
+        let floor = stage(279, &rich_of_size(Size::Medium), 8).d;
+        let m = metrics_of(&floor);
+        let rows = measure_rows(&m);
+        for r in &rows {
+            if let Some(share) = r.share {
+                assert!((0.0..=1.0).contains(&share), "{}: {share}", r.label);
+            }
+        }
+        let loops = row(&rows, "loops β").share.unwrap();
+        assert!((loops - m.beta as f32 / m.beta_max as f32).abs() < 1e-6);
+        let bridges = row(&rows, "bridges").share.unwrap();
+        assert!((f64::from(bridges) - m.bridge_share).abs() < 1e-6);
+        // Counts that are not part of a whole have no bar.
+        for label in [
+            "rooms",
+            "corridors",
+            "diameter",
+            "λ₂",
+            "mean doors",
+            "routes → exit",
+        ] {
+            assert!(row(&rows, label).share.is_none(), "{label}");
+        }
+    }
+
+    #[test]
+    fn a_floor_without_an_exit_shows_dashes_and_no_bar_for_the_way_out() {
+        let mut p = params_of_size(Size::Small);
+        p.entrance = false;
+        p.exit_room = false;
+        let m = metrics_of(&stage(1, &p, 8).d);
+        let rows = measure_rows(&m);
+        let hops = row(&rows, "exit hops");
+        assert_eq!(hops.value, "—");
+        assert!(hops.share.is_none());
+        assert_eq!(row(&rows, "routes → exit").value, "—");
+    }
 }

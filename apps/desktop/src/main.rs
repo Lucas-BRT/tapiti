@@ -197,6 +197,8 @@ pub struct App {
     pub selected: Option<usize>,
     /// A room to pick as soon as the first floor is on screen (`TAPITI_SELECT`, for pictures).
     pub select_after: Option<usize>,
+    /// Where the reading column starts (`TAPITI_READ_SCROLL`), for a picture of the part below the fold.
+    pub read_scroll: Option<f32>,
 }
 
 struct Shot {
@@ -278,6 +280,9 @@ impl App {
             appearance: theme::Appearance::saved(),
             system_theme: theme::SystemTheme::watch(&cc.egui_ctx),
             selected: None,
+            read_scroll: std::env::var("TAPITI_READ_SCROLL")
+                .ok()
+                .and_then(|n| n.parse().ok()),
             select_after: std::env::var("TAPITI_SELECT")
                 .ok()
                 .and_then(|n| n.parse().ok()),

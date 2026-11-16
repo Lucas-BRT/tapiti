@@ -830,13 +830,16 @@ pub fn reading_panel(app: &mut App, ui: &mut Ui) {
         .resizable(false)
         .default_size(panel_width(ui, 0.27, 300.0, 380.0))
         .show(ui, |ui| {
-            ScrollArea::vertical()
-                .id_salt("reading")
-                .auto_shrink(false)
-                .show(ui, |ui| {
-                    ui.add_space(theme::GAP);
-                    analysis_tab(app, ui);
-                });
+            let mut area = ScrollArea::vertical().id_salt("reading").auto_shrink(false);
+            if app.generated.is_some() {
+                if let Some(offset) = app.read_scroll.take() {
+                    area = area.vertical_scroll_offset(offset);
+                }
+            }
+            area.show(ui, |ui| {
+                ui.add_space(theme::GAP);
+                analysis_tab(app, ui);
+            });
         });
 }
 
