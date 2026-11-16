@@ -70,11 +70,11 @@ The window has three columns:
 
 - **Parameters**, on the left: the layout, the exploration intent and the environment layers first, then every other group, one bar each. A bar says how many settings the group holds and how many of them differ from the size's defaults. A setting that differs is marked in amber, and its `×` puts the default back. One filter searches every parameter.
 - **The map**, in the middle: rulers numbered in grid cells, the pointer in cells and the room under it in the strip below the plan, and a click picks a room.
-- **Reading**, on the right: the rules V1 to V5, the measures of the floor, the shapes, the doors per room and the phases of the generation. The longer explanation of a line is on hover. A narrow window hides this column; the Reading button brings it back.
+- **Reading**, on the right: the rules V1 to V5, the measures of the floor, the shapes, the doors per room and the phases of the generation. The longer explanation of a line is on hover. A narrow window hides this column; the button at the right of the controls bar (a square with a strip at its edge), or View > Reading panel, shows or hides it.
 
 ### The command line
 
-At the foot of the window: `seed N`, `size S|M|L|XL`, `step ±N`, `random`, `reset`, `layer NAME`, `filter TEXT` and `group NAME`. <kbd>:</kbd> or <kbd>Ctrl</kbd>+<kbd>K</kbd> goes to it.
+At the foot of the window: `seed N`, `size small|medium|large|huge` (`s`, `m`, `l` and `h` also work), `step ±N`, `random`, `reset`, `layer NAME`, `filter TEXT` and `group NAME`. <kbd>:</kbd> or <kbd>Ctrl</kbd>+<kbd>K</kbd> goes to it.
 
 ### Menus and appearance
 
@@ -82,11 +82,12 @@ The menu bar has:
 
 - **File**: open and save a Λ as a JSON file, copy the JSON, copy the floor as SVG, quit.
 - **Edit**: reset all to the size.
-- **View**: the appearance (the system's, light or dark; the system's is the default) and Reduce motion.
+- **View**: the reading panel.
 - **Tools**: the guided experiments and the JSON editor, in a window.
 - **Help**: the shortcuts.
+- **Settings** (<kbd>Ctrl</kbd>+<kbd>,</kbd>): a window of its own for the options of the application: the theme (the system's, light or dark; the system's is the default), the spacing (compact or comfortable), the reading panel (automatic, shown or hidden) and whether a new floor is revealed from the entrance. They are saved and apply at once.
 
-On the right of the same bar are the seed, the number of draws, the time of the stage, a hash of the seed and Λ (two windows with the same hash show the same floor) and V1 to V5. The Comfortable and Compact button changes the spacing.
+On the right of the same bar are a hash of the seed and Λ (two windows with the same hash show the same floor) and V1 to V5. The seed is in the controls bar, and the time and the number of draws of the last floor are at the foot.
 
 ### Shortcuts and the map
 
@@ -94,7 +95,7 @@ On the right of the same bar are the seed, the number of draws, the time of the 
 - <kbd>Alt</kbd>+<kbd>R</kbd> draws a random seed.
 - <kbd>Alt</kbd>+<kbd>←</kbd> and <kbd>→</kbd> step the seed.
 - <kbd>/</kbd> goes to the filter; <kbd>Tab</kbd> and <kbd>Shift</kbd>+<kbd>Tab</kbd> move between controls, <kbd>Enter</kbd> opens a group, <kbd>↑</kbd> and <kbd>↓</kbd> change a focused number, <kbd>Esc</kbd> leaves a field.
-- On the map, drag to pan, scroll to zoom, double-click to fit. A new seed or size is revealed from the entrance; View > Reduce motion shows it at once.
+- On the map, drag to pan, scroll to zoom, double-click to fit. A new seed or size is revealed from the entrance; turn that off in Settings to show it at once.
 
 ## The website and the lab
 

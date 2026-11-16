@@ -17,6 +17,7 @@ mod params_ui;
 mod pick;
 mod prefs;
 mod relevance;
+mod settings;
 mod solid;
 mod theme;
 
@@ -35,7 +36,7 @@ use tapiti_core::par;
 use tapiti_core::params::{params_of_size, Params, Size, TopologyProfile, TopologySpec};
 use tapiti_core::stage;
 
-const APP_ID: &str = "dev.lucasbrt.Tapiti";
+pub const APP_ID: &str = "dev.lucasbrt.Tapiti";
 /// Pause after the last edit before the map regenerates.
 const APPLY_DELAY: Duration = Duration::from_millis(180);
 /// A generation shorter than this swaps the map in one step; a longer one shows its progress.
@@ -164,6 +165,7 @@ pub struct App {
     launched_at: Instant,
     show_building: bool,
     show_shortcuts: bool,
+    show_settings: bool,
     apply_at: Option<Instant>,
     pub status: String,
     pub performance_status: Option<String>,
@@ -263,6 +265,7 @@ impl App {
             launched_at: Instant::now(),
             show_building: false,
             show_shortcuts: false,
+            show_settings: false,
             apply_at: None,
             status: "Preparing the generator…".into(),
             performance_status: None,
@@ -272,7 +275,7 @@ impl App {
             focus_group: None,
             command: String::new(),
             density: theme::Density::saved(),
-            reading_open: None,
+            reading_open: settings::Reading::saved().open(),
             reveal_key: None,
             reveal_start: None,
             skip_reveal: false,
@@ -305,6 +308,7 @@ impl App {
 
     /// `TAPITI_LAYOUT`, `TAPITI_SIZE` (1 to 4) and `TAPITI_TAB` (analysis, parameters or the id of a group) choose what a screenshot shows.
     fn pick_from_env(&mut self) {
+        self.show_settings = std::env::var_os("TAPITI_SETTINGS").is_some();
         if self.shot.is_none() {
             return;
         }
@@ -956,6 +960,9 @@ impl App {
                 ctx.memory_mut(|m| m.request_focus(theme::command_id()));
             }
         }
+        if ctx.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::Comma)) {
+            self.show_settings = true;
+        }
         if alt(ctx, Key::ArrowLeft) {
             self.set_seed(self.seed.saturating_sub(1));
         }
@@ -1011,6 +1018,7 @@ impl eframe::App for App {
         panels::central(self, ui);
         panels::shortcuts_window(self, &ctx);
         panels::json_window(self, &ctx);
+        settings::window(self, &ctx);
         self.take_screenshot(&ctx);
     }
 }

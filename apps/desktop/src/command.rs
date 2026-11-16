@@ -44,7 +44,7 @@ impl Layer {
 }
 
 pub const HELP: &str =
-    "seed N · size S|M|L|XL · step ±N · random · reset · layer NAME · filter TEXT · group NAME";
+    "seed N · size small|medium|large|huge · step ±N · random · reset · layer NAME · filter TEXT · group NAME";
 
 pub fn parse(line: &str) -> Result<Command, String> {
     let mut words = line.split_whitespace();
@@ -76,11 +76,11 @@ pub fn parse(line: &str) -> Result<Command, String> {
             .enumerate()
             .find(|(i, size)| {
                 let s = s.to_lowercase();
-                size.name() == s || ["s", "m", "l", "xl"][*i] == s
+                size.name() == s || ["s", "m", "l", "h"][*i] == s || (*i == 3 && s == "xl")
             })
             .map(|(_, size)| size)
             .map(|size| Command::Size(*size))
-            .ok_or_else(|| format!("size is small, medium, large or huge (s, m, l, xl): {s}")),
+            .ok_or_else(|| format!("size is small, medium, large or huge (s, m, l, h): {s}")),
         ("size", None) => Err("size needs small, medium, large or huge".into()),
         ("step", arg) => match arg.unwrap_or("+1").trim_start_matches('+').parse::<i64>() {
             Ok(n) => Ok(Command::Step(n)),
@@ -126,6 +126,7 @@ mod tests {
         assert_eq!(parse("reset"), Ok(Command::Reset));
         assert_eq!(parse("?"), Ok(Command::Help));
         assert_eq!(parse("size xl"), Ok(Command::Size(Size::Huge)));
+        assert_eq!(parse("size h"), Ok(Command::Size(Size::Huge)));
         assert_eq!(parse("layer heat"), Ok(Command::Layer(Layer::Heat)));
         assert_eq!(parse("layer none"), Ok(Command::Layer(Layer::None)));
         assert_eq!(

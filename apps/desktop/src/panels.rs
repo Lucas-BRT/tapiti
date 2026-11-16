@@ -134,29 +134,16 @@ pub fn menu_bar(app: &mut App, ui: &mut Ui) {
                     }
                 });
                 ui.menu_button("View", |ui| {
-                    let before = app.appearance;
-                    for (value, name) in [
-                        (theme::Appearance::System, "Follow the system"),
-                        (theme::Appearance::Light, "Light theme"),
-                        (theme::Appearance::Dark, "Dark theme"),
-                    ] {
-                        ui.radio_value(&mut app.appearance, value, name);
-                    }
-                    if app.appearance != before {
-                        app.appearance.save();
-                    }
-                    ui.separator();
+                    let reading = reading_visible(app, ui);
                     if ui
-                        .checkbox(&mut app.reduce_motion, "Reduce motion")
+                        .selectable_label(reading, "Reading panel")
                         .on_hover_text(
-                            "Show a new floor at once instead of revealing it from the entrance",
+                            "The rules, measures and phases of the floor, beside the map",
                         )
-                        .changed()
+                        .clicked()
                     {
-                        crate::prefs::save(
-                            "motion",
-                            if app.reduce_motion { "reduce" } else { "full" },
-                        );
+                        app.reading_open = Some(!reading);
+                        ui.close();
                     }
                 });
                 ui.menu_button("Tools", |ui| {
@@ -184,6 +171,13 @@ pub fn menu_bar(app: &mut App, ui: &mut Ui) {
                         ui.close();
                     }
                 });
+                if ui
+                    .add(Button::new("Settings").frame(false))
+                    .on_hover_text("How the application looks and moves (Ctrl+,)")
+                    .clicked()
+                {
+                    app.show_settings = true;
+                }
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     status_readout(app, ui);
                 });
@@ -228,20 +222,13 @@ fn status_readout(app: &App, ui: &mut Ui) {
         g.seed,
         serde_json::to_string(&app.params).unwrap_or_default()
     );
-    for (name, value) in [
-        ("hash", fnv1a(key.as_bytes())),
-        ("stage", format!("{:.1} ms", g.elapsed_ms)),
-        ("draws", g.draws.to_string()),
-        ("seed", g.seed.to_string()),
-    ] {
-        ui.label(
-            RichText::new(value)
-                .font(egui::FontId::new(12.0, theme::medium()))
-                .color(c.text),
-        );
-        ui.label(muted(ui, name));
-        ui.add_space(6.0);
-    }
+    ui.label(
+        RichText::new(fnv1a(key.as_bytes()))
+            .font(egui::FontId::new(12.0, theme::medium()))
+            .color(c.text),
+    );
+    ui.label(muted(ui, "hash"));
+    ui.add_space(6.0);
 }
 
 pub fn shortcuts_window(app: &mut App, ctx: &egui::Context) {
@@ -263,6 +250,32 @@ pub fn shortcuts_window(app: &mut App, ctx: &egui::Context) {
                 ui.label(line);
             }
         });
+}
+
+/// The button that hides or shows the right panel: a square with a strip at its right edge, filled while the panel is shown.
+fn panel_toggle(ui: &mut Ui, shown: bool) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(26.0, 22.0), egui::Sense::click());
+    let c = theme::of(ui);
+    let color = if response.hovered() {
+        c.text
+    } else {
+        c.text_muted
+    };
+    let icon = egui::Rect::from_center_size(rect.center(), egui::vec2(14.0, 11.0));
+    let painter = ui.painter();
+    painter.rect_stroke(
+        icon,
+        0.0,
+        egui::Stroke::new(1.0, color),
+        egui::StrokeKind::Inside,
+    );
+    let strip = egui::Rect::from_min_max(egui::pos2(icon.right() - 5.0, icon.top()), icon.max);
+    if shown {
+        painter.rect_filled(strip, 0.0, color);
+    } else {
+        painter.vline(strip.left(), strip.y_range(), egui::Stroke::new(1.0, color));
+    }
+    response
 }
 
 pub fn top_bar(app: &mut App, ui: &mut Ui) {
@@ -330,38 +343,15 @@ pub fn top_bar(app: &mut App, ui: &mut Ui) {
                 }
                 ui.with_layout(egui::Layout::right_to_left(Align::Center), |ui| {
                     let reading = reading_visible(app, ui);
-                    if ui
-                        .selectable_label(reading, "Reading")
-                        .on_hover_text("Show or hide the reading of the floor beside the map")
+                    if panel_toggle(ui, reading)
+                        .on_hover_text(if reading {
+                            "Hide the reading panel"
+                        } else {
+                            "Show the reading panel"
+                        })
                         .clicked()
                     {
                         app.reading_open = Some(!reading);
-                    }
-                    let comfortable = app.density == theme::Density::Comfortable;
-                    if ui
-                        .button(if comfortable {
-                            "Spacing: comfortable"
-                        } else {
-                            "Spacing: compact"
-                        })
-                        .on_hover_text("Switch between compact and comfortable spacing")
-                        .clicked()
-                    {
-                        app.density = if comfortable {
-                            theme::Density::Compact
-                        } else {
-                            theme::Density::Comfortable
-                        };
-                        app.density.save();
-                        theme::apply_density(ui.ctx(), app.density);
-                    }
-                    if ui
-                        .button(format!("Theme: {}", app.appearance.name()))
-                        .on_hover_text("Cycle the theme: system, light, dark")
-                        .clicked()
-                    {
-                        app.appearance = app.appearance.next();
-                        app.appearance.save();
                     }
                 });
             });
@@ -382,7 +372,9 @@ pub fn command_bar(app: &mut App, ui: &mut Ui) {
                     TextEdit::singleline(&mut app.command)
                         .id(theme::command_id())
                         .frame(egui::Frame::NONE)
-                        .hint_text(command::HELP)
+                        .hint_text(
+                            "Command: seed, size, step, random, layer, filter... (help lists them)",
+                        )
                         .desired_width((ui.available_width() - right).max(160.0)),
                 );
                 if field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {

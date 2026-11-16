@@ -5,8 +5,7 @@ use crate::charts::{self, Bar};
 use crate::map::{Palette, SHAPE_CLASSES};
 use crate::panels::{card, muted};
 use crate::{
-    class_label, size_label, summary, translate_log, translate_violation, App, BenchmarkKind,
-    GeneratedMap,
+    class_label, summary, translate_log, translate_violation, App, BenchmarkKind, GeneratedMap,
 };
 use eframe::egui::{self, Button, Color32, Grid, RichText, Stroke, Ui};
 
@@ -202,7 +201,7 @@ fn broken(map: &GeneratedMap, code: &str) -> bool {
     map.violations.iter().any(|v| v.starts_with(code))
 }
 
-fn rules_section(ui: &mut Ui, app: &App, map: &GeneratedMap) {
+fn rules_section(ui: &mut Ui, map: &GeneratedMap) {
     let c = crate::theme::of(ui);
     card(ui, "Rules", |ui| {
         ui.horizontal(|ui| {
@@ -216,15 +215,6 @@ fn rules_section(ui: &mut Ui, app: &App, map: &GeneratedMap) {
                     .font(egui::FontId::new(13.0, crate::theme::medium()))
                     .color(color),
             );
-            ui.label(muted(
-                ui,
-                format!(
-                    "{} · seed {} · {} draw(s)",
-                    size_label(app.size).to_lowercase(),
-                    app.seed,
-                    map.draws
-                ),
-            ));
         });
         for (code, name, detail) in RULES {
             ui.horizontal(|ui| {
@@ -262,7 +252,7 @@ pub fn analysis_tab(app: &mut App, ui: &mut Ui) {
     let pal = Palette::new(ui.visuals().dark_mode);
     let m = &map.metrics;
 
-    rules_section(ui, app, &map);
+    rules_section(ui, &map);
 
     card(ui, "Measures", |ui| measures(ui, &measure_rows(m)));
 
