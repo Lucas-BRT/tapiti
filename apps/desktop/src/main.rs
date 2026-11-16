@@ -190,8 +190,10 @@ pub struct App {
     pub reveal_start: Option<f64>,
     /// Set while the progressive preview is on, so the floor that follows it is not revealed a second time.
     pub skip_reveal: bool,
-    /// No reveal and no other motion of the interface, kept between runs.
-    pub reduce_motion: bool,
+    /// Whether the interface animates at all (groups opening, hover fades, the reveal), kept between runs.
+    pub animations: bool,
+    /// Whether a new floor is drawn outwards from the entrance; only while `animations` is on.
+    pub reveal_floor: bool,
     /// Light, dark or the system's, kept between runs, and what the system says now.
     pub appearance: theme::Appearance,
     pub system_theme: theme::SystemTheme,
@@ -279,7 +281,8 @@ impl App {
             reveal_key: None,
             reveal_start: None,
             skip_reveal: false,
-            reduce_motion: prefs::load("motion").as_deref() == Some("reduce"),
+            animations: theme::animations_saved(),
+            reveal_floor: prefs::load("reveal").as_deref() != Some("off"),
             appearance: theme::Appearance::saved(),
             system_theme: theme::SystemTheme::watch(&cc.egui_ctx),
             selected: None,

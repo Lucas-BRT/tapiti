@@ -416,6 +416,21 @@ pub fn brand(ui: &mut egui::Ui) {
 pub fn apply(ctx: &egui::Context) {
     install_fonts(ctx);
     apply_density(ctx, Density::saved());
+    apply_motion(ctx, animations_saved());
+}
+
+/// Whether the interface animates: on unless the choice kept in `~/.config/tapiti/motion` is `reduce`.
+pub fn animations_saved() -> bool {
+    crate::prefs::load("motion").as_deref() != Some("reduce")
+}
+
+/// How long the interface's own transitions last (a group opening, a hover fading in): 120 ms, or none.
+pub fn apply_motion(ctx: &egui::Context, on: bool) {
+    for theme in [Theme::Dark, Theme::Light] {
+        ctx.style_mut_of(theme, |style| {
+            style.animation_time = if on { 0.12 } else { 0.0 };
+        });
+    }
 }
 
 pub fn apply_density(ctx: &egui::Context, density: Density) {

@@ -384,20 +384,6 @@ pub fn command_bar(app: &mut App, ui: &mut Ui) {
                 }
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     ui.label(muted(ui, format!("{} threads", par::threads())));
-                    if !app.changed.is_empty() {
-                        ui.separator();
-                        if ui
-                            .small_button("Reset")
-                            .on_hover_text("Restore Classic and the defaults of the current size")
-                            .clicked()
-                        {
-                            app.reset_all();
-                        }
-                        ui.label(
-                            RichText::new(format!("{} changed", app.changed.len())).color(c.accent),
-                        );
-                        ui.separator();
-                    }
                     ui.add(egui::Label::new(muted(ui, &app.status)).truncate());
                 });
             });
@@ -1459,7 +1445,7 @@ pub fn central(app: &mut App, ui: &mut Ui) {
                 }
             }
 
-            // A new floor (another seed or size) is revealed outwards from the entrance in about 0.6 s, unless motion is reduced, the
+            // A new floor (another seed or size) is revealed outwards from the entrance in about 0.6 s, unless animations or the reveal are off, the
             // progressive preview has just shown it being built, or a picture is being taken.
             let now = ctx.input(|i| i.time);
             if app.showing_building() {
@@ -1470,8 +1456,14 @@ pub fn central(app: &mut App, ui: &mut Ui) {
                 if app.reveal_key != Some(key) {
                     app.reveal_key = Some(key);
                     app.selected = app.select_after.take();
-                    app.reveal_start =
-                        (!app.reduce_motion && !app.capturing() && !app.skip_reveal).then_some(now);
+                    // A floor that arrives while the last one is still being revealed (stepping through seeds) shows at once: the
+                    // animation never makes the person wait.
+                    app.reveal_start = (app.animations
+                        && app.reveal_floor
+                        && !app.capturing()
+                        && !app.skip_reveal
+                        && app.reveal_start.is_none())
+                    .then_some(now);
                     app.skip_reveal = false;
                 }
             }

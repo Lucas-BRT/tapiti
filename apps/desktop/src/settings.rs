@@ -146,14 +146,28 @@ fn content(app: &mut App, ui: &mut Ui) {
         theme::section(ui, "Motion", |ui| {
             row(
                 ui,
-                "Reveal a new floor",
-                "A new floor is drawn from the entrance outwards. Turn it off to show the floor at once.",
+                "Animations",
+                "Groups open and close, and controls change colour, over 120 ms. Off: everything changes at once.",
                 |ui| {
-                    let mut reveal = !app.reduce_motion;
-                    if ui.checkbox(&mut reveal, "From the entrance").changed() {
-                        app.reduce_motion = !reveal;
-                        prefs::save("motion", if app.reduce_motion { "reduce" } else { "full" });
+                    if ui.checkbox(&mut app.animations, "On").changed() {
+                        prefs::save("motion", if app.animations { "full" } else { "reduce" });
+                        theme::apply_motion(ui.ctx(), app.animations);
                     }
+                },
+            );
+            row(
+                ui,
+                "New floor",
+                "A new floor is drawn from the entrance outwards in about 0.6 s. Stepping through seeds quickly shows each floor at once.",
+                |ui| {
+                    ui.add_enabled_ui(app.animations, |ui| {
+                        if ui
+                            .checkbox(&mut app.reveal_floor, "Reveal from the entrance")
+                            .changed()
+                        {
+                            prefs::save("reveal", if app.reveal_floor { "on" } else { "off" });
+                        }
+                    });
                 },
             );
         });
