@@ -38,7 +38,7 @@ fn dictionary() -> String {
         }};
     }
     let map = dict! {
-        lab_map_instructions, lab_3d_instructions,
+        lab_map_instructions,
         lab_size_1, lab_size_2, lab_size_3, lab_size_4,
         lab_seed_error, lab_copied, lab_no_clipboard,
         lab_changed_none, lab_changed_some(n),
@@ -196,10 +196,7 @@ pub async fn page(cx: &Cx) -> Result<impl View> {
             data-tab="controls"
             data-i18n=(dictionary())
             data-worker=(asset!("assets/lab/worker.js"))
-            data-three=(asset!("assets/vendor/three-subset.min.js"))
-            data-build=(asset!("assets/walk/build.js"))
-            data-scene=(asset!("assets/walk/scene.js"))
-            data-paper=(asset!("assets/walk/paper.js"))
+            data-hatch=(asset!("assets/lab/hatch.js"))
         >
             <noscript><p class="lab-noscript">(e!(lab_needs_js))</p></noscript>
             <div class="lab-tabs" role="tablist" aria-label=(e!(lab_tabs_aria))>
@@ -369,42 +366,12 @@ pub async fn page(cx: &Cx) -> Result<impl View> {
                     aria-label=(e!(lab_map_label))
                     aria-describedby="map-instructions"
                 ></canvas>
-                <canvas
-                    id="floor-3d"
-                    tabindex="0"
-                    role="img"
-                    aria-label=(e!(lab_3d_label))
-                    hidden=(true)
-                ></canvas>
                 <div class="map-tooltip" id="map-tooltip" role="tooltip" hidden=(true)></div>
                 <div
                     class="map-toolbar"
                     role="toolbar"
                     aria-label=(e!(lab_toolbar_aria))
                 >
-                    <div
-                        class="view-switch"
-                        role="group"
-                        aria-label=(e!(lab_view_aria))
-                        hidden=(true)
-                    >
-                        <button
-                            type="button"
-                            class="map-tool-button"
-                            id="view-plan"
-                            aria-pressed="true"
-                        >
-                            (e!(lab_view_plan))
-                        </button>
-                        <button
-                            type="button"
-                            class="map-tool-button"
-                            id="view-3d"
-                            aria-pressed="false"
-                        >
-                            (e!(lab_view_3d))
-                        </button>
-                    </div>
                     <button
                         type="button"
                         class="map-tool-button"

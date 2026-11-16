@@ -43,30 +43,4 @@
     );
     heads.forEach((h) => io.observe(h));
   }
-
-  // The entrance: show the install that fits the visitor's system, and let the Linux command be copied. Unknown or phone: all three stay.
-  const install = document.querySelector("[data-install]");
-  if (install) {
-    const ua = navigator.userAgentData?.platform || navigator.platform || "";
-    const agent = navigator.userAgent;
-    const mobile = /Android|iPhone|iPad|iPod/i.test(agent) || navigator.userAgentData?.mobile;
-    const os = mobile ? null : /win/i.test(ua) ? "windows" : /mac/i.test(ua) ? "macos" : /linux|x11/i.test(ua) || /Linux|X11/.test(agent) ? "linux" : null;
-    const pick = install.querySelector(`[data-os="${os}"]`);
-    if (pick) {
-      pick.dataset.picked = "";
-      install.dataset.picked = "";
-    }
-    const copy = install.querySelector(".copy-command");
-    if (copy && navigator.clipboard) {
-      copy.hidden = false;
-      const text = copy.textContent;
-      copy.addEventListener("click", async () => {
-        try {
-          await navigator.clipboard.writeText(copy.dataset.copy);
-          copy.textContent = copy.dataset.copied;
-          setTimeout(() => (copy.textContent = text), 1600);
-        } catch {}
-      });
-    }
-  }
 })();

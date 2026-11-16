@@ -26,7 +26,7 @@ const remember = (key, value) => {
 }
 
 await init()
-const paper = await import(root.dataset.paper)
+const { hatchPatterns } = await import(root.dataset.hatch)
 
 /* ---------------- Workers ---------------- */
 
@@ -295,7 +295,7 @@ $('bench-800').addEventListener('click', async () => {
 
 const canvas = $('floor-map')
 const ctx = canvas.getContext('2d')
-const hatches = paper.hatchPatterns(ctx, css('--map-hatch'))
+const hatches = hatchPatterns(ctx, css('--map-hatch'))
 const mapTooltip = $('map-tooltip')
 const zoomLabel = $('zoom-label')
 const viewSection = $('view')
@@ -656,7 +656,6 @@ const regenerate = () => {
     hideHelp()
     draw()
     renderResults()
-    if (view3d.active) mount3d()
   } catch (error) {
     current = null
     results.replaceChildren(el('div', { class: 'validity-card invalid' }, el('div', {}, el('strong', {}, tr('lab_gen_failed')), el('p', {}, String(error)))))
@@ -731,8 +730,6 @@ canvas.addEventListener('dblclick', resetView)
 new ResizeObserver(draw).observe(viewSection)
 window.addEventListener('keydown', (event) => {
   if (event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement || event.target?.isContentEditable) return
-  // The 3D view uses the arrow keys itself, to move.
-  if (event.target === canvas3d) return
   if (event.altKey || event.ctrlKey || event.metaKey) return
   if (event.key >= '1' && event.key <= '4') setSize(Number(event.key))
   else if (event.key === 'r' || event.key === 'R') newSeed()
@@ -771,52 +768,6 @@ tabs.forEach((tab, i) => {
   })
 })
 selectTab(tabs[0])
-
-/* ---------------- Plan and 3D ---------------- */
-
-const canvas3d = $('floor-3d')
-const viewSwitch = root.querySelector('.view-switch')
-const instructions = $('map-instructions')
-const view3d = { active: false, modules: null, handle: null }
-const hasWebGL2 = () => { try { return !!document.createElement('canvas').getContext('webgl2') } catch { return false } }
-if (hasWebGL2()) viewSwitch.hidden = false
-
-const setView = (to3d) => {
-  view3d.active = to3d
-  canvas.hidden = to3d
-  canvas3d.hidden = !to3d
-  hideMapTooltip()
-  for (const id of ['zoom-out', 'zoom-in', 'zoom-fit']) $(id).hidden = to3d
-  zoomLabel.hidden = to3d
-  $('view-plan').setAttribute('aria-pressed', String(!to3d))
-  $('view-3d').setAttribute('aria-pressed', String(to3d))
-  canvas3d.setAttribute('aria-describedby', 'map-instructions')
-  instructions.textContent = tr(to3d ? 'lab_3d_instructions' : 'lab_map_instructions')
-}
-let mounting = 0
-async function mount3d() {
-  if (!current) return
-  const ticket = ++mounting
-  try {
-    view3d.modules ??= await Promise.all([import(root.dataset.three), import(root.dataset.build), import(root.dataset.scene)])
-    if (ticket !== mounting || !view3d.active) return
-    const [THREE, build, scene] = view3d.modules
-    view3d.handle?.dispose({ keepContext: true })
-    view3d.handle = scene.mount({ THREE, paper, canvas: canvas3d, floor: current.floor, scene: build.build(current.floor), mode: 'orbit' })
-  } catch (error) {
-    console.warn('lab: the 3D view did not start', error)
-    leave3d()
-  }
-}
-function leave3d() {
-  mounting++
-  view3d.handle?.dispose()
-  view3d.handle = null
-  setView(false)
-  draw()
-}
-$('view-3d').addEventListener('click', () => { if (view3d.active) return; setView(true); mount3d() })
-$('view-plan').addEventListener('click', () => { if (view3d.active) leave3d() })
 
 syncForm()
 updateSizeButtons()

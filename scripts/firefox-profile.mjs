@@ -1,16 +1,9 @@
-// A fresh Firefox profile for the headless checks. A CI runner has no GPU, so WebGL2 (the landing walk, the lab's 3D view) is allowed on
-// Mesa's software rasterizer: Firefox blocks software renderers by default.
+// A fresh, empty Firefox profile for the headless checks.
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-const PREFS = [
-  ['webgl.disabled', false],
-  ['webgl.enable-webgl2', true],
-  ['webgl.force-enabled', true],
-  ['webgl.forbid-software', false],
-  ['gfx.webrender.software', true],
-]
+const PREFS = []
 
 export const freshProfile = (name) => {
   const dir = mkdtempSync(join(tmpdir(), `tapiti-${name}-`))

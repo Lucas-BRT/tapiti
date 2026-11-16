@@ -8,7 +8,7 @@ use topcoat::{
 
 use super::slug;
 use crate::{
-    app::{leaf::leaf_chamber, t},
+    app::{missing::not_found, t},
     docs::docs,
     floor::TrustedHtml,
 };
@@ -60,7 +60,7 @@ pub async fn page(cx: &Cx) -> Result<impl View> {
             )
         } else {
             (StatusCode::NOT_FOUND)
-            leaf_chamber(missing: true)
+            not_found()
         }
     })
 }

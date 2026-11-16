@@ -20,7 +20,7 @@
 #controls { border-right: 1px solid var(--stone-600); }
 #results { border-left: 1px solid var(--stone-600); }
 #view { position: relative; min-width: 0; min-height: 0; overflow: hidden; background: var(--stone-950); background-image: linear-gradient(var(--map-grid) 1px, transparent 1px), linear-gradient(90deg, var(--map-grid) 1px, transparent 1px); background-size: 24px 24px; }
-#floor-map, #floor-3d { display: block; width: 100%; height: 100%; touch-action: none; }
+#floor-map { display: block; width: 100%; height: 100%; touch-action: none; }
 #floor-map { cursor: grab; }
 #floor-map.dragging { cursor: grabbing; }
 .lab :focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
@@ -98,11 +98,6 @@ details > :last-child { margin-bottom: 12px; }
 
 /* The map's own tools. */
 .map-toolbar { position: absolute; top: 14px; left: 14px; right: 14px; z-index: 6; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; width: fit-content; max-width: calc(100% - 28px); padding: 5px; background: var(--stone-900); border: 1px solid var(--stone-600); border-radius: var(--radius-md); box-shadow: var(--shadow-lift); }
-.view-switch { display: inline-flex; margin-right: 4px; }
-.view-switch .map-tool-button { margin-left: -1px; border-radius: 0; }
-.view-switch .map-tool-button:first-child { margin-left: 0; border-radius: var(--radius-sm) 0 0 var(--radius-sm); }
-.view-switch .map-tool-button:last-child { border-radius: 0 var(--radius-sm) var(--radius-sm) 0; }
-.view-switch [aria-pressed=true] { background: var(--bone); border-color: var(--bone); color: var(--abyss); }
 .map-tool-button { min-width: 36px; min-height: 34px; padding: 0 11px; font-weight: 700; font-size: .92rem; }
 .reading-toggle { display: none; }
 .zoom-label { min-width: 3.4em; text-align: center; color: var(--ash); font-size: .85rem; }

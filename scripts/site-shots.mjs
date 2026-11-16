@@ -1,6 +1,6 @@
 // Screenshots of the site's pages at desktop and phone width, in headless Firefox over WebDriver BiDi (Node 22+ and `firefox`).
 //   node scripts/site-shots.mjs <out-dir> [base-url] [path ...]
-// VIEWPORT=1 captures only the first screen. Default base http://127.0.0.1:3000 and paths / /docs/model /search?q=seed /leaf /lab. Writes <out-dir>/<name>-<width>.png.
+// VIEWPORT=1 captures only the first screen. Default base http://127.0.0.1:3000 and paths / /docs/model /search?q=seed /lab. Writes <out-dir>/<name>-<width>.png.
 import { spawn } from 'node:child_process'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -8,7 +8,7 @@ import { freshProfile } from './firefox-profile.mjs'
 
 const [out, base = 'http://127.0.0.1:3000', ...rest] = process.argv.slice(2)
 if (!out) { console.error('usage: node scripts/site-shots.mjs <out-dir> [base-url] [path ...]'); process.exit(2) }
-const paths = rest.length ? rest : ['/', '/docs/model', '/search?q=seed', '/leaf', '/lab']
+const paths = rest.length ? rest : ['/', '/docs/model', '/search?q=seed', '/lab']
 // WIDTHS=1440x900,1100x800 picks other viewports.
 const widths = (process.env.WIDTHS ?? '1440x900,390x844').split(',').map((w) => w.split('x').map(Number))
 mkdirSync(out, { recursive: true })

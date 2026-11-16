@@ -69,19 +69,8 @@ report('Escape closes the drawer and returns the focus', (await run("document.ge
 
 report('the shape legend repeats the plan hatches', (await run("return document.querySelectorAll('.legend-list [data-shape]').length")) === 5, 'legend')
 
-// The 3D view: mounts a scene, redraws on regenerate, and leaving it disposes the scene.
 await resize(1440, 900)
 await sleep(300)
-await run("document.getElementById('view-3d').click()")
-const mounted = await (async () => { for (let i = 0; i < 40; i++) { if (await run('return !!window.__walk && window.__walk.calls > 0')) return true; await sleep(500) } return false })()
-report('the 3D view draws the floor', mounted, await run('return JSON.stringify(window.__walk)'))
-report('the 3D view hides the plan tools', (await run("return document.getElementById('floor-map').hidden && !document.getElementById('floor-3d').hidden && document.getElementById('zoom-in').hidden")) === true, '3d')
-await run("document.querySelector('[data-size=\"2\"]').click()")
-await sleep(1500)
-report('the 3D view follows a new floor', (await run('return !!window.__walk && window.__walk.calls > 0')) === true, 'regenerate')
-await run("document.getElementById('view-plan').click()")
-await sleep(500)
-report('leaving 3D disposes the scene', (await run("return window.__walk === null && !document.getElementById('floor-map').hidden")) === true, 'dispose')
 
 // No sideways scroll on a phone.
 await resize(390, 844)

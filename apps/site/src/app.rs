@@ -1,11 +1,9 @@
 pub mod _page;
 pub mod docs;
 pub mod lab;
-pub mod leaf;
 mod legacy;
 mod missing;
 pub mod search;
-mod walk;
 
 use std::path::PathBuf;
 use topcoat::{
@@ -31,8 +29,6 @@ use topcoat::{
 messages!("./l10n/{locale}.ftl");
 
 pub fn router() -> Router {
-    // Measured now, at startup, so the first visitor does not wait for it.
-    crate::floor::speed();
     module_router!()
         .with(BaseUrl::new(site_url()).expect("TAPITI_SITE_URL must be an absolute URL such as https://tapiti.example"))
         .discover()

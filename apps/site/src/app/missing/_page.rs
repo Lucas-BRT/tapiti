@@ -6,7 +6,7 @@ use topcoat::{
     view::{View, view},
 };
 
-use crate::app::{leaf::leaf_chamber, t};
+use crate::app::{missing::not_found, t};
 
 #[page(
     with(Metadata::new()
@@ -16,6 +16,6 @@ use crate::app::{leaf::leaf_chamber, t};
 pub async fn page(cx: &Cx) -> Result<impl View> {
     Ok(view! {
         (topcoat::router::StatusCode::NOT_FOUND)
-        leaf_chamber(missing: true)
+        not_found()
     })
 }

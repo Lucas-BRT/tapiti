@@ -122,11 +122,10 @@ jobs:
       - name: The module draws the floors the native build draws
         run: scripts/wasm-parity.sh
       - run: node --check apps/site/assets/lab/lab.js && node --check apps/site/assets/lab/worker.js
-      - run: node --check apps/site/assets/walk/build.js && node --check apps/site/assets/walk/scene.js && node --check apps/site/assets/walk/dungeon.js && node --check scripts/vendor-three.mjs
+      - run: for f in apps/site/assets/*.js apps/site/assets/lab/*.js; do node --check "$f"; done
       - run: for f in scripts/*.mjs; do node --check "$f"; done
-      - run: node scripts/walk-check.mjs
 
-  # The real site in headless Firefox: the landing page's 3D walk, the lab, the 404, and accessibility (axe-core). Screenshots are kept.
+  # The real site in headless Firefox: the landing page, the lab, the 404, and accessibility (axe-core). Screenshots are kept.
   browser:
     name: Browser
     runs-on: ubuntu-latest
@@ -139,11 +138,11 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: browser
-      # The runner has no GPU and no display, and Firefox cannot make a WebGL2 context without one: Xvfb is the display and Mesa draws in software.
-      - name: Xvfb and Mesa
+      # The runner has no display: Xvfb is the display.
+      - name: Xvfb
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends xvfb libgl1-mesa-dri libglx-mesa0 libegl1
+          sudo apt-get install -y --no-install-recommends xvfb
       - name: wasm-bindgen CLI (cached by version)
         id: bindgen
         uses: actions/cache@v6

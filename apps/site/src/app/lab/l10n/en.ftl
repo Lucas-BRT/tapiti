@@ -222,10 +222,5 @@ lab_l_caps = The shape limits cannot hold all the rooms; some limit was exceeded
 lab_tabs_aria = Controls or reading
 lab_tab_controls = Controls
 lab_tab_reading = Reading
-lab_view_aria = View
-lab_view_plan = Plan
-lab_view_3d = 3D
 lab_reading = Reading
-lab_3d_label = The floor in three dimensions. Drag to turn it, wheel to zoom.
-lab_3d_instructions = Drag to turn · wheel to zoom · right-drag to move · arrow keys with the view focused
 
