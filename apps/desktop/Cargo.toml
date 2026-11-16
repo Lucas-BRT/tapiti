@@ -13,6 +13,9 @@ tapiti-render = { path = "../../crates/tapiti-render" }
 tapiti-schema = { path = "../../crates/tapiti-schema" }
 serde_json = "1"
 rfd = "=0.18.0"
+# Not used by the code: it turns on winit's Adwaita window frame for Wayland. Without it the window gets a plain frame that has no
+# theme (always light), on a compositor that does not draw the title bar itself (COSMIC). Pinned to the version eframe uses.
+winit = { version = "=0.30.13", default-features = false, features = ["wayland-csd-adwaita"] }
 
 # Puts the icon and the version into tapiti-desktop.exe (build.rs); the build runs on Windows for the release.
 [target.'cfg(windows)'.build-dependencies]
