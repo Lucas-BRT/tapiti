@@ -29,6 +29,8 @@ use topcoat::{
 messages!("./l10n/{locale}.ftl");
 
 pub fn router() -> Router {
+    // Drawn now, at startup, so the first visitor does not wait for the specimens.
+    crate::floor::gallery();
     module_router!()
         .with(BaseUrl::new(site_url()).expect("TAPITI_SITE_URL must be an absolute URL such as https://tapiti.example"))
         .discover()
