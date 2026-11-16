@@ -9,6 +9,7 @@ home_lead = Tapiti builds floors for games and experiments: rooms of five shapes
 home_meta = Version { $version } · MIT license
 home_floor_label = A generated floor: seed { $seed }, medium size.
 home_caption = Seed { $seed }, medium size, with every option on. Rectangles, discs, octagons, L shapes and stars.
+home_floor_title = An example floor
 home_seed_label = Open a seed in the lab
 home_seed_submit = Open
 home_does_title = What it does

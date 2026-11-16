@@ -153,6 +153,15 @@ const SOURCE_SERIF: Font =
         host: Asset,
     );
 #[rustfmt::skip]
+const VARELA_ROUND: Font =
+    fontsource_font!(
+        VARELA_ROUND,
+        weight: [400],
+        style: Normal,
+        subset: [Latin],
+        host: Asset,
+    );
+#[rustfmt::skip]
 const SOURCE_SERIF_ITALIC: Font =
     fontsource_font!(
         SOURCE_SERIF_4,
@@ -182,7 +191,7 @@ async fn language(cx: &Cx, body: Body, next: Next<'_>) -> Result<Response> {
     with(Metadata::new()
         .title(t!(title))
         .description(t!(description))
-        .theme_color("#fbfaf7")
+        .theme_color("#fff4ec")
         .canonical(Url::Current)
         .open_graph(
             OpenGraph::new().site_name("Tapiti").image(asset!("assets/brand/og.png")),
@@ -195,6 +204,7 @@ async fn layout(cx: &Cx, slot: Slot<'_>) -> Result<impl View> {
             <head>
                 <meta name="color-scheme" content="light">
                 topcoat::metadata::tags()
+                topcoat::font::link(font: VARELA_ROUND)
                 topcoat::font::link(font: SOURCE_SERIF)
                 topcoat::font::link(font: SOURCE_SERIF_ITALIC)
                 topcoat::font::link(font: JETBRAINS_MONO)

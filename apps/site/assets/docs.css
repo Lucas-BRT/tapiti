@@ -8,7 +8,7 @@
   .docs-nav li a { position: relative; display: block; padding: 7px 10px 7px 22px; border-radius: var(--radius-sm); color: var(--ink-2); text-decoration: none; font-size: 1rem; line-height: 1.35; transition: color .15s, background-color .15s; }
   .docs-nav li a:hover { color: var(--ink); background: var(--surface); }
   .docs-nav li a[aria-current] { color: var(--ink); font-weight: 700; background: var(--surface); }
-  .docs-nav li a[aria-current]::before, .docs-toc a[aria-current]::before { content: ""; position: absolute; left: 9px; top: .95em; width: 6px; height: 6px; border-radius: 50%; background: var(--link); }
+  .docs-nav li a[aria-current]::before, .docs-toc a[aria-current]::before { content: ""; position: absolute; left: 9px; top: .95em; width: 6px; height: 6px; border-radius: 2px; background: var(--accent); }
 
   .docs-search { position: relative; margin: 0; }
   .docs-search::before { content: ""; position: absolute; left: 12px; top: 50%; width: 16px; height: 16px; margin-top: -8px; background: var(--ink-2); pointer-events: none; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-3.5-3.5'/%3E%3C/svg%3E") center / contain no-repeat; }
@@ -26,9 +26,9 @@
   .docs-article strong { color: var(--ink); }
   .docs-article h1 { margin: 0 0 28px; font-size: clamp(2.4rem, 4.6vw, 3.6rem); line-height: 1; letter-spacing: 0; color: var(--ink); }
   .docs-article h1 + p { font-size: 1.15rem; color: var(--ink); }
-  .docs-article h2 { margin: 2.6em 0 .7em; padding-top: 1.1em; border-top: 1px solid var(--rule); font: 700 clamp(1.45rem, 2.4vw, 1.75rem)/1.2 var(--font-ui); letter-spacing: -.005em; color: var(--ink); }
-  .docs-article h3 { margin: 2em 0 .5em; font: 700 1.25rem/1.3 var(--font-ui); letter-spacing: 0; color: var(--ink); }
-  .docs-article h4 { margin: 1.6em 0 .4em; font: 700 1.05rem/1.3 var(--font-ui); letter-spacing: 0; color: var(--ink-2); }
+  .docs-article h2 { margin: 2.6em 0 .7em; padding-top: 1.1em; border-top: 1px solid var(--rule); font: 400 clamp(1.5rem, 2.4vw, 1.85rem)/1.2 var(--font-display); letter-spacing: 0; color: var(--ink); }
+  .docs-article h3 { margin: 2em 0 .5em; font: 400 1.3rem/1.3 var(--font-display); letter-spacing: 0; color: var(--ink); }
+  .docs-article h4 { margin: 1.6em 0 .4em; font: 400 1.1rem/1.3 var(--font-display); letter-spacing: 0; color: var(--ink-2); }
   .docs-article a { color: var(--link); text-decoration-color: currentColor; }
   .docs-article a:hover { color: var(--link); text-decoration-thickness: 2px; }
   .docs-article .anchor { margin-left: .35em; color: var(--ink-3); text-decoration: none; opacity: 0; transition: opacity .15s; }
