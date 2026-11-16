@@ -617,6 +617,22 @@ mod tests {
         assert!(page.math_spans > 200, "{}", page.math_spans);
     }
 
+    /// A link into the repository (`../crates/...`) must point at a file or folder that exists, or GitHub shows a 404.
+    #[test]
+    fn repository_links_point_at_files_that_exist() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let mut missing = Vec::new();
+        for source in SOURCES {
+            for part in source.en.split("](../").skip(1) {
+                let path = part.split([')', '#', ' ']).next().unwrap_or("");
+                if !root.join(path).exists() {
+                    missing.push(format!("{}: ../{path}", source.file));
+                }
+            }
+        }
+        assert!(missing.is_empty(), "broken repository links: {missing:?}");
+    }
+
     #[test]
     fn heading_ids_are_unique_and_links_resolve() {
         for page in docs().pages() {

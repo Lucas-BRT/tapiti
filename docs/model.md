@@ -83,7 +83,7 @@ $$
 \operatorname{fit}_{\kappa}(\beta,\xi)\to S\subseteq\beta,
 $$
 
-where $\xi$ represents random choices such as proportions and orientation. In the crate, the blocks of the [scaffold](../crates/tapiti-core/src/generate.rs) also limit where rooms can be placed.
+where $\xi$ represents random choices such as proportions and orientation. In the crate, the blocks of the [scaffold](../crates/tapiti-core/src/generate/scaffold.rs) also limit where rooms can be placed.
 
 To keep doors aligned with the alphabet, the reference specification restricts the rotations of shapes to $\varphi\in\Theta_m$. This is a modeling choice: continuous rotations would require also accepting walls whose normals do not belong to the corridor alphabet.
 
@@ -158,7 +158,7 @@ $$
 (p_b-p_a)\cdot u(\theta_a)\geq 2\ell_s.
 $$
 
-L and Z routes impose similar conditions of alignment, direction and minimum length for each segment. In the [Rust generator](../crates/tapiti-core/src/generate.rs), direct routes follow the same I/L/Z family, with the bend limit controlled by `maxBends`.
+L and Z routes impose similar conditions of alignment, direction and minimum length for each segment. In the [Rust generator](../crates/tapiti-core/src/generate/corridors.rs), direct routes follow the same I/L/Z family, with the bend limit controlled by `maxBends`.
 
 #### An L route
 
@@ -570,7 +570,9 @@ These requirements can coexist. For example, a profile can require a long spine,
 
 ## 10. Extension: several floors
 
-A campaign of several floors can extend the same model: we assign each room a floor index and let stair or elevator edges connect vertices on different floors. Each floor has its own geometric realization $\varphi_f$, and connectivity is checked on the joint graph. This extension is not implemented in this crate.
+A campaign of several floors can extend the same model: we assign each room a floor index and let stair or elevator edges connect vertices on different floors. Each floor has its own geometric realization $\varphi_f$, and connectivity is checked on the joint graph.
+
+The crate implements this for [stacked levels](#stacked-levels): every room has a level, stairs are edges between consecutive levels, and connectivity (V1) is checked on the whole graph. Elevators and a campaign of floors beyond that are not implemented.
 
 ## 11. Model parameters
 
@@ -602,14 +604,16 @@ This table avoids confusing the reference specification with this repository's i
 | Directions and routes | Modes with 4 or 8 directions; I/L/Z candidates, T branches and X crossings. |
 | Main connection | Tree growth over candidate room pairs; the generator tries other proximity relations if it runs out of connections. |
 | Cycles | Later choice of cycle actions up to the target derived from `delta` and the `betaMax` reference. |
-| Layouts | One room per grid block, or rooms grown one from another off a door (`layout`). |
+| Layouts | One room per grid block, rooms grown one from another off a door, or a binary partition of the world (`layout`). |
 | Entrance and exit | Optional, in both layouts: one entrance room and, with it, one exit room chosen among distant rooms, usually leaves. |
 | Proximity | The Rust enum includes RNG, Gabriel and radius-based Near. Delaunay appears in the reference specification, but not in the current enum. |
-| Topology profiles | Requirements for branches, depth, independent routes, hub and minimum cycle implemented; global profile scoring not yet implemented. |
+| Topology profiles | Requirements for branches, depth, independent routes, hub and minimum cycle implemented, and the intents that plan their own rooms (Spine with detours, Ring, Hub and wings); global profile scoring not yet implemented. |
 | Spatial flexibility | Irregular grid limited by minimum dimensions, shape rotation and W routes of up to six bends. |
-| Connected multiple floors | Each current generation produces a single 2D map; the relationship between floors is not modeled here. |
+| Stacked levels | Several levels in the same world, each generated on its own and joined by stairs (`levels`). Elevators and a campaign of floors beyond that are not modeled. |
+| Environment layers | Height, water and humidity, temperature, light and events, each an optional pass over the floor (`environment`). |
+| Zones | The world cut into strips that favour a shape class, optionally joined by a single corridor each (`zones`). |
 
-In the crate, the geometric and topological checks are spread mainly across [generate.rs](../crates/tapiti-core/src/generate.rs), [validate.rs](../crates/tapiti-core/src/validate.rs) and [metrics.rs](../crates/tapiti-core/src/metrics.rs). The validator is the reference for deciding whether a concrete output satisfies the coded conditions.
+In the crate, the geometric and topological checks are spread mainly across [generate/](../crates/tapiti-core/src/generate), [validate.rs](../crates/tapiti-core/src/validate.rs) and [metrics.rs](../crates/tapiti-core/src/metrics.rs). The validator is the reference for deciding whether a concrete output satisfies the coded conditions.
 
 ## 13. Summary
 

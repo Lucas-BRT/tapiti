@@ -45,14 +45,20 @@ hashes 150 stages (the four sizes × 30 seeds, then 30 grown floors) and the has
 | file | what |
 |---|---|
 | `crates/tapiti-core/src/geom.rs` | directions Θ₈, shapes, distances (exact and with a limit), corridor bands and joints |
-| `crates/tapiti-core/src/params.rs` | Λ (serde, camelCase JSON) and the five levels |
-| `crates/tapiti-core/src/generate.rs` | the generator, valid by construction: scaffold, shapes, doors, candidates, tree, cycles with T/X, leaf chambers; per-phase times |
-| `crates/tapiti-core/src/validate.rs` | V1 to V5 from the stage alone |
-| `crates/tapiti-core/src/metrics.rs` | β, δ, bridges, articulation rooms, Menger routes, diameter, λ₂ |
+| `crates/tapiti-core/src/params.rs` | Λ (serde, camelCase JSON), the four sizes, the layouts and the topology intents with their guides |
+| `crates/tapiti-core/src/generate/` | the generator, valid by construction, one file per step: scaffold, rooms and shapes, doors, candidates and corridors, tree, cycles with T/X, leaf chambers, entrance and exit; the layouts (growth, binary partition), the intents that plan rooms (spine, ring), zones and stacked levels |
+| `crates/tapiti-core/src/environment/` | the layers over a floor (height, water, climate, light, events) and where things are placed on it |
+| `crates/tapiti-core/src/validate.rs` | V1 to V5 from the stage alone, the intent's requirements, the environment checks (E1 to E5) and the stairs (V7) |
+| `crates/tapiti-core/src/metrics.rs` | β, δ, bridges, articulation rooms, Menger routes, diameter, λ₂, and the measures of each layer |
+| `crates/tapiti-core/src/topology.rs` | the graph operations the topology intents use |
+| `crates/tapiti-core/src/layout.rs` | how regular a floor's room layout looks, to compare a grid with a grown layout |
+| `crates/tapiti-core/src/spatial.rs` | a uniform-grid broad phase for the distance checks |
 | `crates/tapiti-core/src/stage.rs` | a valid stage: redraws from a derived seed when the validator objects |
 | `crates/tapiti-core/src/par.rs` | the one place that decides parallel or sequential (rayon, or plain loops) |
 | `crates/tapiti-core/src/clock.rs` | `performance.now()` in the browser, the system clock natively |
-| `crates/tapiti-core/tests/`, `benches/`, `examples/` | model tests, Criterion benchmarks, profiling and deterministic dumps |
+| `crates/tapiti-core/src/rng.rs`, `detmath.rs` | Mulberry32, and `sin`, `cos`, `exp`, `ln` from one pure-Rust implementation, so a seed draws the same stage everywhere |
+| `crates/tapiti-core/src/cancel.rs` | a token to stop a generation that takes too long |
+| `crates/tapiti-core/tests/`, `benches/`, `examples/` | the cancellation tests, Criterion benchmarks, deterministic dumps, profiling and layout studies (the model tests are unit tests in `src/`) |
 
 Floats: only `+ − × ÷`, `sqrt` and the libm inside the module, so every browser rounds the same.
 
@@ -65,4 +71,4 @@ Floats: only `+ − × ÷`, `sqrt` and the libm inside the module, so every brow
 | `crates/tapiti-render/` | SVG rendering of floors for the site, docs and social images |
 | `crates/tapiti-schema/` | the parameters of Λ as data (groups, ranges, help), shared by the desktop app and the docs |
 | `docs/` | the documentation (Markdown, math as `$…$`), rendered by the site and readable on GitHub |
-| `crates/tapiti-wasm/` | the WASM API: `default_params(size)`, `rich_params(size)`, `stage_json(seed, params)`, `bench(size, from, count)`, `threads()` |
+| `crates/tapiti-wasm/` | the WASM API: `default_params(size)`, `rich_params(size)`, `stage_json(seed, params)`, `ground_at(seed, params, x, y)`, `view_digest(seed, params)`, `bench(size, from, count)`, `threads()` |
