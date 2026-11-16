@@ -933,6 +933,19 @@ impl App {
         if alt(ctx, Key::R) {
             self.random_seed();
         }
+        // `/` jumps to the filter of the tree and `:` to the command line, unless a field already has the keyboard.
+        if !ctx.egui_wants_keyboard_input() {
+            let typed =
+                |ctx: &egui::Context, key, mods| ctx.input_mut(|i| i.consume_key(mods, key));
+            if typed(ctx, Key::Slash, Modifiers::NONE) {
+                ctx.memory_mut(|m| m.request_focus(theme::filter_id()));
+            } else if typed(ctx, Key::Colon, Modifiers::NONE)
+                || typed(ctx, Key::Semicolon, Modifiers::SHIFT)
+                || typed(ctx, Key::K, Modifiers::COMMAND)
+            {
+                ctx.memory_mut(|m| m.request_focus(theme::command_id()));
+            }
+        }
         if alt(ctx, Key::ArrowLeft) {
             self.set_seed(self.seed.saturating_sub(1));
         }

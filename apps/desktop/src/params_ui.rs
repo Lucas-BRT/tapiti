@@ -12,12 +12,10 @@ pub fn field_row(
     default: Option<&Value>,
 ) -> Option<Value> {
     let differs = default.is_some_and(|d| d != current);
+    // A setting that differs from the size's default is marked: an amber square before the label, the label and the value in amber.
+    let amber = crate::theme::of(ui).accent;
     let label = RichText::new(field.label.as_str());
-    let label = if differs {
-        label.color(crate::theme::of(ui).accent)
-    } else {
-        label
-    };
+    let label = if differs { label.color(amber) } else { label };
     // The label takes what the control and the reset leave, and is cut with an ellipsis when it is longer: a column of fixed width keeps
     // the panel from growing to fit the longest label (Plex Mono is wide). The full label and the help are on hover.
     // The control column of a group is as wide as its widest control, a drop-down of 100 points, plus the gaps of the grid.
@@ -26,6 +24,10 @@ pub fn field_row(
     ui.allocate_ui(
         egui::vec2(label_width, ui.spacing().interact_size.y),
         |ui| {
+            if differs {
+                let (mark, _) = ui.allocate_exact_size(egui::vec2(6.0, 6.0), egui::Sense::hover());
+                ui.painter().rect_filled(mark, 0.0, amber);
+            }
             ui.add(egui::Label::new(label).truncate())
                 .on_hover_text(format!("{}\n{}", field.label.as_str(), field.help.as_str()));
         },
@@ -35,7 +37,10 @@ pub fn field_row(
     if differs {
         if ui
             .small_button("default")
-            .on_hover_text("Reset to the size default")
+            .on_hover_text(format!(
+                "Reset to the size default: {}",
+                default.map_or_else(String::new, json_value_text)
+            ))
             .clicked()
         {
             next = default.cloned();

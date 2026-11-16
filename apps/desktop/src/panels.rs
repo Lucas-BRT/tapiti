@@ -21,6 +21,32 @@ pub(crate) fn muted(ui: &Ui, text: impl Into<String>) -> RichText {
         .color(ui.visuals().weak_text_color())
 }
 
+/// How many settings a group of the design part of the tree holds and how many of them differ from the size's defaults.
+fn group_counts(app: &App, holds: impl Fn(&str) -> bool) -> (usize, usize) {
+    let paths = app
+        .groups
+        .iter()
+        .flat_map(|g| &g.fields)
+        .map(|f| f.path.as_str());
+    paths
+        .filter(|p| holds(p))
+        .fold((0, 0), |(all, changed), p| {
+            (all + 1, changed + usize::from(app.changed.contains(p)))
+        })
+}
+
+/// A group of the tree that the design controls use: open at first, with the same bar as the parameter groups.
+fn tree_group(
+    ui: &mut Ui,
+    id: &str,
+    title: &str,
+    counts: (usize, usize),
+    body: impl FnOnce(&mut Ui),
+) {
+    let id = ui.make_persistent_id(("design_group", id));
+    theme::group(ui, id, title, counts.0, counts.1, None, true, body);
+}
+
 pub(crate) fn card(ui: &mut Ui, title: &str, body: impl FnOnce(&mut Ui)) {
     theme::section(ui, title, body);
     ui.add_space(theme::GAP * 4.0);
@@ -217,6 +243,9 @@ pub fn shortcuts_window(app: &mut App, ctx: &egui::Context) {
         .resizable(false)
         .show(ctx, |ui| {
             for line in [
+                "/ filters the parameters · : opens the command line · Esc leaves a field",
+                "Tab and Shift+Tab move between controls · Enter opens or closes a group",
+                "Up and Down change a focused number",
                 "Alt+1–4 switches the size · Alt+R random seed",
                 "Alt+Left / Right: previous / next seed",
                 "Esc cancels a generation",
@@ -348,7 +377,7 @@ pub fn command_bar(app: &mut App, ui: &mut Ui) {
                 let right = 420.0;
                 let field = ui.add(
                     TextEdit::singleline(&mut app.command)
-                        .id_salt("command")
+                        .id(theme::command_id())
                         .frame(egui::Frame::NONE)
                         .hint_text(command::HELP)
                         .desired_width((ui.available_width() - right).max(160.0)),
@@ -380,6 +409,41 @@ pub fn command_bar(app: &mut App, ui: &mut Ui) {
         });
 }
 
+/// Tints the plan by one layer (and by no other), or by none.
+fn show_layer(app: &mut App, layer: command::Layer) {
+    use command::Layer;
+    let o = &mut app.overlays;
+    (o.height, o.water, o.temperature, o.light, o.events) = (false, false, false, false, false);
+    match layer {
+        Layer::None => {}
+        Layer::Height => o.height = true,
+        Layer::Water => o.water = true,
+        Layer::Heat => o.temperature = true,
+        Layer::Light => o.light = true,
+        Layer::Events => o.events = true,
+    }
+    let present = app.generated.as_ref().is_some_and(|g| {
+        use tapiti_render::view::Channel;
+        let env = g.floor.environment.as_ref();
+        match layer {
+            Layer::None => true,
+            Layer::Height => Channel::Height.available(&g.floor),
+            Layer::Water => Channel::Water.available(&g.floor),
+            Layer::Heat => Channel::Temperature.available(&g.floor),
+            Layer::Light => Channel::Light.available(&g.floor),
+            Layer::Events => env.is_some_and(|e| e.events.is_some()),
+        }
+    });
+    app.status = if present {
+        format!("Layer {}.", layer.name())
+    } else {
+        format!(
+            "This floor has no {} layer: turn it on in Environment.",
+            layer.name()
+        )
+    };
+}
+
 /// Acts on one line typed in the command line; the answer goes to the status text.
 fn run_command(app: &mut App, line: &str) {
     match command::parse(line) {
@@ -399,6 +463,28 @@ fn run_command(app: &mut App, line: &str) {
         Ok(Command::Random) => app.random_seed(),
         Ok(Command::Reset) => app.reset_all(),
         Ok(Command::Help) => app.status = command::HELP.into(),
+        Ok(Command::Layer(layer)) => show_layer(app, layer),
+        Ok(Command::Filter(text)) => {
+            app.status = if text.is_empty() {
+                "Filter cleared.".into()
+            } else {
+                format!("Filter: {text}")
+            };
+            app.filter = text;
+        }
+        Ok(Command::Group(text)) => {
+            let text = text.to_lowercase();
+            let found = app.groups.iter().find(|g| {
+                g.id.to_lowercase() == text || g.title.as_str().to_lowercase().contains(&text)
+            });
+            match found.map(|g| g.id.clone()) {
+                Some(id) => {
+                    app.status = format!("Group {id}.");
+                    app.focus_group = Some(id);
+                }
+                None => app.status = format!("No group matches {text}."),
+            }
+        }
         Err(message) if message.is_empty() => {}
         Err(message) => app.status = message,
     }
@@ -463,7 +549,10 @@ fn layout_card(app: &mut App, ui: &mut Ui) {
     let current = serde_json::to_value(&app.params).unwrap_or(Value::Null);
     let layout = app.params.layout;
     let mut edits = Vec::new();
-    card(ui, "Layout", |ui| {
+    let counts = group_counts(app, |p| {
+        p == "layout" || layout_fields(layout).contains(&p) || p.starts_with("levels.")
+    });
+    tree_group(ui, "layout", "Layout", counts, |ui| {
         Grid::new("layout_controls")
             .num_columns(3)
             .spacing([8.0, 6.0])
@@ -513,7 +602,10 @@ fn intent_card(app: &mut App, ui: &mut Ui) {
     let current = serde_json::to_value(&app.params).unwrap_or(Value::Null);
     let mut selected = None;
     let mut edits = Vec::new();
-    card(ui, "Exploration intent", |ui| {
+    let counts = group_counts(app, |p| {
+        p == "topology.profile" || intent_fields(profile).contains(&p) || p.starts_with("zones.")
+    });
+    tree_group(ui, "intent", "Exploration intent", counts, |ui| {
         if let Some(field) = app
             .groups
             .iter()
@@ -688,7 +780,7 @@ pub fn tree_panel(app: &mut App, ui: &mut Ui) {
                     }
                     ui.add(
                         TextEdit::singleline(&mut app.filter)
-                            .id_salt("filter")
+                            .id(theme::filter_id())
                             .hint_text("Filter every parameter…")
                             .desired_width(ui.available_width()),
                     );
@@ -756,7 +848,10 @@ fn environment_card(app: &mut App, ui: &mut Ui) {
     let current = serde_json::to_value(&app.params).unwrap_or(Value::Null);
     let mut edits = Vec::new();
     let mut new_events = None;
-    card(ui, "Environment", |ui| {
+    let counts = group_counts(app, |p| {
+        p.starts_with("environment.") && in_environment_card(p)
+    });
+    tree_group(ui, "environment", "Environment", counts, |ui| {
         ui.label(muted(
             ui,
             "Layers laid over the floor. All are off until you turn them on.",
@@ -1172,6 +1267,7 @@ fn advanced_tab(app: &mut App, ui: &mut Ui) {
             group.fields.len(),
             changed,
             forced,
+            false,
             |ui| {
                 ui.label(muted(ui, group.intro.as_str()));
                 ui.add_space(4.0);

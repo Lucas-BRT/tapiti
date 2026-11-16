@@ -12,20 +12,60 @@ pub enum Command {
     Random,
     Reset,
     Help,
+    Layer(Layer),
+    /// The text of the filter of the tree (empty clears it).
+    Filter(String),
+    /// A group of the tree to open and scroll to, by id or by part of its title.
+    Group(String),
 }
 
-pub const HELP: &str = "seed N · size small|medium|large|huge · step ±N · random · reset";
+/// What the plan can be tinted by.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Layer {
+    None,
+    Height,
+    Water,
+    Heat,
+    Light,
+    Events,
+}
+
+impl Layer {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::Height => "height",
+            Self::Water => "water",
+            Self::Heat => "heat",
+            Self::Light => "light",
+            Self::Events => "events",
+        }
+    }
+}
+
+pub const HELP: &str =
+    "seed N · size S|M|L|XL · step ±N · random · reset · layer NAME · filter TEXT · group NAME";
 
 pub fn parse(line: &str) -> Result<Command, String> {
     let mut words = line.split_whitespace();
     let Some(name) = words.next() else {
         return Err(String::new());
     };
+    let name = name.to_lowercase();
+    // The filter and the group take the rest of the line; the other commands take at most one word.
+    if name == "filter" || name == "group" {
+        let rest = words.collect::<Vec<_>>().join(" ");
+        return match (name.as_str(), rest.is_empty()) {
+            ("filter", _) => Ok(Command::Filter(rest)),
+            (_, false) => Ok(Command::Group(rest)),
+            _ => Err("group needs a name, such as corridors".into()),
+        };
+    }
     let arg = words.next();
     if words.next().is_some() {
         return Err(format!("too many words: {line}"));
     }
-    match (name.to_lowercase().as_str(), arg) {
+    match (name.as_str(), arg) {
         ("seed", Some(n)) => n
             .parse::<u32>()
             .map(Command::Seed)
@@ -33,9 +73,14 @@ pub fn parse(line: &str) -> Result<Command, String> {
         ("seed", None) => Err("seed needs a number".into()),
         ("size", Some(s)) => Size::ALL
             .iter()
-            .find(|size| size.name() == s.to_lowercase())
+            .enumerate()
+            .find(|(i, size)| {
+                let s = s.to_lowercase();
+                size.name() == s || ["s", "m", "l", "xl"][*i] == s
+            })
+            .map(|(_, size)| size)
             .map(|size| Command::Size(*size))
-            .ok_or_else(|| format!("size is small, medium, large or huge: {s}")),
+            .ok_or_else(|| format!("size is small, medium, large or huge (s, m, l, xl): {s}")),
         ("size", None) => Err("size needs small, medium, large or huge".into()),
         ("step", arg) => match arg.unwrap_or("+1").trim_start_matches('+').parse::<i64>() {
             Ok(n) => Ok(Command::Step(n)),
@@ -44,6 +89,20 @@ pub fn parse(line: &str) -> Result<Command, String> {
                 arg.unwrap_or("")
             )),
         },
+        ("layer", Some(l)) => match l.to_lowercase().as_str() {
+            "none" | "plain" | "off" => Ok(Command::Layer(Layer::None)),
+            "height" => Ok(Command::Layer(Layer::Height)),
+            "water" => Ok(Command::Layer(Layer::Water)),
+            "heat" | "temperature" => Ok(Command::Layer(Layer::Heat)),
+            "light" => Ok(Command::Layer(Layer::Light)),
+            "events" => Ok(Command::Layer(Layer::Events)),
+            other => Err(format!(
+                "layer is none, height, water, heat, light or events: {other}"
+            )),
+        },
+        ("layer", None) => {
+            Err("layer needs a name: none, height, water, heat, light or events".into())
+        }
         ("random", None) => Ok(Command::Random),
         ("reset", None) => Ok(Command::Reset),
         ("help" | "?", None) => Ok(Command::Help),
@@ -66,6 +125,18 @@ mod tests {
         assert_eq!(parse("random"), Ok(Command::Random));
         assert_eq!(parse("reset"), Ok(Command::Reset));
         assert_eq!(parse("?"), Ok(Command::Help));
+        assert_eq!(parse("size xl"), Ok(Command::Size(Size::Huge)));
+        assert_eq!(parse("layer heat"), Ok(Command::Layer(Layer::Heat)));
+        assert_eq!(parse("layer none"), Ok(Command::Layer(Layer::None)));
+        assert_eq!(
+            parse("filter max bends"),
+            Ok(Command::Filter("max bends".into()))
+        );
+        assert_eq!(parse("filter"), Ok(Command::Filter(String::new())));
+        assert_eq!(
+            parse("group corridors"),
+            Ok(Command::Group("corridors".into()))
+        );
     }
 
     #[test]
@@ -77,6 +148,9 @@ mod tests {
         assert!(parse("step x").unwrap_err().contains("number"));
         assert!(parse("seed 1 2").unwrap_err().contains("too many"));
         assert!(parse("jump").unwrap_err().contains("unknown"));
+        assert!(parse("layer lava").unwrap_err().contains("none, height"));
+        assert!(parse("layer").is_err());
+        assert!(parse("group").unwrap_err().contains("name"));
         assert_eq!(parse("   "), Err(String::new()));
     }
 }

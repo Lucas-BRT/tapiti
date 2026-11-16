@@ -265,6 +265,15 @@ fn set_body_width(ui: &egui::Ui) {
     ui.data_mut(|d| d.insert_temp(egui::Id::NULL.with("tapiti-body-width"), w));
 }
 
+/// The ids of the two text fields the keyboard can jump to: the filter of the tree and the command line.
+pub fn filter_id() -> egui::Id {
+    egui::Id::NULL.with("tapiti-filter")
+}
+
+pub fn command_id() -> egui::Id {
+    egui::Id::NULL.with("tapiti-command")
+}
+
 /// A collapsible group of the tree: a bar with a caret, the title in the display face, the count of changed settings in amber and the
 /// number of settings on the right; the body opens under it. `force` opens or closes it from outside (a filter match, a focus). The
 /// returned response is the bar's, to scroll to.
@@ -275,11 +284,12 @@ pub fn group(
     count: usize,
     changed: usize,
     force: Option<bool>,
+    default_open: bool,
     body: impl FnOnce(&mut egui::Ui),
 ) -> egui::Response {
     use egui::collapsing_header::CollapsingState;
     let c = of(ui);
-    let mut state = CollapsingState::load_with_default_open(ui.ctx(), id, false);
+    let mut state = CollapsingState::load_with_default_open(ui.ctx(), id, default_open);
     if let Some(open) = force {
         state.set_open(open);
     }
