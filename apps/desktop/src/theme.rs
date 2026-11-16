@@ -274,19 +274,30 @@ pub fn command_id() -> egui::Id {
     egui::Id::NULL.with("tapiti-command")
 }
 
+/// What a group bar says: its title, how many settings it holds, how many of them differ from the defaults, and whether it starts open.
+pub struct GroupBar<'a> {
+    pub title: &'a str,
+    pub count: usize,
+    pub changed: usize,
+    pub default_open: bool,
+}
+
 /// A collapsible group of the tree: a bar with a caret, the title in the display face, the count of changed settings in amber and the
 /// number of settings on the right; the body opens under it. `force` opens or closes it from outside (a filter match, a focus). The
 /// returned response is the bar's, to scroll to.
 pub fn group(
     ui: &mut egui::Ui,
     id: egui::Id,
-    title: &str,
-    count: usize,
-    changed: usize,
+    bar: GroupBar,
     force: Option<bool>,
-    default_open: bool,
     body: impl FnOnce(&mut egui::Ui),
 ) -> egui::Response {
+    let GroupBar {
+        title,
+        count,
+        changed,
+        default_open,
+    } = bar;
     use egui::collapsing_header::CollapsingState;
     let c = of(ui);
     let mut state = CollapsingState::load_with_default_open(ui.ctx(), id, default_open);

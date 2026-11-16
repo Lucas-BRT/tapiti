@@ -44,7 +44,13 @@ fn tree_group(
     body: impl FnOnce(&mut Ui),
 ) {
     let id = ui.make_persistent_id(("design_group", id));
-    theme::group(ui, id, title, counts.0, counts.1, None, true, body);
+    let bar = theme::GroupBar {
+        title,
+        count: counts.0,
+        changed: counts.1,
+        default_open: true,
+    };
+    theme::group(ui, id, bar, None, body);
 }
 
 pub(crate) fn card(ui: &mut Ui, title: &str, body: impl FnOnce(&mut Ui)) {
@@ -1260,35 +1266,32 @@ fn advanced_tab(app: &mut App, ui: &mut Ui) {
         let focused = focus.as_deref() == Some(group.id.as_str());
         let forced = (focused || !needle.is_empty()).then_some(true);
         let id = ui.make_persistent_id(("advanced_group", &group.id));
-        let header = theme::group(
-            ui,
-            id,
-            group.title.as_str(),
-            group.fields.len(),
+        let bar = theme::GroupBar {
+            title: group.title.as_str(),
+            count: group.fields.len(),
             changed,
-            forced,
-            false,
-            |ui| {
-                ui.label(muted(ui, group.intro.as_str()));
-                ui.add_space(4.0);
-                Grid::new(&group.id)
-                    .num_columns(3)
-                    .spacing([10.0, 6.0])
-                    .show(ui, |ui| {
-                        for field in fields {
-                            let value = value_of(app, &current, &field.path);
-                            if let Some(next) =
-                                field_row(ui, field, &value, app.default_ref(&field.path))
-                            {
-                                edits.push((field.path.clone(), next));
-                            }
+            default_open: false,
+        };
+        let header = theme::group(ui, id, bar, forced, |ui| {
+            ui.label(muted(ui, group.intro.as_str()));
+            ui.add_space(4.0);
+            Grid::new(&group.id)
+                .num_columns(3)
+                .spacing([10.0, 6.0])
+                .show(ui, |ui| {
+                    for field in fields {
+                        let value = value_of(app, &current, &field.path);
+                        if let Some(next) =
+                            field_row(ui, field, &value, app.default_ref(&field.path))
+                        {
+                            edits.push((field.path.clone(), next));
                         }
-                    });
-                if changed > 0 && ui.small_button("Reset this group").clicked() {
-                    reset = Some(group.id.clone());
-                }
-            },
-        );
+                    }
+                });
+            if changed > 0 && ui.small_button("Reset this group").clicked() {
+                reset = Some(group.id.clone());
+            }
+        });
         if focused {
             header.scroll_to_me(Some(Align::TOP));
         }

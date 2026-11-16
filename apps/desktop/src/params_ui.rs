@@ -12,42 +12,46 @@ pub fn field_row(
     default: Option<&Value>,
 ) -> Option<Value> {
     let differs = default.is_some_and(|d| d != current);
-    // A setting that differs from the size's default is marked: an amber square before the label, the label and the value in amber.
+    // A setting that differs from the size's default is marked: an amber square before the label and the label in amber.
     let amber = crate::theme::of(ui).accent;
     let label = RichText::new(field.label.as_str());
     let label = if differs { label.color(amber) } else { label };
-    // The label takes what the control and the reset leave, and is cut with an ellipsis when it is longer: a column of fixed width keeps
-    // the panel from growing to fit the longest label (Plex Mono is wide). The full label and the help are on hover.
-    // The control column of a group is as wide as its widest control, a drop-down of 100 points, plus the gaps of the grid.
-    let reserve = 126.0 + if differs { 70.0 } else { 0.0 };
-    let label_width = (crate::theme::body_width(ui) - reserve).max(96.0);
-    ui.allocate_ui(
-        egui::vec2(label_width, ui.spacing().interact_size.y),
+    // The row has an exact width: a share for the label, which is cut with an ellipsis when it is longer (the full label and the help
+    // are on hover), and the rest for the control, which sits at the right with the reset beside it. Columns sized by their widest
+    // content would make the panel as wide as its longest label and its widest drop-down.
+    let width = crate::theme::body_width(ui);
+    let label_width = (width * 0.52).max(96.0);
+    let control_width = (width - label_width - 14.0).max(80.0);
+    let height = ui.spacing().interact_size.y;
+    ui.allocate_ui(egui::vec2(label_width, height), |ui| {
+        if differs {
+            let (mark, _) = ui.allocate_exact_size(egui::vec2(6.0, 6.0), egui::Sense::hover());
+            ui.painter().rect_filled(mark, 0.0, amber);
+        }
+        ui.add(egui::Label::new(label).truncate())
+            .on_hover_text(format!("{}\n{}", field.label.as_str(), field.help.as_str()));
+    });
+    let mut next = None;
+    ui.allocate_ui_with_layout(
+        egui::vec2(control_width, height),
+        egui::Layout::right_to_left(egui::Align::Center),
         |ui| {
-            if differs {
-                let (mark, _) = ui.allocate_exact_size(egui::vec2(6.0, 6.0), egui::Sense::hover());
-                ui.painter().rect_filled(mark, 0.0, amber);
+            if differs
+                && ui
+                    .small_button("×")
+                    .on_hover_text(format!(
+                        "Reset to the size default: {}",
+                        default.map_or_else(String::new, json_value_text)
+                    ))
+                    .clicked()
+            {
+                next = default.cloned();
             }
-            ui.add(egui::Label::new(label).truncate())
-                .on_hover_text(format!("{}\n{}", field.label.as_str(), field.help.as_str()));
+            if let Some(value) = control(ui, field, current) {
+                next = Some(value);
+            }
         },
     );
-    let next = control(ui, field, current);
-    let mut next = next;
-    if differs {
-        if ui
-            .small_button("default")
-            .on_hover_text(format!(
-                "Reset to the size default: {}",
-                default.map_or_else(String::new, json_value_text)
-            ))
-            .clicked()
-        {
-            next = default.cloned();
-        }
-    } else {
-        ui.label("");
-    }
     ui.end_row();
     next
 }
