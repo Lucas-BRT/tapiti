@@ -1,7 +1,6 @@
 //! The window's layout: top bar, bottom bar, the tabbed side panel and the map.
 
 use crate::analysis::analysis_tab;
-use crate::command::{self, Command};
 use crate::map::{self, Palette, Xf};
 use crate::params_ui::{field_row, FieldKind, ParamField};
 use crate::pick::map_object_at;
@@ -265,7 +264,7 @@ pub fn shortcuts_window(app: &mut App, ctx: &egui::Context) {
         .resizable(false)
         .show(ctx, |ui| {
             for line in [
-                "/ or Ctrl+F filters the parameters · Ctrl+L goes to the seed · : or Ctrl+K opens the command line (Up and Down: earlier commands)",
+                "/ or Ctrl+F filters the parameters · Ctrl+L goes to the seed",
                 "Esc leaves a field · Tab and Shift+Tab move between controls · Enter opens or closes a group · Up and Down change a focused number",
                 "Alt+1–4 or Ctrl+1–4 switch the size · Alt+R random seed · Alt+Left / Right previous / next seed",
                 "F5 or Ctrl+Enter generates again · Esc cancels a generation · Ctrl+N resets the parameters to the size's defaults",
@@ -400,6 +399,7 @@ pub fn top_bar(app: &mut App, ui: &mut Ui) {
                 }
                 if app.busy {
                     ui.spinner();
+                    ui.label(muted(ui, app.status.clone()));
                 }
                 ui.with_layout(egui::Layout::right_to_left(Align::Center), |ui| {
                     let reading = reading_visible(app, ui);
@@ -416,161 +416,6 @@ pub fn top_bar(app: &mut App, ui: &mut Ui) {
                 });
             });
         });
-}
-
-/// The command line: a prompt, what the last command said, and on the right the thread count and the changed settings.
-pub fn command_bar(app: &mut App, ui: &mut Ui) {
-    Panel::bottom("bottom")
-        .frame(theme::bar_frame(ui))
-        .exact_size(theme::bar_height(ui) + 4.0)
-        .show(ui, |ui| {
-            let c = theme::of(ui);
-            ui.horizontal_centered(|ui| {
-                ui.label(RichText::new("›").color(c.accent));
-                let right = 420.0;
-                let field = ui.add(
-                    TextEdit::singleline(&mut app.command)
-                        .id(theme::command_id())
-                        .frame(egui::Frame::NONE)
-                        .hint_text("Command (help lists them)")
-                        .desired_width((ui.available_width() - right).max(160.0)),
-                );
-                field.widget_info(|| {
-                    egui::WidgetInfo::labeled(egui::Role::TextInput, true, "Command line")
-                });
-                // Up and Down walk the commands already run, like a shell.
-                if field.has_focus() {
-                    let step = ui.input_mut(|i| {
-                        i32::from(i.consume_key(egui::Modifiers::NONE, egui::Key::ArrowDown))
-                            - i32::from(i.consume_key(egui::Modifiers::NONE, egui::Key::ArrowUp))
-                    });
-                    if step != 0 && !app.command_history.is_empty() {
-                        let last = app.command_history.len();
-                        let at = app.command_cursor.unwrap_or(last) as i32 + step;
-                        if at >= last as i32 {
-                            app.command_cursor = None;
-                            app.command.clear();
-                        } else {
-                            let at = at.max(0) as usize;
-                            app.command_cursor = Some(at);
-                            app.command = app.command_history[at].clone();
-                        }
-                    }
-                }
-                if field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                    let line = std::mem::take(&mut app.command);
-                    app.command_cursor = None;
-                    if !line.trim().is_empty() && app.command_history.last() != Some(&line) {
-                        app.command_history.push(line.clone());
-                    }
-                    run_command(app, &line);
-                    field.request_focus();
-                }
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    ui.label(muted(ui, format!("{} threads", par::threads())));
-                    // A notice (a command's answer, a file, a failure) has the place of the status line until it fades or is closed;
-                    // an error stays in the error colour.
-                    if let Some(notice) = &app.notice {
-                        let color = if notice.error { c.error } else { c.text };
-                        let text = notice.text.clone();
-                        if ui
-                            .small_button("×")
-                            .on_hover_text("Close this message")
-                            .clicked()
-                        {
-                            app.notice = None;
-                        }
-                        ui.add(
-                            egui::Label::new(RichText::new(text.clone()).color(color)).truncate(),
-                        )
-                        .on_hover_text(text);
-                    } else {
-                        ui.add(egui::Label::new(muted(ui, &app.status)).truncate());
-                    }
-                });
-            });
-        });
-}
-
-/// Tints the plan by one layer (and by no other), or by none.
-fn show_layer(app: &mut App, layer: command::Layer) {
-    use command::Layer;
-    let o = &mut app.overlays;
-    (o.height, o.water, o.temperature, o.light, o.events) = (false, false, false, false, false);
-    match layer {
-        Layer::None => {}
-        Layer::Height => o.height = true,
-        Layer::Water => o.water = true,
-        Layer::Heat => o.temperature = true,
-        Layer::Light => o.light = true,
-        Layer::Events => o.events = true,
-    }
-    let present = app.generated.as_ref().is_some_and(|g| {
-        use tapiti_render::view::Channel;
-        let env = g.floor.environment.as_ref();
-        match layer {
-            Layer::None => true,
-            Layer::Height => Channel::Height.available(&g.floor),
-            Layer::Water => Channel::Water.available(&g.floor),
-            Layer::Heat => Channel::Temperature.available(&g.floor),
-            Layer::Light => Channel::Light.available(&g.floor),
-            Layer::Events => env.is_some_and(|e| e.events.is_some()),
-        }
-    });
-    app.status = if present {
-        format!("Layer {}.", layer.name())
-    } else {
-        format!(
-            "This floor has no {} layer: turn it on in Environment layers.",
-            layer.name()
-        )
-    };
-}
-
-/// Acts on one line typed in the command line; the answer goes to the status text.
-fn run_command(app: &mut App, line: &str) {
-    match command::parse(line) {
-        Ok(Command::Seed(n)) => {
-            app.set_seed(n);
-            app.notify(format!("Seed {n}."), false);
-        }
-        Ok(Command::Size(size)) => {
-            app.set_size(size);
-            app.notify(format!("Size {}.", size_label(size).to_lowercase()), false);
-        }
-        Ok(Command::Step(n)) => {
-            let seed = (i64::from(app.seed) + n).clamp(0, i64::from(u32::MAX)) as u32;
-            app.set_seed(seed);
-            app.notify(format!("Seed {seed}."), false);
-        }
-        Ok(Command::Random) => app.random_seed(),
-        Ok(Command::Reset) => app.reset_all(),
-        Ok(Command::Help) => app.notify(command::HELP, false),
-        Ok(Command::Layer(layer)) => show_layer(app, layer),
-        Ok(Command::Filter(text)) => {
-            app.status = if text.is_empty() {
-                "Filter cleared.".into()
-            } else {
-                format!("Filter: {text}")
-            };
-            app.filter = text;
-        }
-        Ok(Command::Group(text)) => {
-            let text = text.to_lowercase();
-            let found = app.groups.iter().find(|g| {
-                g.id.to_lowercase() == text || g.title.as_str().to_lowercase().contains(&text)
-            });
-            match found.map(|g| g.id.clone()) {
-                Some(id) => {
-                    app.notify(format!("Group {id}."), false);
-                    app.focus_group = Some(id);
-                }
-                None => app.notify(format!("No group matches {text}."), true),
-            }
-        }
-        Err(message) if message.is_empty() => {}
-        Err(message) => app.notify(message, true),
-    }
 }
 
 /// Size changes keep the exploration intent; geometry remains in the side panel.
@@ -1569,6 +1414,42 @@ pub fn central(app: &mut App, ui: &mut Ui) {
             let pal = Palette::new(ui.visuals().dark_mode);
             let painter = ui.painter_at(rect);
             painter.rect_filled(rect, 0.0, pal.background);
+
+            // A message (a failure, a file, a copy, an undo) rests at the foot of the map until it fades or is closed.
+            if let Some(notice) = &app.notice {
+                let c = theme::of(ui);
+                let (text, error) = (notice.text.clone(), notice.error);
+                let mut close = false;
+                egui::Area::new(ui.scope_id().with("notice"))
+                    .fixed_pos(rect.center_bottom() - Vec2::new(0.0, map::HUD + 12.0))
+                    .pivot(egui::Align2::CENTER_BOTTOM)
+                    .show(ui.ctx(), |ui| {
+                        Frame::new()
+                            .fill(c.panel)
+                            .stroke(Stroke::new(1.0, if error { c.error } else { c.border }))
+                            .inner_margin(egui::Margin::symmetric(10, 6))
+                            .show(ui, |ui| {
+                                ui.set_max_width((rect.width() * 0.7).max(240.0));
+                                ui.horizontal(|ui| {
+                                    ui.label(RichText::new(text).color(if error {
+                                        c.error
+                                    } else {
+                                        c.text
+                                    }));
+                                    if ui
+                                        .small_button("×")
+                                        .on_hover_text("Close this message")
+                                        .clicked()
+                                    {
+                                        close = true;
+                                    }
+                                });
+                            });
+                    });
+                if close {
+                    app.notice = None;
+                }
+            }
 
             // The plan has rulers along its top and left edges and a strip of readings under it; the floor is fitted in what is left.
             let plan = app.view_mode == crate::ViewMode::Plan && !app.showing_building();

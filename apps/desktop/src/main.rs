@@ -9,7 +9,6 @@
 
 mod analysis;
 mod charts;
-mod command;
 mod iso;
 mod map;
 mod panels;
@@ -306,11 +305,6 @@ pub struct App {
     pub scroll_to: Option<f32>,
     /// A group of parameters to open and scroll to once (the screenshots of the docs ask for it).
     pub focus_group: Option<String>,
-    /// What is typed in the command line, and what the last command said.
-    pub command: String,
-    /// The commands run, oldest first, and where Up and Down are in them.
-    pub command_history: Vec<String>,
-    pub command_cursor: Option<usize>,
     /// Compact or comfortable spacing, kept between runs.
     pub density: theme::Density,
     /// The reading column: `None` follows the window (shown from 1180 points wide), `Some` is the user's choice.
@@ -421,9 +415,6 @@ impl App {
             building: BuildingMap::default(),
             groups: params_ui::groups(),
             focus_group: None,
-            command_history: Vec::new(),
-            command_cursor: None,
-            command: String::new(),
             density: theme::Density::saved(),
             reading_open: settings::Reading::saved().open(),
             reveal_key: None,
@@ -1434,18 +1425,11 @@ impl App {
         if alt(ctx, Key::R) {
             self.random_seed();
         }
-        // `/` jumps to the filter of the tree and `:` to the command line, unless a field already has the keyboard.
-        if !ctx.egui_wants_keyboard_input() {
-            let typed =
-                |ctx: &egui::Context, key, mods| ctx.input_mut(|i| i.consume_key(mods, key));
-            if typed(ctx, Key::Slash, Modifiers::NONE) {
-                ctx.memory_mut(|m| m.request_focus(theme::filter_id()));
-            } else if typed(ctx, Key::Colon, Modifiers::NONE)
-                || typed(ctx, Key::Semicolon, Modifiers::SHIFT)
-                || typed(ctx, Key::K, Modifiers::COMMAND)
-            {
-                ctx.memory_mut(|m| m.request_focus(theme::command_id()));
-            }
+        // `/` jumps to the filter of the tree, unless a field already has the keyboard.
+        if !ctx.egui_wants_keyboard_input()
+            && ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Slash))
+        {
+            ctx.memory_mut(|m| m.request_focus(theme::filter_id()));
         }
         let command =
             |ctx: &egui::Context, key| ctx.input_mut(|i| i.consume_key(Modifiers::COMMAND, key));
@@ -1596,7 +1580,6 @@ impl eframe::App for App {
         }
         panels::menu_bar(self, ui);
         panels::top_bar(self, ui);
-        panels::command_bar(self, ui);
         panels::tree_panel(self, ui);
         panels::reading_panel(self, ui);
         panels::central(self, ui);

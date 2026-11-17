@@ -75,7 +75,7 @@ impl Density {
 /// Shared spacing, in points.
 pub const GAP: f32 = 4.0;
 pub const PAD: f32 = 8.0;
-/// Height of the bars (menu and status, controls, command line), in points.
+/// Height of the bars (menu and controls), in points.
 pub const BAR_HEIGHT: f32 = 30.0;
 
 /// The height of a group bar: 24 points, or what the spacing's rows need.
@@ -98,7 +98,7 @@ const fn rgb(hex: u32) -> Color32 {
 
 #[derive(Clone, Copy)]
 pub struct Colors {
-    /// The bars: menu and status, controls and command line.
+    /// The bars: menu and controls.
     pub bar: Color32,
     /// The side panels.
     pub panel: Color32,
@@ -288,17 +288,13 @@ fn set_body_width(ui: &egui::Ui) {
     ui.data_mut(|d| d.insert_temp(egui::Id::NULL.with("tapiti-body-width"), w));
 }
 
-/// The ids of the two text fields the keyboard can jump to: the filter of the tree and the command line.
+/// The ids of the two text fields the keyboard can jump to: the filter of the tree and the seed.
 pub fn filter_id() -> egui::Id {
     egui::Id::NULL.with("tapiti-filter")
 }
 
 pub fn seed_id() -> egui::Id {
     egui::Id::NULL.with("tapiti-seed")
-}
-
-pub fn command_id() -> egui::Id {
-    egui::Id::NULL.with("tapiti-command")
 }
 
 /// What a group bar says: its title, how many settings it holds, how many of them differ from the defaults, and whether it starts open.

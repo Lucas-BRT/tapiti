@@ -471,7 +471,11 @@ pub fn analysis_tab(app: &mut App, ui: &mut Ui) {
             measures(ui, &rows);
             ui.label(muted(
                 ui,
-                format!("{total:.1} ms in all; each bar is relative to the longest phase"),
+                format!(
+                    "{total:.1} ms in all, {} attempt{}; each bar is relative to the longest phase",
+                    map.draws,
+                    if map.draws == 1 { "" } else { "s" }
+                ),
             ));
         });
     }

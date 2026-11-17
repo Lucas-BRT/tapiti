@@ -72,10 +72,6 @@ The window has three columns:
 - **The map**, in the middle: rulers numbered in grid cells, the pointer in cells and the room under it in the strip below the plan, and a click picks a room (it is outlined in amber and described at the right of the strip). The entrance has a green outline and an IN badge, the exit a violet outline and an OUT badge. Fit shows the floor, not the empty grid around it.
 - **Reading**, on the right: the rules V1 to V5, the measures of the floor, the shapes, the doors per room and the phases of the generation. The longer explanation of a line is on hover. A narrow window hides this column; the button at the right of the controls bar (a square with a strip at its edge), or View > Reading panel, shows or hides it.
 
-### The command line
-
-At the foot of the window: `seed N`, `size small|medium|large|huge` (`s`, `m`, `l` and `h` also work), `step ±N`, `random`, `reset`, `layer NAME`, `filter TEXT` and `group NAME`. <kbd>:</kbd> or <kbd>Ctrl</kbd>+<kbd>K</kbd> goes to it.
-
 ### Menus and appearance
 
 The menu bar has:
@@ -96,7 +92,7 @@ The rules V1 to V5 and a hash of the seed and Λ (two windows with the same hash
 - <kbd>F5</kbd> or <kbd>Ctrl</kbd>+<kbd>Enter</kbd> generates again; <kbd>Esc</kbd> cancels a generation.
 - <kbd>Ctrl</kbd>+<kbd>O</kbd> opens a Λ and <kbd>Ctrl</kbd>+<kbd>S</kbd> saves it; <kbd>Ctrl</kbd>+<kbd>C</kbd> copies the JSON and <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>C</kbd> the SVG, outside a text field; <kbd>Ctrl</kbd>+<kbd>N</kbd> puts the parameters back to the size's defaults.
 - <kbd>Ctrl</kbd>+<kbd>Z</kbd> undoes the last change (a size, a reset, an experiment, a file or an edit) and <kbd>Ctrl</kbd>+<kbd>Y</kbd> or <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> redoes it. One step is kept each way. The floor of the last change stays in memory, so neither generates it again (Settings > Memory sets which floors are kept, or turns it off).
-- <kbd>/</kbd> or <kbd>Ctrl</kbd>+<kbd>F</kbd> goes to the filter; <kbd>:</kbd> or <kbd>Ctrl</kbd>+<kbd>K</kbd> to the command line, where <kbd>↑</kbd> and <kbd>↓</kbd> walk the earlier commands. <kbd>Tab</kbd> and <kbd>Shift</kbd>+<kbd>Tab</kbd> move between controls, <kbd>Enter</kbd> opens a group, <kbd>↑</kbd> and <kbd>↓</kbd> change a focused number, <kbd>Esc</kbd> leaves a field.
+- <kbd>/</kbd> or <kbd>Ctrl</kbd>+<kbd>F</kbd> goes to the filter. <kbd>Tab</kbd> and <kbd>Shift</kbd>+<kbd>Tab</kbd> move between controls, <kbd>Enter</kbd> opens a group, <kbd>↑</kbd> and <kbd>↓</kbd> change a focused number, <kbd>Esc</kbd> leaves a field.
 - <kbd>Ctrl</kbd>+<kbd>B</kbd> shows or hides the Reading column, <kbd>F11</kbd> toggles full screen, <kbd>Ctrl</kbd>+<kbd>+</kbd>, <kbd>Ctrl</kbd>+<kbd>-</kbd> and <kbd>Ctrl</kbd>+<kbd>0</kbd> change the text size, <kbd>Ctrl</kbd>+<kbd>,</kbd> opens Settings, <kbd>F1</kbd> lists the shortcuts, <kbd>Ctrl</kbd>+<kbd>W</kbd> closes the open window and <kbd>Ctrl</kbd>+<kbd>Q</kbd> quits.
 - On the map, drag to pan, scroll to zoom, double-click or <kbd>Home</kbd> to fit. With the keyboard, <kbd>Tab</kbd> reaches the map (a cyan ring shows it has the focus): the arrows pan, <kbd>+</kbd> and <kbd>-</kbd> zoom, <kbd>0</kbd> fits, <kbd>[</kbd> and <kbd>]</kbd> pick the previous and the next room (described in the Reading column under Selected room) and <kbd>Esc</kbd> lets go of the pick. The layers you turn on in the Layers menu are kept for the next start. A new seed or size is revealed from the entrance; set the new floor to Off in Settings to show it at once.
 
