@@ -426,18 +426,6 @@ pub fn note(ui: &mut egui::Ui, text: egui::RichText) {
         });
 }
 
-/// The brand for the menu bar: an amber square and the name in the display face.
-pub fn brand(ui: &mut egui::Ui) {
-    let c = of(ui);
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(8.0, 8.0), egui::Sense::hover());
-    ui.painter().rect_filled(rect, 0.0, c.accent);
-    ui.label(
-        egui::RichText::new("tapiti")
-            .font(FontId::new(15.0, display()))
-            .color(c.text),
-    );
-}
-
 /// The text and surfaces of every widget, in the light and the dark variant, at the density in use.
 pub fn apply(ctx: &egui::Context) {
     install_fonts(ctx);

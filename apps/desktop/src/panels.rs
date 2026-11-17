@@ -73,8 +73,6 @@ pub fn menu_bar(app: &mut App, ui: &mut Ui) {
         .exact_size(theme::bar_height(ui))
         .show(ui, |ui| {
             egui::MenuBar::new().ui(ui, |ui| {
-                theme::brand(ui);
-                ui.add_space(14.0);
                 ui.menu_button("File", |ui| {
                     if ui.add(Button::new("Open Λ…").shortcut_text("Ctrl+O")).clicked() {
                         ui.close();
