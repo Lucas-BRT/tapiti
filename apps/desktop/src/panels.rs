@@ -76,11 +76,11 @@ pub fn menu_bar(app: &mut App, ui: &mut Ui) {
                 theme::brand(ui);
                 ui.add_space(14.0);
                 ui.menu_button("File", |ui| {
-                    if ui.button("Open Λ…").clicked() {
+                    if ui.add(Button::new("Open Λ…").shortcut_text("Ctrl+O")).clicked() {
                         ui.close();
                         app.open_file();
                     }
-                    if ui.button("Save Λ…").clicked() {
+                    if ui.add(Button::new("Save Λ…").shortcut_text("Ctrl+S")).clicked() {
                         ui.close();
                         app.save_file();
                     }
@@ -91,7 +91,7 @@ pub fn menu_bar(app: &mut App, ui: &mut Ui) {
                         .clicked()
                     {
                         ui.ctx().copy_text(app.export_json());
-                        app.status = "Parameters copied as JSON.".into();
+                        app.notify("Parameters copied as JSON.", false);
                         ui.close();
                     }
                     if ui
@@ -114,22 +114,44 @@ pub fn menu_bar(app: &mut App, ui: &mut Ui) {
                             };
                             ui.ctx()
                                 .copy_text(tapiti_render::floor_svg(&generated.floor, &style));
-                            app.status = "Floor copied as SVG.".into();
+                            app.notify("Floor copied as SVG.", false);
                         }
                         ui.close();
                     }
                     ui.separator();
-                    if ui.button("Quit").clicked() {
+                    if ui.add(Button::new("Quit").shortcut_text("Ctrl+Q")).clicked() {
                         ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
                     }
                 });
                 ui.menu_button("Edit", |ui| {
+                    if ui
+                        .add_enabled(
+                            app.previous.is_some(),
+                            Button::new("Restore previous Λ").shortcut_text("Ctrl+Z"),
+                        )
+                        .on_hover_text(
+                            "Goes back to the size, seed and Λ before the last big change (a size, a reset, an experiment, a file). Again: forward.",
+                        )
+                        .clicked()
+                    {
+                        app.restore_previous();
+                        ui.close();
+                    }
                     if ui
                         .add_enabled(!app.changed.is_empty(), Button::new("Reset parameters"))
                         .on_hover_text("Restore Classic and the defaults of the current size")
                         .clicked()
                     {
                         app.reset_all();
+                        ui.close();
+                    }
+                    ui.separator();
+                    if ui
+                        .add(Button::new("Preferences…").shortcut_text("Ctrl+,"))
+                        .on_hover_text("How the application looks and moves")
+                        .clicked()
+                    {
+                        app.show_settings = true;
                         ui.close();
                     }
                 });
@@ -164,20 +186,37 @@ pub fn menu_bar(app: &mut App, ui: &mut Ui) {
                         app.show_json = true;
                         ui.close();
                     }
+                    ui.menu_button("Developer", |ui| {
+                        ui.label(muted(ui, "Builds floors that are not shown, to time the generator."));
+                        if ui
+                            .add_enabled(!app.busy, Button::new("Time 40 floors"))
+                            .on_hover_text("Average time of a floor of the selected size, with its default settings")
+                            .clicked()
+                        {
+                            app.start_benchmark(crate::BenchmarkKind::Forty);
+                            ui.close();
+                        }
+                        if ui
+                            .add_enabled(!app.busy, Button::new("Compare 800 floors, one thread and all"))
+                            .on_hover_text("800 floors on one thread, then on every thread")
+                            .clicked()
+                        {
+                            app.start_benchmark(crate::BenchmarkKind::Batch);
+                            ui.close();
+                        }
+                        ui.separator();
+                        ui.label(muted(ui, format!("{} threads available", par::threads())));
+                    });
                 });
                 ui.menu_button("Help", |ui| {
-                    if ui.button("Shortcuts").clicked() {
+                    if ui.add(Button::new("Shortcuts").shortcut_text("F1")).clicked() {
                         app.show_shortcuts = true;
                         ui.close();
                     }
+                    ui.separator();
+                    ui.hyperlink_to("Documentation and source", "https://github.com/Lucas-BRT/tapiti");
+                    ui.label(muted(ui, format!("Tapiti {}", env!("CARGO_PKG_VERSION"))));
                 });
-                if ui
-                    .add(Button::new("Settings").frame(false))
-                    .on_hover_text("How the application looks and moves (Ctrl+,)")
-                    .clicked()
-                {
-                    app.show_settings = true;
-                }
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     status_readout(app, ui);
                 });
@@ -217,10 +256,11 @@ fn status_readout(app: &App, ui: &mut Ui) {
         }
     }
     ui.separator();
+    // Of the floor on the screen, not of the parameters being edited: two windows with the same hash show the same floor.
     let key = format!(
         "{}{}",
         g.seed,
-        serde_json::to_string(&app.params).unwrap_or_default()
+        serde_json::to_string(&g.floor.params).unwrap_or_default()
     );
     ui.label(
         RichText::new(fnv1a(key.as_bytes()))
@@ -387,7 +427,25 @@ pub fn command_bar(app: &mut App, ui: &mut Ui) {
                 }
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     ui.label(muted(ui, format!("{} threads", par::threads())));
-                    ui.add(egui::Label::new(muted(ui, &app.status)).truncate());
+                    // A notice (a command's answer, a file, a failure) has the place of the status line until it fades or is closed;
+                    // an error stays in the error colour.
+                    if let Some(notice) = &app.notice {
+                        let color = if notice.error { c.error } else { c.text };
+                        let text = notice.text.clone();
+                        if ui
+                            .small_button("×")
+                            .on_hover_text("Close this message")
+                            .clicked()
+                        {
+                            app.notice = None;
+                        }
+                        ui.add(
+                            egui::Label::new(RichText::new(text.clone()).color(color)).truncate(),
+                        )
+                        .on_hover_text(text);
+                    } else {
+                        ui.add(egui::Label::new(muted(ui, &app.status)).truncate());
+                    }
                 });
             });
         });

@@ -4,10 +4,8 @@
 use crate::charts::{self, Bar};
 use crate::map::{Palette, SHAPE_CLASSES};
 use crate::panels::{card, muted};
-use crate::{
-    class_label, summary, translate_log, translate_violation, App, BenchmarkKind, GeneratedMap,
-};
-use eframe::egui::{self, Button, Color32, Grid, RichText, Stroke, Ui};
+use crate::{class_label, summary, translate_log, translate_violation, App, GeneratedMap};
+use eframe::egui::{self, Color32, Grid, RichText, Stroke, Ui};
 
 /// One line of the readout: a short label, the value, and when the value is part of something a bar showing its share, with the
 /// longer explanation for the hover.
@@ -246,7 +244,6 @@ fn rules_section(ui: &mut Ui, map: &GeneratedMap) {
 pub fn analysis_tab(app: &mut App, ui: &mut Ui) {
     let Some(map) = app.generated.clone() else {
         ui.label(muted(ui, "No floor yet."));
-        performance(app, ui);
         return;
     };
     let pal = Palette::new(ui.visuals().dark_mode);
@@ -483,39 +480,6 @@ pub fn analysis_tab(app: &mut App, ui: &mut Ui) {
             },
         );
     }
-    performance(app, ui);
-}
-
-fn performance(app: &mut App, ui: &mut Ui) {
-    let bar = crate::theme::GroupBar {
-        title: "Speed of the generator",
-        count: 2,
-        changed: 0,
-        default_open: false,
-    };
-    crate::theme::group(ui, ui.make_persistent_id("performance"), bar, None, |ui| {
-        ui.label(muted(
-            ui,
-            "Builds many floors of the selected size with its default settings and tells how fast it goes.",
-        ));
-        ui.horizontal_wrapped(|ui| {
-            if ui
-                .add_enabled(!app.busy, Button::new("Measure 40 floors"))
-                .clicked()
-            {
-                app.start_benchmark(BenchmarkKind::Forty);
-            }
-            if ui
-                .add_enabled(!app.busy, Button::new("Compare a batch of 800"))
-                .clicked()
-            {
-                app.start_benchmark(BenchmarkKind::Batch);
-            }
-        });
-        if let Some(text) = &app.performance_status {
-            ui.label(text);
-        }
-    });
 }
 
 type Row = (&'static str, String, &'static str);

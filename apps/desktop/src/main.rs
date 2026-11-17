@@ -128,7 +128,23 @@ enum Event {
     Generated(Result<GeneratedMap, String>),
     /// The generation was stopped by the user before it was done.
     Cancelled,
-    Benchmark(String),
+    /// The result of a benchmark, or `None` when it was stopped.
+    Benchmark(Option<String>),
+}
+
+/// A message for the person at the keyboard, not a progress line.
+pub struct Notice {
+    pub text: String,
+    pub error: bool,
+    pub at: Instant,
+}
+
+/// The size, the seed and the Λ: what Restore previous Λ brings back.
+#[derive(Clone)]
+pub struct Snapshot {
+    size: Size,
+    seed: u32,
+    params: Params,
 }
 
 pub struct App {
@@ -168,7 +184,18 @@ pub struct App {
     show_settings: bool,
     apply_at: Option<Instant>,
     pub status: String,
-    pub performance_status: Option<String>,
+    /// What the last command, file operation or failure said, apart from the progress in `status`: errors stay until dismissed.
+    pub notice: Option<Notice>,
+    /// The last generation failed or was cancelled, so the floor on the screen is not the one the parameters describe.
+    pub generation_failed: bool,
+    /// The Λ before the last big change (a size, a reset, a preset, a file), for Edit > Restore previous Λ.
+    pub previous: Option<Snapshot>,
+    /// When the Λ was last remembered for a single edit, so a drag of a value is one step back.
+    last_remember: Option<Instant>,
+    /// The window size last written to the preferences, and the one the window has.
+    saved_window: Option<[f32; 2]>,
+    /// A benchmark is running (it builds floors that are not shown): the map keeps the floor on the screen.
+    pub benchmarking: bool,
     pub generated: Option<GeneratedMap>,
     pub building: BuildingMap,
     pub groups: Vec<ParamGroup>,
@@ -194,6 +221,8 @@ pub struct App {
     pub ui_motion: settings::Timing,
     pub reveal_motion: settings::Timing,
     pub text_scale: settings::TextScale,
+    /// The text size slider was moved and the window has not been rescaled yet (it waits for the pointer to be let go).
+    pub text_scale_pending: bool,
     pub reading_width: settings::ReadingWidth,
     /// Light, dark or the system's, kept between runs, and what the system says now.
     pub appearance: theme::Appearance,
@@ -270,8 +299,13 @@ impl App {
             show_shortcuts: false,
             show_settings: false,
             apply_at: None,
+            notice: None,
+            generation_failed: false,
+            previous: None,
+            last_remember: None,
+            saved_window: None,
             status: "Preparing the generator…".into(),
-            performance_status: None,
+            benchmarking: false,
             generated: None,
             building: BuildingMap::default(),
             groups: params_ui::groups(),
@@ -285,6 +319,7 @@ impl App {
             ui_motion: settings::Timing::interface(),
             reveal_motion: settings::Timing::reveal(),
             text_scale: settings::TextScale::saved(),
+            text_scale_pending: false,
             reading_width: settings::ReadingWidth::saved(),
             appearance: theme::Appearance::saved(),
             system_theme: theme::SystemTheme::watch(&cc.egui_ctx),
@@ -307,8 +342,13 @@ impl App {
             }),
         };
         app.pick_from_env();
+        if app.shot.is_none() {
+            app.restore_last();
+        }
         app.sync_json();
-        app.launch_generate();
+        if !app.busy {
+            app.launch_generate();
+        }
         app
     }
 
@@ -460,7 +500,8 @@ impl App {
     fn launch_generate(&mut self) {
         if let Err(error) = validate_params(&self.params) {
             self.queued = false;
-            self.status = error;
+            let error = self.plain_error(&error);
+            self.notify(error, true);
             return;
         }
         self.busy = true;
@@ -524,12 +565,23 @@ impl App {
             return;
         }
         self.busy = true;
+        self.benchmarking = true;
         self.work_id = self.work_id.wrapping_add(1);
-        self.performance_status = Some("Measuring on the native Rust engine…".into());
+        self.status = match kind {
+            BenchmarkKind::Forty => "Benchmark: building 40 floors…".into(),
+            BenchmarkKind::Batch => {
+                "Benchmark: building 800 floors, one thread and then all…".into()
+            }
+        };
         let (work_id, size) = (self.work_id, self.size);
         let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
+        let cancel = Cancel::new();
+        self.cancel = Some(cancel.clone());
         std::thread::spawn(move || {
-            let _ = tx.send((work_id, Event::Benchmark(run_benchmark(size, kind))));
+            let _ = tx.send((
+                work_id,
+                Event::Benchmark(run_benchmark(size, kind, &cancel)),
+            ));
             ctx.request_repaint();
         });
     }
@@ -549,14 +601,22 @@ impl App {
                     match result {
                         Ok(map) => {
                             self.status = format!(
-                                "Floor generated in {ms:.1} ms · {draws} attempt(s).",
+                                "Floor generated in {ms:.1} ms · {draws} attempt{s}.",
                                 ms = map.elapsed_ms,
-                                draws = map.draws
+                                draws = map.draws,
+                                s = if map.draws == 1 { "" } else { "s" }
                             );
                             self.generated = Some(map);
+                            self.generation_failed = false;
+                            // A failure is answered by the next floor; the other messages stay until they fade.
+                            if self.notice.as_ref().is_some_and(|n| n.error) {
+                                self.notice = None;
+                            }
+                            self.keep_last();
                         }
                         Err(error) => {
-                            self.status = format!("Generation failed: {error}", error = error)
+                            self.generation_failed = true;
+                            self.notify(format!("Generation failed: {error}"), true);
                         }
                     }
                     if self.queued {
@@ -568,19 +628,24 @@ impl App {
                     self.cancel = None;
                     self.show_building = false;
                     self.building = BuildingMap::default();
-                    self.status =
-                        "Generation cancelled; the floor on the screen is the previous one.".into();
+                    self.generation_failed = true;
+                    self.notify(
+                        "Generation cancelled; the floor on the screen is the previous one.",
+                        false,
+                    );
                     if self.queued {
                         self.launch_generate();
                     }
                 }
                 Event::Benchmark(text) => {
                     self.busy = false;
-                    self.performance_status = Some(text);
-                    self.status = format!(
-                        "Native engine · {threads} threads in the Rayon pool",
-                        threads = par::threads()
-                    );
+                    self.cancel = None;
+                    self.benchmarking = false;
+                    match text {
+                        Some(text) => self.notify(text, false),
+                        None => self.notify("Benchmark stopped.", false),
+                    }
+                    self.status = "Benchmark done.".into();
                 }
             }
         }
@@ -690,20 +755,108 @@ impl App {
         self.apply_at = Some(Instant::now() + APPLY_DELAY);
     }
 
-    pub fn set_size(&mut self, size: Size) {
-        let profile = self.params.topology.profile;
-        self.size = size;
-        self.params = params_of_size(self.size);
-        self.defaults = serde_json::to_value(&self.params).unwrap_or(Value::Null);
-        self.params.apply_intent(profile);
+    pub fn notify(&mut self, text: impl Into<String>, error: bool) {
+        self.notice = Some(Notice {
+            text: text.into(),
+            error,
+            at: Instant::now(),
+        });
+    }
+
+    fn snapshot(&self) -> Snapshot {
+        Snapshot {
+            size: self.size,
+            seed: self.seed,
+            params: self.params.clone(),
+        }
+    }
+
+    /// Keeps the Λ as it is now, to come back to with Restore previous Λ. Only one step is kept.
+    pub fn remember(&mut self) {
+        self.previous = Some(self.snapshot());
+        self.last_remember = Some(Instant::now());
+    }
+
+    /// Remembers before a single edit, but only once for a run of them (a drag of a value is one step back).
+    pub fn remember_for_edit(&mut self) {
+        if self
+            .last_remember
+            .is_none_or(|at| at.elapsed() > Duration::from_millis(1500))
+        {
+            self.remember();
+        }
+        self.last_remember = Some(Instant::now());
+    }
+
+    /// Swaps the Λ with the one before the last big change: asked again, it goes forward again.
+    pub fn restore_previous(&mut self) {
+        let Some(previous) = self.previous.take() else {
+            self.notify("There is no earlier Λ to go back to.", false);
+            return;
+        };
+        self.previous = Some(self.snapshot());
+        self.size = previous.size;
+        self.seed = previous.seed;
+        self.seed_draft = previous.seed.to_string();
+        self.defaults = serde_json::to_value(params_of_size(previous.size)).unwrap_or(Value::Null);
+        self.params = previous.params;
         self.refresh_changed();
         self.sync_json();
-        self.zoom = 1.0;
-        self.pan = [0.0, 0.0];
+        self.notice = None;
+        self.notify("Went back to the previous Λ. Do it again to return.", false);
         self.request_generate();
     }
 
+    /// Another size. The adjustments that mean the same in the new size are kept; those the size sets for itself (its grid, its
+    /// counts) take the new size's values.
+    pub fn set_size(&mut self, size: Size) {
+        self.remember();
+        let profile = self.params.topology.profile;
+        let old_defaults = self.defaults.clone();
+        let old_current = serde_json::to_value(&self.params).unwrap_or(Value::Null);
+        let kept_from = self.changed.clone();
+        self.load_size(size);
+        self.params.apply_intent(profile);
+        let mut next = serde_json::to_value(&self.params).unwrap_or(Value::Null);
+        let (mut kept, mut dropped) = (0, 0);
+        for path in &kept_from {
+            let same = get_path(&old_defaults, path) == get_path(&self.defaults, path);
+            match (same, get_path(&old_current, path)) {
+                (true, Some(value)) => {
+                    set_path(&mut next, path, value.clone());
+                    kept += 1;
+                }
+                _ => dropped += 1,
+            }
+        }
+        if let Ok(params) = serde_json::from_value::<Params>(next) {
+            self.params = params;
+        }
+        self.refresh_changed();
+        self.sync_json();
+        if kept + dropped > 0 {
+            self.notify(
+                format!(
+                    "Size {}: {kept} adjustment(s) kept, {dropped} took the size's own value. Restore previous Λ goes back.",
+                    size_label(size).to_lowercase()
+                ),
+                false,
+            );
+        }
+        self.request_generate();
+    }
+
+    /// The defaults of a size, with nothing carried over.
+    fn load_size(&mut self, size: Size) {
+        self.size = size;
+        self.params = params_of_size(size);
+        self.defaults = serde_json::to_value(&self.params).unwrap_or(Value::Null);
+        self.zoom = 1.0;
+        self.pan = [0.0, 0.0];
+    }
+
     pub fn set_intent(&mut self, profile: TopologyProfile) {
+        self.remember();
         self.params.topology = TopologySpec::default();
         self.params.apply_intent(profile);
         self.params.topology = self.params.topology.requirements();
@@ -711,8 +864,15 @@ impl App {
     }
 
     pub fn reset_all(&mut self) {
-        self.params.topology.profile = TopologyProfile::Classic;
-        self.set_size(self.size);
+        self.remember();
+        self.load_size(self.size);
+        self.refresh_changed();
+        self.sync_json();
+        self.notify(
+            "Parameters reset to the defaults of the size. Restore previous Λ goes back.",
+            false,
+        );
+        self.request_generate();
     }
 
     /// The size, the seed and the Λ as the JSON that File > Save and Copy JSON write.
@@ -731,10 +891,10 @@ impl App {
         else {
             return;
         };
-        self.status = match std::fs::write(&path, self.export_json()) {
-            Ok(()) => format!("Saved {}.", path.display()),
-            Err(error) => format!("Could not save {}: {error}", path.display()),
-        };
+        match std::fs::write(&path, self.export_json()) {
+            Ok(()) => self.notify(format!("Saved {}.", path.display()), false),
+            Err(error) => self.notify(format!("Could not save {}: {error}", path.display()), true),
+        }
     }
 
     /// File > Open Λ…: reads a file written by Save or Copy JSON (or a bare Λ) and generates with it.
@@ -746,41 +906,84 @@ impl App {
         else {
             return;
         };
-        let loaded = std::fs::read_to_string(&path)
+        match std::fs::read_to_string(&path)
             .map_err(|error| error.to_string())
-            .and_then(|text| serde_json::from_str::<Value>(&text).map_err(|e| e.to_string()))
-            .and_then(|value| {
-                let params = value.get("params").unwrap_or(&value).clone();
-                let params = serde_json::from_value::<Params>(params).map_err(|e| e.to_string())?;
-                validate_params(&params)?;
-                Ok((value, params))
-            });
-        match loaded {
-            Ok((value, params)) => {
-                if let Some(size) = value.get("size").and_then(Value::as_str).and_then(|name| {
-                    Size::ALL
-                        .into_iter()
-                        .find(|s| size_label(*s).to_lowercase() == name)
-                }) {
-                    self.size = size;
-                    self.defaults =
-                        serde_json::to_value(params_of_size(size)).unwrap_or(Value::Null);
-                }
-                if let Some(seed) = value
-                    .get("seed")
-                    .and_then(Value::as_u64)
-                    .and_then(|s| u32::try_from(s).ok())
-                {
-                    self.seed = seed;
-                    self.seed_draft = seed.to_string();
-                }
-                self.params = params;
-                self.refresh_changed();
-                self.sync_json();
-                self.status = format!("Opened {}.", path.display());
-                self.request_generate();
+            .and_then(|text| self.load_text(&text))
+        {
+            Ok(()) => self.notify(format!("Opened {}.", path.display()), false),
+            Err(error) => self.notify(format!("Could not open {}: {error}", path.display()), true),
+        }
+    }
+
+    /// Takes the JSON that Save and Copy JSON write (or a bare Λ) as the size, seed and Λ, and generates with it.
+    fn load_text(&mut self, text: &str) -> Result<(), String> {
+        let value = serde_json::from_str::<Value>(text).map_err(|e| e.to_string())?;
+        let params = value.get("params").unwrap_or(&value).clone();
+        let params = serde_json::from_value::<Params>(params).map_err(|e| e.to_string())?;
+        validate_params(&params)?;
+        self.remember();
+        if let Some(size) = value.get("size").and_then(Value::as_str).and_then(|name| {
+            Size::ALL
+                .into_iter()
+                .find(|s| size_label(*s).to_lowercase() == name)
+        }) {
+            self.size = size;
+            self.defaults = serde_json::to_value(params_of_size(size)).unwrap_or(Value::Null);
+        }
+        if let Some(seed) = value
+            .get("seed")
+            .and_then(Value::as_u64)
+            .and_then(|s| u32::try_from(s).ok())
+        {
+            self.seed = seed;
+            self.seed_draft = seed.to_string();
+        }
+        self.params = params;
+        self.refresh_changed();
+        self.sync_json();
+        self.request_generate();
+        Ok(())
+    }
+
+    /// The size, seed and Λ of the last run, which the app comes back to; a missing or unreadable file starts from Small and seed 1.
+    fn restore_last(&mut self) {
+        if let Some(text) = prefs::load("last") {
+            if self.load_text(&text).is_ok() {
+                self.previous = None;
             }
-            Err(error) => self.status = format!("Could not open {}: {error}", path.display()),
+        }
+    }
+
+    /// Writes the size, seed and Λ on the screen, so the next start is where this one stopped.
+    fn keep_last(&mut self) {
+        prefs::save("last", &self.export_json());
+    }
+
+    /// Writes the window's size when it changed, so the next start has the window as it was left (not while maximized).
+    fn keep_window(&mut self, ctx: &egui::Context) {
+        let size = ctx.input(|i| i.viewport().inner_rect.map(|r| [r.width(), r.height()]));
+        let maximized = ctx.input(|i| i.viewport().maximized.unwrap_or(false));
+        if let Some(size) = size.filter(|_| !maximized && !self.capturing()) {
+            let moved = self
+                .saved_window
+                .is_none_or(|s| (s[0] - size[0]).abs() > 2.0 || (s[1] - size[1]).abs() > 2.0);
+            if moved {
+                prefs::save("window", &format!("{:.0},{:.0}", size[0], size[1]));
+                self.saved_window = Some(size);
+            }
+        }
+    }
+
+    /// Words a validation message in the labels of the screen instead of the keys of the JSON.
+    pub fn plain_error(&self, message: &str) -> String {
+        let key = message.split([' ', ':']).next().unwrap_or("");
+        let field =
+            self.groups.iter().flat_map(|g| &g.fields).find(|f| {
+                f.path == key || f.path.rsplit('.').next().is_some_and(|last| last == key)
+            });
+        match field {
+            Some(f) => message.replacen(key, f.label.as_str(), 1),
+            None => message.to_string(),
         }
     }
 
@@ -803,7 +1006,10 @@ impl App {
             Ok(seed) => self.set_seed(seed),
             Err(_) => {
                 self.seed_draft = self.seed.to_string();
-                self.status = "The seed must be an integer between 0 and 4,294,967,295.".into();
+                self.notify(
+                    "The seed must be an integer between 0 and 4,294,967,295.",
+                    true,
+                );
             }
         }
     }
@@ -834,6 +1040,7 @@ impl App {
     }
 
     pub fn change_param(&mut self, path: &str, value: Value) {
+        self.remember_for_edit();
         let was_before =
             self.params.environment.height.phase == tapiti_core::environment::LayerPhase::Before;
         let mut params = serde_json::to_value(&self.params).unwrap_or(Value::Null);
@@ -857,7 +1064,10 @@ impl App {
                     self.params_edited();
                 }
             }
-            Err(error) => self.status = format!("Invalid parameter: {error}", error = error),
+            Err(error) => {
+                let error = self.plain_error(&error.to_string());
+                self.notify(format!("Invalid parameter: {error}"), true);
+            }
         }
     }
 
@@ -873,15 +1083,20 @@ impl App {
             }
         }
         let title = group.title.as_str().to_string();
+        self.remember();
         if let Ok(mut params) = serde_json::from_value::<Params>(value) {
             params.apply_intent(self.params.topology.profile);
             self.params = params;
             self.params_edited();
-            self.status = format!("{title} parameters restored.", title = title);
+            self.notify(
+                format!("{title} parameters restored. Restore previous Λ goes back."),
+                false,
+            );
         }
     }
 
     pub fn set_preset(&mut self, preset: Experiment) {
+        self.remember();
         let p = &mut self.params;
         let note = match preset {
             Experiment::Shapes => {
@@ -912,7 +1127,10 @@ impl App {
             }
         };
         self.params_edited();
-        self.status = format!("Experiment applied: {note}.", note = note);
+        self.notify(
+            format!("Experiment applied: {note}. Restore previous Λ goes back."),
+            false,
+        );
     }
 
     pub fn map_bounds(&self) -> Option<([f64; 2], [f64; 2])> {
@@ -966,8 +1184,29 @@ impl App {
                 ctx.memory_mut(|m| m.request_focus(theme::command_id()));
             }
         }
-        if ctx.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::Comma)) {
+        let command =
+            |ctx: &egui::Context, key| ctx.input_mut(|i| i.consume_key(Modifiers::COMMAND, key));
+        if command(ctx, Key::Comma) {
             self.show_settings = true;
+        }
+        if command(ctx, Key::O) {
+            self.open_file();
+        }
+        if command(ctx, Key::S) {
+            self.save_file();
+        }
+        if command(ctx, Key::Q) {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        }
+        // Ctrl+Z is the text field's own while one has the keyboard.
+        if !ctx.egui_wants_keyboard_input() && command(ctx, Key::Z) {
+            self.restore_previous();
+        }
+        if ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::F1)) {
+            self.show_shortcuts = true;
+        }
+        if ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::F5)) || command(ctx, Key::Enter) {
+            self.generate_now();
         }
         if alt(ctx, Key::ArrowLeft) {
             self.set_seed(self.seed.saturating_sub(1));
@@ -999,7 +1238,7 @@ impl App {
     pub fn generate_now(&mut self) {
         self.apply_at = None;
         if self.json_dirty && !self.commit_json() {
-            self.status = "The parameter JSON has errors; fix it to generate.".into();
+            self.notify("The parameter JSON has errors; fix it to generate.", true);
             return;
         }
         if self.json_dirty {
@@ -1016,6 +1255,15 @@ impl eframe::App for App {
         theme::apply_appearance(&ctx, self.appearance, &self.system_theme);
         self.shortcuts(&ctx);
         self.apply_due(&ctx);
+        self.keep_window(&ctx);
+        // A message that is not an error fades after a few seconds.
+        if let Some(notice) = &self.notice {
+            if !notice.error && notice.at.elapsed() > Duration::from_secs(8) {
+                self.notice = None;
+            } else {
+                ctx.request_repaint_after(Duration::from_millis(500));
+            }
+        }
         panels::menu_bar(self, ui);
         panels::top_bar(self, ui);
         panels::command_bar(self, ui);
@@ -1031,6 +1279,14 @@ impl eframe::App for App {
 
 /// The settings Λ leaves out of its JSON while they are off, with the values they have then: the desktop compares a Λ with its
 /// defaults and must be able to reset a setting that is not in the JSON.
+/// The window size of the last run, when it is one that fits the minimum.
+fn saved_window_size() -> Option<[f32; 2]> {
+    let text = prefs::load("window")?;
+    let (w, h) = text.split_once(',')?;
+    let (w, h) = (w.parse::<f32>().ok()?, h.parse::<f32>().ok()?);
+    (w >= 1000.0 && h >= 640.0 && w <= 8000.0 && h <= 8000.0).then_some([w, h])
+}
+
 fn skipped_defaults() -> Value {
     serde_json::json!({
         "zones": tapiti_core::params::ZoneSpec::default(),
@@ -1053,7 +1309,7 @@ fn main() -> eframe::Result {
                 eframe::icon_data::from_png_bytes(include_bytes!("../assets/icon.png"))
                     .expect("assets/icon.png is a valid PNG"),
             )
-            .with_inner_size([1360.0, 860.0])
+            .with_inner_size(saved_window_size().unwrap_or([1360.0, 860.0]))
             // Only the screenshot runs fill the screen (maximized, so the title bar stays): a normal start is a normal window.
             .with_maximized(std::env::var_os("TAPITI_SCREENSHOT").is_some())
             .with_min_inner_size([1000.0, 640.0]),
@@ -1159,46 +1415,59 @@ fn view_box(min: [f64; 2], max: [f64; 2], zoom: f64, pan: [f64; 2]) -> (f64, f64
     )
 }
 
-fn run_benchmark(size: Size, kind: BenchmarkKind) -> String {
+fn run_benchmark(size: Size, kind: BenchmarkKind, cancel: &Cancel) -> Option<String> {
     let params = params_of_size(size);
     match kind {
         BenchmarkKind::Forty => {
             let started = Instant::now();
             let mut invalid = 0usize;
             for seed in 1..=40u32 {
+                if cancel.is_cancelled() {
+                    return None;
+                }
                 invalid += usize::from(!stage::stage(seed, &params, 8).violations.is_empty());
             }
             let elapsed = started.elapsed().as_secs_f64() * 1000.0;
-            format!(
-                "Average: {ms:.2} ms per map · {invalid} invalid of 40 · {threads} threads available.",
+            Some(format!(
+                "Benchmark, 40 floors: average: {ms:.2} ms per map · {invalid} invalid of 40 · {threads} threads available.",
                 ms = elapsed / 40.0,
                 invalid = invalid,
                 threads = par::threads()
-            )
+            ))
         }
         BenchmarkKind::Batch => {
             let seeds: Vec<u32> = (1..=800).collect();
             let one_started = Instant::now();
             let one_invalid = seeds
                 .iter()
+                .take_while(|_| !cancel.is_cancelled())
                 .map(|seed| usize::from(!stage::stage(*seed, &params, 8).violations.is_empty()))
                 .sum::<usize>();
             let one_ms = one_started.elapsed().as_secs_f64() * 1000.0;
             let parallel_started = Instant::now();
+            if cancel.is_cancelled() {
+                return None;
+            }
             let parallel_invalid = par::pmap(&seeds, |seed| {
+                if cancel.is_cancelled() {
+                    return 0;
+                }
                 usize::from(!stage::stage(*seed, &params, 8).violations.is_empty())
             })
             .into_iter()
             .sum::<usize>();
             let parallel_ms = parallel_started.elapsed().as_secs_f64() * 1000.0;
-            format!(
-                "800 maps: 1 thread {one:.0} ms · {threads} threads {many:.0} ms · invalid: {a}/{b}.",
+            if cancel.is_cancelled() {
+                return None;
+            }
+            Some(format!(
+                "Benchmark, 800 floors: 1 thread {one:.0} ms · {threads} threads {many:.0} ms · invalid: {a}/{b}.",
                 one = one_ms,
                 threads = par::threads(),
                 many = parallel_ms,
                 a = one_invalid,
                 b = parallel_invalid
-            )
+            ))
         }
     }
 }

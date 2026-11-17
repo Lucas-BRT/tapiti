@@ -544,6 +544,10 @@ impl Choice for Reading {
 }
 
 fn content(app: &mut App, ui: &mut Ui) {
+    if app.text_scale_pending && !ui.ctx().input(|i| i.pointer.any_down()) {
+        ui.ctx().set_zoom_factor(app.text_scale.factor());
+        app.text_scale_pending = false;
+    }
     egui::ScrollArea::vertical().show(ui, |ui| {
         theme::section(ui, "Appearance", |ui| {
             if choice_row(
@@ -570,7 +574,12 @@ fn content(app: &mut App, ui: &mut Ui) {
                 &mut app.text_scale,
             ) {
                 app.text_scale.save();
-                ui.ctx().set_zoom_factor(app.text_scale.factor());
+                // Dragging the slider would rescale the window under the pointer; the size applies when the pointer is let go.
+                if !ui.ctx().input(|i| i.pointer.any_down()) {
+                    ui.ctx().set_zoom_factor(app.text_scale.factor());
+                } else {
+                    app.text_scale_pending = true;
+                }
             }
         });
         theme::section(ui, "Reading panel", |ui| {

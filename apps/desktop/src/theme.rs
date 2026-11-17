@@ -430,6 +430,8 @@ pub fn apply(ctx: &egui::Context) {
     apply_density(ctx, Density::saved());
     apply_motion(ctx, crate::settings::Timing::interface().seconds());
     ctx.set_zoom_factor(crate::settings::TextScale::saved().factor());
+    // The text size is Settings' to change; Ctrl+Plus and Ctrl+Minus would move it without the setting knowing.
+    ctx.options_mut(|o| o.zoom_with_keyboard = false);
 }
 
 /// How long the interface's own transitions last (a panel sliding, a group opening, a hover fading in), in seconds; 0 for none.
