@@ -91,12 +91,14 @@ The rules V1 to V5 and a hash of the seed and Λ (two windows with the same hash
 
 ### Shortcuts and the map
 
-- <kbd>Alt</kbd>+<kbd>1</kbd> to <kbd>4</kbd> switch the size.
-- <kbd>Alt</kbd>+<kbd>R</kbd> draws a random seed.
-- <kbd>Alt</kbd>+<kbd>←</kbd> and <kbd>→</kbd> step the seed; <kbd>F5</kbd> or <kbd>Ctrl</kbd>+<kbd>Enter</kbd> generates again.
-- <kbd>Ctrl</kbd>+<kbd>O</kbd> opens a Λ, <kbd>Ctrl</kbd>+<kbd>S</kbd> saves it, <kbd>Ctrl</kbd>+<kbd>Z</kbd> restores the previous Λ (the one before the last size, reset, experiment or file; again, it goes forward), <kbd>Ctrl</kbd>+<kbd>Q</kbd> quits, <kbd>F1</kbd> lists the shortcuts. In the command line, <kbd>↑</kbd> and <kbd>↓</kbd> walk the earlier commands.
-- <kbd>/</kbd> goes to the filter; <kbd>Tab</kbd> and <kbd>Shift</kbd>+<kbd>Tab</kbd> move between controls, <kbd>Enter</kbd> opens a group, <kbd>↑</kbd> and <kbd>↓</kbd> change a focused number, <kbd>Esc</kbd> leaves a field.
-- On the map, drag to pan, scroll to zoom, double-click to fit. With the keyboard, <kbd>Tab</kbd> reaches the map (a cyan ring shows it has the focus): the arrows pan, <kbd>+</kbd> and <kbd>-</kbd> zoom, <kbd>0</kbd> fits, <kbd>[</kbd> and <kbd>]</kbd> pick the previous and the next room (described in the Reading column under Selected room) and <kbd>Esc</kbd> lets go of the pick. The layers you turn on in the Layers menu are kept for the next start. A new seed or size is revealed from the entrance; set the new floor to Off in Settings to show it at once.
+- <kbd>Alt</kbd>+<kbd>1</kbd> to <kbd>4</kbd> or <kbd>Ctrl</kbd>+<kbd>1</kbd> to <kbd>4</kbd> switch the size.
+- <kbd>Alt</kbd>+<kbd>R</kbd> draws a random seed; <kbd>Alt</kbd>+<kbd>←</kbd> and <kbd>→</kbd> step the seed; <kbd>Ctrl</kbd>+<kbd>L</kbd> goes to the seed field.
+- <kbd>F5</kbd> or <kbd>Ctrl</kbd>+<kbd>Enter</kbd> generates again; <kbd>Esc</kbd> cancels a generation.
+- <kbd>Ctrl</kbd>+<kbd>O</kbd> opens a Λ and <kbd>Ctrl</kbd>+<kbd>S</kbd> saves it; <kbd>Ctrl</kbd>+<kbd>C</kbd> copies the JSON and <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>C</kbd> the SVG, outside a text field; <kbd>Ctrl</kbd>+<kbd>N</kbd> puts the parameters back to the size's defaults.
+- <kbd>Ctrl</kbd>+<kbd>Z</kbd> undoes the last change (a size, a reset, an experiment, a file or an edit) and <kbd>Ctrl</kbd>+<kbd>Y</kbd> or <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> redoes it. One step is kept each way. The floor of the last change stays in memory, so neither generates it again (Settings > Memory sets which floors are kept, or turns it off).
+- <kbd>/</kbd> or <kbd>Ctrl</kbd>+<kbd>F</kbd> goes to the filter; <kbd>:</kbd> or <kbd>Ctrl</kbd>+<kbd>K</kbd> to the command line, where <kbd>↑</kbd> and <kbd>↓</kbd> walk the earlier commands. <kbd>Tab</kbd> and <kbd>Shift</kbd>+<kbd>Tab</kbd> move between controls, <kbd>Enter</kbd> opens a group, <kbd>↑</kbd> and <kbd>↓</kbd> change a focused number, <kbd>Esc</kbd> leaves a field.
+- <kbd>Ctrl</kbd>+<kbd>B</kbd> shows or hides the Reading column, <kbd>F11</kbd> toggles full screen, <kbd>Ctrl</kbd>+<kbd>+</kbd>, <kbd>Ctrl</kbd>+<kbd>-</kbd> and <kbd>Ctrl</kbd>+<kbd>0</kbd> change the text size, <kbd>Ctrl</kbd>+<kbd>,</kbd> opens Settings, <kbd>F1</kbd> lists the shortcuts, <kbd>Ctrl</kbd>+<kbd>W</kbd> closes the open window and <kbd>Ctrl</kbd>+<kbd>Q</kbd> quits.
+- On the map, drag to pan, scroll to zoom, double-click or <kbd>Home</kbd> to fit. With the keyboard, <kbd>Tab</kbd> reaches the map (a cyan ring shows it has the focus): the arrows pan, <kbd>+</kbd> and <kbd>-</kbd> zoom, <kbd>0</kbd> fits, <kbd>[</kbd> and <kbd>]</kbd> pick the previous and the next room (described in the Reading column under Selected room) and <kbd>Esc</kbd> lets go of the pick. The layers you turn on in the Layers menu are kept for the next start. A new seed or size is revealed from the entrance; set the new floor to Off in Settings to show it at once.
 
 ## The website and the lab
 

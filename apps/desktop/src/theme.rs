@@ -293,6 +293,10 @@ pub fn filter_id() -> egui::Id {
     egui::Id::NULL.with("tapiti-filter")
 }
 
+pub fn seed_id() -> egui::Id {
+    egui::Id::NULL.with("tapiti-seed")
+}
+
 pub fn command_id() -> egui::Id {
     egui::Id::NULL.with("tapiti-command")
 }

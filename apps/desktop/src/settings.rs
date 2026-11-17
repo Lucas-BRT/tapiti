@@ -80,9 +80,11 @@ pub fn window(app: &mut App, ctx: &egui::Context) {
             egui::CentralPanel::default()
                 .frame(theme::panel_frame(ui))
                 .show(ui, |ui| content(app, ui));
-            let close = ui
-                .ctx()
-                .input(|i| i.viewport().close_requested() || i.key_pressed(egui::Key::Escape));
+            let close = ui.ctx().input(|i| {
+                i.viewport().close_requested()
+                    || i.key_pressed(egui::Key::Escape)
+                    || (i.modifiers.command && i.key_pressed(egui::Key::W))
+            });
             if close {
                 app.show_settings = false;
                 ui.ctx().send_viewport_cmd(ViewportCommand::Close);
@@ -366,6 +368,30 @@ impl TextScale {
         }
     }
 
+    /// The next size up (`1`), down (`-1`) or the normal one (`0`), along the sizes people use; a size between the presets is custom.
+    pub fn stepped(self, direction: i32) -> Self {
+        const LADDER: [u16; 9] = [70, 80, 90, 100, 110, 120, 140, 160, 200];
+        let percent = match direction {
+            0 => 100,
+            d if d > 0 => LADDER
+                .into_iter()
+                .find(|p| *p > self.percent())
+                .unwrap_or(200),
+            _ => LADDER
+                .into_iter()
+                .rev()
+                .find(|p| *p < self.percent())
+                .unwrap_or(70),
+        };
+        match percent {
+            90 => Self::Small,
+            100 => Self::Normal,
+            120 => Self::Large,
+            140 => Self::Larger,
+            p => Self::Custom(p),
+        }
+    }
+
     pub fn factor(self) -> f32 {
         f32::from(self.percent()) / 100.0
     }
@@ -460,6 +486,97 @@ impl Choice for theme::Appearance {
 
     fn with_custom(self, _: f32) -> Self {
         self
+    }
+}
+
+/// Which floors are kept in memory for Undo and Redo, by their number of rooms.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum KeepFloors {
+    Off,
+    /// Up to 60 rooms.
+    Small,
+    Always,
+    /// Up to this many rooms.
+    Custom(u16),
+}
+
+impl KeepFloors {
+    pub fn saved() -> Self {
+        match prefs::load("keep_floors").as_deref() {
+            Some("off") => Self::Off,
+            Some("small") => Self::Small,
+            Some(other) if other.starts_with("custom:") => other[7..]
+                .parse()
+                .map_or(Self::Always, |n: u16| Self::Custom(n.clamp(10, 1000))),
+            _ => Self::Always,
+        }
+    }
+
+    pub fn save(self) {
+        prefs::save(
+            "keep_floors",
+            &match self {
+                Self::Off => "off".to_string(),
+                Self::Small => "small".to_string(),
+                Self::Always => "always".to_string(),
+                Self::Custom(n) => format!("custom:{n}"),
+            },
+        );
+    }
+
+    fn limit(self) -> usize {
+        match self {
+            Self::Off => 0,
+            Self::Small => 60,
+            Self::Always => usize::MAX,
+            Self::Custom(n) => usize::from(n),
+        }
+    }
+
+    /// Whether a floor of this many rooms is kept.
+    pub fn allows(self, rooms: usize) -> bool {
+        self != Self::Off && rooms <= self.limit()
+    }
+}
+
+impl Choice for KeepFloors {
+    const LABELS: &'static [&'static str] = &["Off", "Small floors", "Always", "Custom"];
+
+    fn index(self) -> usize {
+        match self {
+            Self::Off => 0,
+            Self::Small => 1,
+            Self::Always => 2,
+            Self::Custom(_) => 3,
+        }
+    }
+
+    fn pick(self, i: usize) -> Self {
+        match i {
+            0 => Self::Off,
+            1 => Self::Small,
+            2 => Self::Always,
+            _ => Self::Custom(match self {
+                Self::Custom(n) => n,
+                Self::Small => 60,
+                _ => 200,
+            }),
+        }
+    }
+
+    fn custom(self) -> Option<Custom> {
+        match self {
+            Self::Custom(n) => Some(Custom {
+                value: f32::from(n),
+                range: 10.0..=1000.0,
+                suffix: " rooms at most",
+            }),
+            _ => None,
+        }
+    }
+
+    fn with_custom(self, value: f32) -> Self {
+        Self::Custom(value as u16)
     }
 }
 
@@ -652,8 +769,28 @@ fn content(app: &mut App, ui: &mut Ui) {
             app.reading_width.save();
             app.ui_motion.save();
             app.reveal_motion.save();
+            app.keep_floors.save();
             app.settings_dirty = false;
         }
+        theme::section(ui, "Memory", |ui| {
+            if choice_row(
+                ui,
+                "Floors for Undo and Redo",
+                "The floor of the last change stays in memory, so Undo and Redo show it at once instead of generating it again. Off: they generate it again (the same floor: a seed and a Λ always draw the same one). Small floors: up to 60 rooms.",
+                &mut app.keep_floors,
+            ) {
+                app.settings_dirty = true;
+                // What was kept under another rule is dropped, not shown.
+                if app.keep_floors == KeepFloors::Off {
+                    if let Some(s) = app.previous.as_mut() {
+                        s.drop_floor();
+                    }
+                    if let Some(s) = app.redo.as_mut() {
+                        s.drop_floor();
+                    }
+                }
+            }
+        });
         theme::note(
             ui,
             RichText::new(format!(
@@ -698,6 +835,26 @@ mod tests {
         let custom = theme::Density::Comfortable.pick(2);
         assert_eq!(custom, theme::Density::Custom(28));
         assert!(theme::Density::Compact.text() < theme::Density::Custom(34).text());
+    }
+
+    #[test]
+    fn the_text_steps_along_the_sizes_people_use() {
+        assert_eq!(TextScale::Normal.stepped(1), TextScale::Custom(110));
+        assert_eq!(TextScale::Custom(110).stepped(1), TextScale::Large);
+        assert_eq!(TextScale::Normal.stepped(-1), TextScale::Small);
+        assert_eq!(TextScale::Larger.stepped(0), TextScale::Normal);
+        assert_eq!(TextScale::Custom(200).stepped(1), TextScale::Custom(200));
+        assert_eq!(TextScale::Custom(70).stepped(-1), TextScale::Custom(70));
+    }
+
+    #[test]
+    fn floors_are_kept_by_their_number_of_rooms() {
+        assert!(!KeepFloors::Off.allows(1));
+        assert!(KeepFloors::Small.allows(60) && !KeepFloors::Small.allows(61));
+        assert!(KeepFloors::Always.allows(100_000));
+        assert!(KeepFloors::Custom(200).allows(200) && !KeepFloors::Custom(200).allows(201));
+        assert_eq!(KeepFloors::Small.pick(3), KeepFloors::Custom(60));
+        assert_eq!(KeepFloors::Off.pick(3), KeepFloors::Custom(200));
     }
 
     #[test]

@@ -225,12 +225,22 @@ pub struct Notice {
     pub at: Instant,
 }
 
-/// The size, the seed and the Λ: what Restore previous Λ brings back.
+/// The size, the seed and the Λ: what Undo and Redo bring back.
 #[derive(Clone)]
 pub struct Snapshot {
     size: Size,
     seed: u32,
     params: Params,
+    /// The floor that size, seed and Λ drew, when it was on the screen and Settings allow keeping it: Undo and Redo then show it
+    /// at once instead of generating it again.
+    generated: Option<GeneratedMap>,
+}
+
+impl Snapshot {
+    /// Forgets the floor, keeping the Λ: Undo then generates it again.
+    pub fn drop_floor(&mut self) {
+        self.generated = None;
+    }
 }
 
 pub struct App {
@@ -274,8 +284,9 @@ pub struct App {
     pub notice: Option<Notice>,
     /// The last generation failed or was cancelled, so the floor on the screen is not the one the parameters describe.
     pub generation_failed: bool,
-    /// The Λ before the last big change (a size, a reset, a preset, a file), for Edit > Restore previous Λ.
+    /// The Λ before the last change (a size, a reset, a preset, a file, an edit), for Edit > Undo; and the one Undo left, for Redo.
     pub previous: Option<Snapshot>,
+    pub redo: Option<Snapshot>,
     /// The layers last written to the preferences.
     saved_layers: String,
     /// The title the window has, so it is set again only when it changes.
@@ -314,6 +325,8 @@ pub struct App {
     pub ui_motion: settings::Timing,
     pub reveal_motion: settings::Timing,
     pub text_scale: settings::TextScale,
+    /// Whether the floor of the last change is kept in memory for Undo and Redo.
+    pub keep_floors: settings::KeepFloors,
     /// The text size slider was moved and the window has not been rescaled yet (it waits for the pointer to be let go).
     pub text_scale_pending: bool,
     /// A choice in Settings changed and is not written to the preferences yet.
@@ -397,6 +410,7 @@ impl App {
             notice: None,
             generation_failed: false,
             previous: None,
+            redo: None,
             saved_layers: String::new(),
             window_title: String::new(),
             last_remember: None,
@@ -418,6 +432,7 @@ impl App {
             ui_motion: settings::Timing::interface(),
             reveal_motion: settings::Timing::reveal(),
             text_scale: settings::TextScale::saved(),
+            keep_floors: settings::KeepFloors::saved(),
             text_scale_pending: false,
             settings_dirty: false,
             reading_width: settings::ReadingWidth::saved(),
@@ -897,6 +912,38 @@ impl App {
         self.apply_at.is_some()
     }
 
+    /// File > Copy JSON, and Ctrl+C outside a text field.
+    pub fn copy_json(&mut self, ctx: &egui::Context) {
+        ctx.copy_text(self.export_json());
+        self.notify("Parameters copied as JSON.", false);
+    }
+
+    /// File > Copy SVG, and Ctrl+Shift+C outside a text field.
+    pub fn copy_svg(&mut self, ctx: &egui::Context) {
+        let Some(generated) = &self.generated else {
+            return;
+        };
+        let style = tapiti_render::Style {
+            theme: if ctx.global_style().visuals.dark_mode {
+                tapiti_render::Theme::Dark
+            } else {
+                tapiti_render::Theme::Light
+            },
+            grid: self.overlays.cells,
+            labels: self.overlays.labels,
+            ..tapiti_render::Style::default()
+        };
+        ctx.copy_text(tapiti_render::floor_svg(&generated.floor, &style));
+        self.notify("Floor copied as SVG.", false);
+    }
+
+    /// Larger (`1`), smaller (`-1`) or normal (`0`) text, kept for the next run.
+    pub fn step_text(&mut self, ctx: &egui::Context, direction: i32) {
+        self.text_scale = self.text_scale.stepped(direction);
+        self.text_scale.save();
+        ctx.set_zoom_factor(self.text_scale.factor());
+    }
+
     pub fn notify(&mut self, text: impl Into<String>, error: bool) {
         self.notice = Some(Notice {
             text: text.into(),
@@ -910,12 +957,26 @@ impl App {
             size: self.size,
             seed: self.seed,
             params: self.params.clone(),
+            generated: self.kept_floor(),
         }
+    }
+
+    /// The floor on the screen, when it is the one the size, seed and Λ describe now and Settings allow keeping it.
+    fn kept_floor(&self) -> Option<GeneratedMap> {
+        let g = self.generated.as_ref()?;
+        let rooms = g.floor.rooms.iter().filter(|r| r.alive).count();
+        let same = g.seed == self.seed
+            && g.size == self.size
+            && !self.pending()
+            && serde_json::to_value(&g.floor.params).ok()
+                == serde_json::to_value(&self.params).ok();
+        (same && self.keep_floors.allows(rooms)).then(|| g.clone())
     }
 
     /// Keeps the Λ as it is now, to come back to with Restore previous Λ. Only one step is kept.
     pub fn remember(&mut self) {
         self.previous = Some(self.snapshot());
+        self.redo = None;
         self.last_remember = Some(Instant::now());
     }
 
@@ -930,23 +991,49 @@ impl App {
         self.last_remember = Some(Instant::now());
     }
 
-    /// Swaps the Λ with the one before the last big change: asked again, it goes forward again.
-    pub fn restore_previous(&mut self) {
+    /// Goes back to the Λ before the last change. One step is kept; what was undone can be redone until something else changes.
+    pub fn undo(&mut self) {
         let Some(previous) = self.previous.take() else {
-            self.notify("There is no earlier Λ to go back to.", false);
+            self.notify("There is nothing to undo.", false);
+            return;
+        };
+        self.redo = Some(self.snapshot());
+        self.apply_snapshot(previous);
+        self.notify("Undone. Redo (Ctrl+Y) brings it back.", false);
+    }
+
+    pub fn redo(&mut self) {
+        let Some(next) = self.redo.take() else {
+            self.notify("There is nothing to redo.", false);
             return;
         };
         self.previous = Some(self.snapshot());
-        self.size = previous.size;
-        self.seed = previous.seed;
-        self.seed_draft = previous.seed.to_string();
-        self.defaults = serde_json::to_value(params_of_size(previous.size)).unwrap_or(Value::Null);
-        self.params = previous.params;
+        self.apply_snapshot(next);
+        self.notify("Redone. Undo (Ctrl+Z) goes back.", false);
+    }
+
+    fn apply_snapshot(&mut self, snapshot: Snapshot) {
+        self.size = snapshot.size;
+        self.seed = snapshot.seed;
+        self.seed_draft = snapshot.seed.to_string();
+        self.defaults = serde_json::to_value(params_of_size(snapshot.size)).unwrap_or(Value::Null);
+        self.params = snapshot.params;
         self.refresh_changed();
         self.sync_json();
-        self.notice = None;
-        self.notify("Went back to the previous Λ. Do it again to return.", false);
-        self.request_generate();
+        match snapshot.generated {
+            // The floor is still in memory: it is shown at once, with nothing generated and no reveal.
+            Some(map) if !self.busy => {
+                self.apply_at = None;
+                self.queued = false;
+                self.generated = Some(map);
+                self.selected = None;
+                self.generation_failed = false;
+                self.skip_reveal = true;
+                self.status = "Floor taken from memory: nothing was generated.".into();
+                self.keep_last();
+            }
+            _ => self.request_generate(),
+        }
     }
 
     /// Another size. The adjustments that mean the same in the new size are kept; those the size sets for itself (its grid, its
@@ -979,7 +1066,7 @@ impl App {
         if kept + dropped > 0 {
             self.notify(
                 format!(
-                    "Size {}: {kept} adjustment(s) kept, {dropped} took the size's own value. Restore previous Λ goes back.",
+                    "Size {}: {kept} adjustment(s) kept, {dropped} took the size's own value. Undo (Ctrl+Z) goes back.",
                     size_label(size).to_lowercase()
                 ),
                 false,
@@ -1011,7 +1098,7 @@ impl App {
         self.refresh_changed();
         self.sync_json();
         self.notify(
-            "Parameters reset to the defaults of the size. Restore previous Λ goes back.",
+            "Parameters reset to the defaults of the size. Undo (Ctrl+Z) goes back.",
             false,
         );
         self.request_generate();
@@ -1265,7 +1352,7 @@ impl App {
             self.params = params;
             self.params_edited();
             self.notify(
-                format!("{title} parameters restored. Restore previous Λ goes back."),
+                format!("{title} parameters restored. Undo (Ctrl+Z) goes back."),
                 false,
             );
         }
@@ -1304,7 +1391,7 @@ impl App {
         };
         self.params_edited();
         self.notify(
-            format!("Experiment applied: {note}. Restore previous Λ goes back."),
+            format!("Experiment applied: {note}. Undo (Ctrl+Z) goes back."),
             false,
         );
     }
@@ -1374,9 +1461,74 @@ impl App {
         if command(ctx, Key::Q) {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }
-        // Ctrl+Z is the text field's own while one has the keyboard.
-        if !ctx.egui_wants_keyboard_input() && command(ctx, Key::Z) {
-            self.restore_previous();
+        // Ctrl+Z and Ctrl+Y are the text field's own while one has the keyboard.
+        if !ctx.egui_wants_keyboard_input() {
+            let shift_z =
+                ctx.input_mut(|i| i.consume_key(Modifiers::COMMAND | Modifiers::SHIFT, Key::Z));
+            if shift_z || command(ctx, Key::Y) {
+                self.redo();
+            } else if command(ctx, Key::Z) {
+                self.undo();
+            }
+            // Ctrl+C is a Copy event, not a key, and shift is told apart by the modifiers of the frame.
+            let (copied, shift) = ctx.input(|i| {
+                (
+                    i.events.iter().any(|e| matches!(e, egui::Event::Copy)),
+                    i.modifiers.shift,
+                )
+            });
+            if copied {
+                if shift {
+                    self.copy_svg(ctx);
+                } else {
+                    self.copy_json(ctx);
+                }
+            }
+        }
+        if command(ctx, Key::F) {
+            ctx.memory_mut(|m| m.request_focus(theme::filter_id()));
+        }
+        if command(ctx, Key::L) {
+            ctx.memory_mut(|m| m.request_focus(theme::seed_id()));
+        }
+        if command(ctx, Key::N) {
+            if self.changed.is_empty() {
+                self.notify("The parameters are already the size's defaults.", false);
+            } else {
+                self.reset_all();
+            }
+        }
+        if command(ctx, Key::B) {
+            let shown = self
+                .reading_open
+                .unwrap_or_else(|| ctx.content_rect().width() >= 1180.0);
+            self.reading_open = Some(!shown);
+        }
+        if ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::F11)) {
+            let full = ctx.input(|i| i.viewport().fullscreen.unwrap_or(false));
+            ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(!full));
+        }
+        for (index, key) in [Key::Num1, Key::Num2, Key::Num3, Key::Num4]
+            .into_iter()
+            .enumerate()
+        {
+            if command(ctx, key) {
+                self.set_size(Size::ALL[index]);
+            }
+        }
+        if command(ctx, Key::Num0) {
+            self.step_text(ctx, 0);
+        }
+        if command(ctx, Key::Plus) || command(ctx, Key::Equals) {
+            self.step_text(ctx, 1);
+        }
+        if command(ctx, Key::Minus) {
+            self.step_text(ctx, -1);
+        }
+        if command(ctx, Key::W) {
+            self.show_json = false;
+            self.show_shortcuts = false;
+            self.show_settings = false;
         }
         if ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::F1)) {
             self.show_shortcuts = true;

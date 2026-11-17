@@ -86,36 +86,22 @@ pub fn menu_bar(app: &mut App, ui: &mut Ui) {
                     }
                     ui.separator();
                     if ui
-                        .button("Copy JSON")
+                        .add(Button::new("Copy JSON").shortcut_text("Ctrl+C"))
                         .on_hover_text("Size, seed and the full Λ")
                         .clicked()
                     {
-                        ui.ctx().copy_text(app.export_json());
-                        app.notify("Parameters copied as JSON.", false);
+                        app.copy_json(ui.ctx());
                         ui.close();
                     }
                     if ui
-                        .add_enabled(app.generated.is_some(), Button::new("Copy SVG"))
-                        .on_hover_text(
-                            "The floor as an SVG image, with the grid and labels as shown",
+                        .add_enabled(
+                            app.generated.is_some(),
+                            Button::new("Copy SVG").shortcut_text("Ctrl+Shift+C"),
                         )
+                        .on_hover_text("The floor as an SVG image, with the grid and labels as shown")
                         .clicked()
                     {
-                        if let Some(generated) = &app.generated {
-                            let style = tapiti_render::Style {
-                                theme: if ui.visuals().dark_mode {
-                                    tapiti_render::Theme::Dark
-                                } else {
-                                    tapiti_render::Theme::Light
-                                },
-                                grid: app.overlays.cells,
-                                labels: app.overlays.labels,
-                                ..tapiti_render::Style::default()
-                            };
-                            ui.ctx()
-                                .copy_text(tapiti_render::floor_svg(&generated.floor, &style));
-                            app.notify("Floor copied as SVG.", false);
-                        }
+                        app.copy_svg(ui.ctx());
                         ui.close();
                     }
                     ui.separator();
@@ -127,18 +113,30 @@ pub fn menu_bar(app: &mut App, ui: &mut Ui) {
                     if ui
                         .add_enabled(
                             app.previous.is_some(),
-                            Button::new("Restore previous Λ").shortcut_text("Ctrl+Z"),
+                            Button::new("Undo").shortcut_text("Ctrl+Z"),
                         )
                         .on_hover_text(
-                            "Goes back to the size, seed and Λ before the last big change (a size, a reset, an experiment, a file). Again: forward.",
+                            "Goes back to the size, seed and Λ before the last change (a size, a reset, an experiment, a file, an edit)",
                         )
                         .clicked()
                     {
-                        app.restore_previous();
+                        app.undo();
                         ui.close();
                     }
                     if ui
-                        .add_enabled(!app.changed.is_empty(), Button::new("Reset parameters"))
+                        .add_enabled(
+                            app.redo.is_some(),
+                            Button::new("Redo").shortcut_text("Ctrl+Y"),
+                        )
+                        .on_hover_text("Brings back what Undo took away, until something else changes")
+                        .clicked()
+                    {
+                        app.redo();
+                        ui.close();
+                    }
+                    ui.separator();
+                    if ui
+                        .add_enabled(!app.changed.is_empty(), Button::new("Reset parameters").shortcut_text("Ctrl+N"))
                         .on_hover_text("Restore Classic and the defaults of the current size")
                         .clicked()
                     {
@@ -158,14 +156,32 @@ pub fn menu_bar(app: &mut App, ui: &mut Ui) {
                 ui.menu_button("View", |ui| {
                     let reading = reading_visible(app, ui);
                     if ui
-                        .selectable_label(reading, "Reading panel")
-                        .on_hover_text(
-                            "The rules, measures and phases of the floor, beside the map",
-                        )
+                        .add(egui::Button::selectable(reading, "Reading panel").shortcut_text("Ctrl+B"))
+                        .on_hover_text("The rules, measures and phases of the floor, beside the map")
                         .clicked()
                     {
                         app.reading_open = Some(!reading);
                         ui.close();
+                    }
+                    let full = ui.ctx().input(|i| i.viewport().fullscreen.unwrap_or(false));
+                    if ui
+                        .add(egui::Button::selectable(full, "Full screen").shortcut_text("F11"))
+                        .clicked()
+                    {
+                        ui.ctx()
+                            .send_viewport_cmd(egui::ViewportCommand::Fullscreen(!full));
+                        ui.close();
+                    }
+                    ui.separator();
+                    for (name, key, step) in [
+                        ("Larger text", "Ctrl++", 1),
+                        ("Smaller text", "Ctrl+-", -1),
+                        ("Normal text", "Ctrl+0", 0),
+                    ] {
+                        if ui.add(Button::new(name).shortcut_text(key)).clicked() {
+                            app.step_text(ui.ctx(), step);
+                            ui.close();
+                        }
                     }
                 });
                 ui.menu_button("Tools", |ui| {
@@ -249,14 +265,16 @@ pub fn shortcuts_window(app: &mut App, ctx: &egui::Context) {
         .resizable(false)
         .show(ctx, |ui| {
             for line in [
-                "/ filters the parameters · : or Ctrl+K opens the command line (Up and Down: earlier commands) · Esc leaves a field",
-                "Tab and Shift+Tab move between controls · Enter opens or closes a group",
-                "Up and Down change a focused number",
-                "Alt+1–4 switches the size · Alt+R random seed · Alt+Left / Right previous / next seed",
-                "F5 or Ctrl+Enter generates again · Esc cancels a generation",
-                "Ctrl+O opens a Λ · Ctrl+S saves it · Ctrl+Z restores the previous Λ (and again, goes forward) · Ctrl+Q quits",
-                "Ctrl+, opens Preferences · F1 shows this list",
-                "On the map: drag moves it · wheel zooms at the cursor · double-click fits it to the floor · click picks a room",
+                "/ or Ctrl+F filters the parameters · Ctrl+L goes to the seed · : or Ctrl+K opens the command line (Up and Down: earlier commands)",
+                "Esc leaves a field · Tab and Shift+Tab move between controls · Enter opens or closes a group · Up and Down change a focused number",
+                "Alt+1–4 or Ctrl+1–4 switch the size · Alt+R random seed · Alt+Left / Right previous / next seed",
+                "F5 or Ctrl+Enter generates again · Esc cancels a generation · Ctrl+N resets the parameters to the size's defaults",
+                "Ctrl+O opens a Λ · Ctrl+S saves it · Ctrl+C copies the JSON · Ctrl+Shift+C copies the SVG (outside a text field)",
+                "Ctrl+Z undoes the last change · Ctrl+Y or Ctrl+Shift+Z redoes it",
+                "Ctrl+B shows or hides the Reading panel · F11 full screen · Ctrl++ / Ctrl+- / Ctrl+0 text size · Ctrl+, preferences",
+                "F1 shows this list · Ctrl+W closes the open window · Ctrl+Q quits",
+                "On the map: drag moves it · wheel zooms at the cursor · double-click, Home or 0 fits it · click picks a room",
+                "With the map focused: arrows pan · + and - zoom · [ and ] pick the previous and next room · Esc lets go",
                 "In 2.5D and 3D: arrows turn the view; see the docs for the 3D camera",
             ] {
                 ui.label(line);
@@ -321,6 +339,7 @@ pub fn top_bar(app: &mut App, ui: &mut Ui) {
                 }
                 let invalid = app.seed_draft.trim().parse::<u32>().is_err();
                 let mut field = TextEdit::singleline(&mut app.seed_draft)
+                    .id(theme::seed_id())
                     .desired_width(92.0)
                     .hint_text("0–4294967295");
                 if invalid {
@@ -661,7 +680,7 @@ fn layout_card(app: &mut App, ui: &mut Ui) {
         app.set_intent(TopologyProfile::Classic);
         app.notify(
             format!(
-                "This layout cannot run the {:?} intent: it is back to Classic. Restore previous Λ goes back.",
+                "This layout cannot run the {:?} intent: it is back to Classic. Undo (Ctrl+Z) goes back.",
                 was
             ),
             false,
@@ -1503,7 +1522,7 @@ fn plan_keys(app: &mut App, ctx: &egui::Context, xf: &Xf) {
     if pressed(Key::Minus) {
         app.zoom = (app.zoom * 0.8).max(0.3);
     }
-    if pressed(Key::Num0) {
+    if pressed(Key::Num0) || pressed(Key::Home) {
         app.zoom = 1.0;
         app.pan = [0.0, 0.0];
     }
