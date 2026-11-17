@@ -91,6 +91,26 @@ pub fn window(app: &mut App, ctx: &egui::Context) {
     );
 }
 
+/// Whether the desktop asks for no animations (GNOME's `enable-animations`, which other desktops that keep their settings in dconf
+/// also answer). Asked once, and only when the person has not chosen a speed; `false` when it cannot be asked.
+fn system_reduces_motion() -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        static REDUCES: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        *REDUCES.get_or_init(|| {
+            std::process::Command::new("gsettings")
+                .args(["get", "org.gnome.desktop.interface", "enable-animations"])
+                .output()
+                .ok()
+                .is_some_and(|out| String::from_utf8_lossy(&out.stdout).trim() == "false")
+        })
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        false
+    }
+}
+
 /// One of the options of the application that is a choice among presets, one of which may be a value of the user's own.
 trait Choice: Copy + PartialEq {
     const LABELS: &'static [&'static str];
@@ -219,6 +239,8 @@ impl Timing {
             None if kind == Kind::Reveal && prefs::load("reveal").as_deref() == Some("off") => {
                 Speed::Off
             }
+            // Nothing chosen yet: the desktop's own wish, when it says it wants no animations.
+            None if system_reduces_motion() => Speed::Off,
             None => Speed::Normal,
         };
         Self { speed, kind }
@@ -556,7 +578,7 @@ fn content(app: &mut App, ui: &mut Ui) {
                 "System follows the desktop's light or dark scheme.",
                 &mut app.appearance,
             ) {
-                app.appearance.save();
+                app.settings_dirty = true;
             }
             if choice_row(
                 ui,
@@ -564,7 +586,7 @@ fn content(app: &mut App, ui: &mut Ui) {
                 "Compact fits more parameters on the screen. Custom sets the height of a row; the text and the gaps follow it.",
                 &mut app.density,
             ) {
-                app.density.save();
+                app.settings_dirty = true;
                 theme::apply_density(ui.ctx(), app.density);
             }
             if choice_row(
@@ -573,7 +595,7 @@ fn content(app: &mut App, ui: &mut Ui) {
                 "Scales the text and the controls together, the map included.",
                 &mut app.text_scale,
             ) {
-                app.text_scale.save();
+                app.settings_dirty = true;
                 // Dragging the slider would rescale the window under the pointer; the size applies when the pointer is let go.
                 if !ui.ctx().input(|i| i.pointer.any_down()) {
                     ui.ctx().set_zoom_factor(app.text_scale.factor());
@@ -591,7 +613,7 @@ fn content(app: &mut App, ui: &mut Ui) {
                 &mut reading,
             ) {
                 app.reading_open = reading.open();
-                reading.save();
+                app.settings_dirty = true;
             }
             if choice_row(
                 ui,
@@ -599,7 +621,7 @@ fn content(app: &mut App, ui: &mut Ui) {
                 "The share of the window the panel takes.",
                 &mut app.reading_width,
             ) {
-                app.reading_width.save();
+                app.settings_dirty = true;
             }
         });
         theme::section(ui, "Motion", |ui| {
@@ -609,7 +631,7 @@ fn content(app: &mut App, ui: &mut Ui) {
                 "Panels sliding, groups opening and controls changing colour. Off: everything changes at once.",
                 &mut app.ui_motion,
             ) {
-                app.ui_motion.save();
+                app.settings_dirty = true;
                 theme::apply_motion(ui.ctx(), app.ui_motion.seconds());
             }
             if choice_row(
@@ -618,9 +640,20 @@ fn content(app: &mut App, ui: &mut Ui) {
                 "A new floor is drawn from the entrance outwards. Stepping through seeds quickly shows each floor at once.",
                 &mut app.reveal_motion,
             ) {
-                app.reveal_motion.save();
+                app.settings_dirty = true;
             }
         });
+        // The choices are written when the pointer is let go, not at every step of a slider.
+        if app.settings_dirty && !ui.ctx().input(|i| i.pointer.any_down()) {
+            app.appearance.save();
+            app.density.save();
+            app.text_scale.save();
+            Reading::of(app.reading_open).save();
+            app.reading_width.save();
+            app.ui_motion.save();
+            app.reveal_motion.save();
+            app.settings_dirty = false;
+        }
         theme::note(
             ui,
             RichText::new(format!(

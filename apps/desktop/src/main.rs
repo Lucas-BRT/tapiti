@@ -135,6 +135,58 @@ pub enum ViewMode {
     Solid,
 }
 
+impl Overlays {
+    const NAMES: [&'static str; 11] = [
+        "cells",
+        "height",
+        "water",
+        "temperature",
+        "light",
+        "events",
+        "labels",
+        "ports",
+        "pairs",
+        "candidates",
+        "legend",
+    ];
+
+    fn flags(&mut self) -> [&mut bool; 11] {
+        [
+            &mut self.cells,
+            &mut self.height,
+            &mut self.water,
+            &mut self.temperature,
+            &mut self.light,
+            &mut self.events,
+            &mut self.labels,
+            &mut self.ports,
+            &mut self.pairs,
+            &mut self.candidates,
+            &mut self.legend,
+        ]
+    }
+
+    /// The layers that are on, by name, as kept in the preferences.
+    pub fn to_text(mut self) -> String {
+        let on: Vec<&str> = self
+            .flags()
+            .into_iter()
+            .zip(Self::NAMES)
+            .filter(|(flag, _)| **flag)
+            .map(|(_, name)| name)
+            .collect();
+        on.join(",")
+    }
+
+    /// The layers named in `text` on and the others off; names it does not know are ignored.
+    pub fn set_from_text(&mut self, text: &str) {
+        let names: Vec<&str> = text.split(',').map(str::trim).collect();
+        for (flag, name) in self.flags().into_iter().zip(Self::NAMES) {
+            *flag = names.contains(&name);
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct Overlays {
     pub cells: bool,
@@ -161,6 +213,9 @@ enum Event {
     Cancelled,
     /// The result of a benchmark, or `None` when it was stopped.
     Benchmark(Option<String>),
+    /// A file dialog ended: what the file said, or why it could not be read or written.
+    Opened(String, Result<String, String>),
+    Saved(String, Result<(), String>),
 }
 
 /// A message for the person at the keyboard, not a progress line.
@@ -221,6 +276,8 @@ pub struct App {
     pub generation_failed: bool,
     /// The Λ before the last big change (a size, a reset, a preset, a file), for Edit > Restore previous Λ.
     pub previous: Option<Snapshot>,
+    /// The layers last written to the preferences.
+    saved_layers: String,
     /// The title the window has, so it is set again only when it changes.
     window_title: String,
     /// When the Λ was last remembered for a single edit, so a drag of a value is one step back.
@@ -259,6 +316,8 @@ pub struct App {
     pub text_scale: settings::TextScale,
     /// The text size slider was moved and the window has not been rescaled yet (it waits for the pointer to be let go).
     pub text_scale_pending: bool,
+    /// A choice in Settings changed and is not written to the preferences yet.
+    pub settings_dirty: bool,
     pub reading_width: settings::ReadingWidth,
     /// Light, dark or the system's, kept between runs, and what the system says now.
     pub appearance: theme::Appearance,
@@ -338,6 +397,7 @@ impl App {
             notice: None,
             generation_failed: false,
             previous: None,
+            saved_layers: String::new(),
             window_title: String::new(),
             last_remember: None,
             saved_window: None,
@@ -359,6 +419,7 @@ impl App {
             reveal_motion: settings::Timing::reveal(),
             text_scale: settings::TextScale::saved(),
             text_scale_pending: false,
+            settings_dirty: false,
             reading_width: settings::ReadingWidth::saved(),
             appearance: theme::Appearance::saved(),
             system_theme: theme::SystemTheme::watch(&cc.egui_ctx),
@@ -383,6 +444,10 @@ impl App {
         app.pick_from_env();
         if app.shot.is_none() {
             app.restore_last();
+            if let Some(text) = prefs::load("layers") {
+                app.overlays.set_from_text(&text);
+                app.saved_layers = text;
+            }
         }
         app.sync_json();
         if !app.busy {
@@ -627,9 +692,35 @@ impl App {
 
     fn poll_events(&mut self) {
         while let Ok((id, event)) = self.rx.try_recv() {
-            if id != self.work_id {
-                continue;
+            // The answers of the file dialogs do not belong to a generation.
+            match event {
+                Event::Opened(path, text) => {
+                    match text.and_then(|text| self.load_text(&text)) {
+                        Ok(()) => self.notify(format!("Opened {path}."), false),
+                        Err(error) => self.notify(format!("Could not open {path}: {error}"), true),
+                    }
+                    continue;
+                }
+                Event::Saved(path, result) => {
+                    match result {
+                        Ok(()) => self.notify(format!("Saved {path}."), false),
+                        Err(error) => self.notify(format!("Could not save {path}: {error}"), true),
+                    }
+                    continue;
+                }
+                event => {
+                    if id != self.work_id {
+                        continue;
+                    }
+                    self.handle_event(event);
+                    continue;
+                }
             }
+        }
+    }
+
+    fn handle_event(&mut self, event: Event) {
+        {
             match event {
                 Event::Progress(events) => self.apply_progress(events),
                 Event::Generated(result) => {
@@ -688,6 +779,8 @@ impl App {
                     }
                     self.status = "Benchmark done.".into();
                 }
+                // The file dialogs are answered in `poll_events`.
+                Event::Opened(..) | Event::Saved(..) => {}
             }
         }
     }
@@ -931,37 +1024,39 @@ impl App {
     }
 
     /// File > Save Λ…: asks for a file and writes the export there. (The dialog blocks the window while it is open.)
+    /// File > Save Λ…: the dialog runs on a thread of its own, so the window keeps drawing (and the compositor keeps it as responding).
     pub fn save_file(&mut self) {
-        let Some(path) = rfd::FileDialog::new()
-            .set_title("Save the Λ")
-            .set_file_name("tapiti.json")
-            .add_filter("JSON", &["json"])
-            .save_file()
-        else {
-            return;
-        };
-        match std::fs::write(&path, self.export_json()) {
-            Ok(()) => self.notify(format!("Saved {}.", path.display()), false),
-            Err(error) => self.notify(format!("Could not save {}: {error}", path.display()), true),
-        }
+        let (text, tx, ctx) = (self.export_json(), self.tx.clone(), self.ctx.clone());
+        std::thread::spawn(move || {
+            let Some(path) = rfd::FileDialog::new()
+                .set_title("Save the Λ")
+                .set_file_name("tapiti.json")
+                .add_filter("JSON", &["json"])
+                .save_file()
+            else {
+                return;
+            };
+            let result = std::fs::write(&path, text).map_err(|e| e.to_string());
+            let _ = tx.send((0, Event::Saved(path.display().to_string(), result)));
+            ctx.request_repaint();
+        });
     }
 
     /// File > Open Λ…: reads a file written by Save or Copy JSON (or a bare Λ) and generates with it.
     pub fn open_file(&mut self) {
-        let Some(path) = rfd::FileDialog::new()
-            .set_title("Open a Λ")
-            .add_filter("JSON", &["json"])
-            .pick_file()
-        else {
-            return;
-        };
-        match std::fs::read_to_string(&path)
-            .map_err(|error| error.to_string())
-            .and_then(|text| self.load_text(&text))
-        {
-            Ok(()) => self.notify(format!("Opened {}.", path.display()), false),
-            Err(error) => self.notify(format!("Could not open {}: {error}", path.display()), true),
-        }
+        let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
+        std::thread::spawn(move || {
+            let Some(path) = rfd::FileDialog::new()
+                .set_title("Open a Λ")
+                .add_filter("JSON", &["json"])
+                .pick_file()
+            else {
+                return;
+            };
+            let text = std::fs::read_to_string(&path).map_err(|e| e.to_string());
+            let _ = tx.send((0, Event::Opened(path.display().to_string(), text)));
+            ctx.request_repaint();
+        });
     }
 
     /// Takes the JSON that Save and Copy JSON write (or a bare Λ) as the size, seed and Λ, and generates with it.
@@ -1026,6 +1121,15 @@ impl App {
         if title != self.window_title {
             ctx.send_viewport_cmd(egui::ViewportCommand::Title(title.clone()));
             self.window_title = title;
+        }
+    }
+
+    /// Writes the layers shown on the map when they changed, so they are as they were left at the next start.
+    fn keep_layers(&mut self) {
+        let text = self.overlays.to_text();
+        if text != self.saved_layers && !self.capturing() {
+            prefs::save("layers", &text);
+            self.saved_layers = text;
         }
     }
 
@@ -1139,13 +1243,17 @@ impl App {
         }
     }
 
-    pub fn reset_group(&mut self, id: &str) {
+    pub fn reset_group(&mut self, id: &str, only: &[String]) {
         let Some(group) = self.groups.iter().find(|group| group.id == id) else {
             return;
         };
         let mut value = serde_json::to_value(&self.params).unwrap_or(Value::Null);
         // Reset tuning without changing the selected exploration intent.
-        for field in group.fields.iter().filter(|f| f.path != "topology.profile") {
+        for field in group
+            .fields
+            .iter()
+            .filter(|f| f.path != "topology.profile" && only.contains(&f.path))
+        {
             if let Some(default) = self.default_ref(&field.path).cloned() {
                 set_path(&mut value, &field.path, default);
             }
@@ -1325,6 +1433,7 @@ impl eframe::App for App {
         self.apply_due(&ctx);
         self.keep_window(&ctx);
         self.keep_title(&ctx);
+        self.keep_layers();
         // A message that is not an error fades after a few seconds.
         if let Some(notice) = &self.notice {
             if !notice.error && notice.at.elapsed() > Duration::from_secs(8) {
@@ -1790,6 +1899,28 @@ fn size_description(size: Size) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn layers_round_trip_through_their_text() {
+        let mut layers = Overlays {
+            cells: true,
+            height: false,
+            water: true,
+            temperature: false,
+            light: false,
+            events: false,
+            level: None,
+            labels: true,
+            ports: false,
+            pairs: false,
+            candidates: false,
+            legend: true,
+        };
+        let text = layers.to_text();
+        assert_eq!(text, "cells,water,labels,legend");
+        layers.set_from_text("height,legend,unknown");
+        assert_eq!(layers.to_text(), "height,legend");
+    }
 
     #[test]
     fn spine_intent_defaults_pass_desktop_validation_in_every_size() {

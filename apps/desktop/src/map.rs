@@ -957,7 +957,11 @@ pub fn legend(painter: &Painter, rect: Rect, pal: &Palette, text_color: Color32,
         .filter(|class| present.contains(class))
         .map(|class| (pal.shape(class), class_label(class).to_string()))
         .collect();
-    let height = row * (items.len() as f32 + 3.0) + 12.0;
+    let extras: Vec<&str> = ["leaf", "stairs", "picked"]
+        .into_iter()
+        .filter(|e| present.contains(e))
+        .collect();
+    let height = row * (items.len() as f32 + 3.0 + extras.len() as f32) + 12.0;
     let panel = Rect::from_min_size(
         Pos2::new(rect.left() + 10.0, rect.bottom() - height - 10.0),
         Vec2::new(176.0, height),
@@ -1026,6 +1030,44 @@ pub fn legend(painter: &Painter, rect: Rect, pal: &Palette, text_color: Color32,
         },
         "junction",
     );
+    for name in extras {
+        y += row;
+        match name {
+            "leaf" => entry(
+                y,
+                &|r| {
+                    painter.rect_filled(r, 0.0, pal.shape("rect").gamma_multiply(0.45));
+                },
+                "leaf chamber",
+            ),
+            "stairs" => entry(
+                y,
+                &|r| {
+                    painter.circle_filled(r.center(), 6.0, pal.accent);
+                    painter.text(
+                        r.center(),
+                        Align2::CENTER_CENTER,
+                        "S",
+                        FontId::monospace(9.0),
+                        pal.on_room(),
+                    );
+                },
+                "stairs",
+            ),
+            _ => entry(
+                y,
+                &|r| {
+                    painter.rect_stroke(
+                        r.shrink(1.0),
+                        0.0,
+                        Stroke::new(2.5, pal.accent),
+                        eframe::egui::StrokeKind::Inside,
+                    );
+                },
+                "picked room",
+            ),
+        }
+    }
 }
 
 #[cfg(test)]

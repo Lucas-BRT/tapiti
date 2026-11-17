@@ -96,7 +96,7 @@ On the right of the same bar are a hash of the seed and Λ (two windows with the
 - <kbd>Alt</kbd>+<kbd>←</kbd> and <kbd>→</kbd> step the seed; <kbd>F5</kbd> or <kbd>Ctrl</kbd>+<kbd>Enter</kbd> generates again.
 - <kbd>Ctrl</kbd>+<kbd>O</kbd> opens a Λ, <kbd>Ctrl</kbd>+<kbd>S</kbd> saves it, <kbd>Ctrl</kbd>+<kbd>Z</kbd> restores the previous Λ (the one before the last size, reset, experiment or file; again, it goes forward), <kbd>Ctrl</kbd>+<kbd>Q</kbd> quits, <kbd>F1</kbd> lists the shortcuts. In the command line, <kbd>↑</kbd> and <kbd>↓</kbd> walk the earlier commands.
 - <kbd>/</kbd> goes to the filter; <kbd>Tab</kbd> and <kbd>Shift</kbd>+<kbd>Tab</kbd> move between controls, <kbd>Enter</kbd> opens a group, <kbd>↑</kbd> and <kbd>↓</kbd> change a focused number, <kbd>Esc</kbd> leaves a field.
-- On the map, drag to pan, scroll to zoom, double-click to fit. A new seed or size is revealed from the entrance; set the new floor to Off in Settings to show it at once.
+- On the map, drag to pan, scroll to zoom, double-click to fit. With the keyboard, <kbd>Tab</kbd> reaches the map (a cyan ring shows it has the focus): the arrows pan, <kbd>+</kbd> and <kbd>-</kbd> zoom, <kbd>0</kbd> fits, <kbd>[</kbd> and <kbd>]</kbd> pick the previous and the next room (described in the Reading column under Selected room) and <kbd>Esc</kbd> lets go of the pick. The layers you turn on in the Layers menu are kept for the next start. A new seed or size is revealed from the entrance; set the new floor to Off in Settings to show it at once.
 
 ## The website and the lab
 

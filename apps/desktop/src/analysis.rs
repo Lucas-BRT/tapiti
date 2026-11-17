@@ -56,7 +56,7 @@ pub fn measure_rows(m: &tapiti_core::metrics::Metrics) -> Vec<Measure> {
             "loops β",
             format!("{} / {}", m.beta, m.beta_max),
             format!(
-                "Extra ways round, instead of back: {} now, {} aimed for by the density, room for {}. A tree has none.",
+                "Extra ways round, instead of back: {} now, {} aimed for by the density, room for {}. A tree has none. The bar is how much of that room is used.",
                 m.beta, m.beta_target, m.beta_max
             ),
         )
@@ -64,20 +64,20 @@ pub fn measure_rows(m: &tapiti_core::metrics::Metrics) -> Vec<Measure> {
         Measure::new(
             "single-door rooms",
             m.leaves.to_string(),
-            "Rooms with a single door: the leaf chambers, the entrance and the exit.",
+            "Rooms with a single door: the leaf chambers, the entrance and the exit. The bar is their share of all the rooms.",
         )
         .of(rooms, m.leaves as f64),
         Measure::new(
             "bridges",
             format!("{} · {:.0}%", m.bridges, m.bridge_share * 100.0),
-            "Corridors whose removal would cut part of the floor off.",
+            "Corridors whose removal would cut part of the floor off. The bar is their share of the corridors.",
         )
         .of(1.0, m.bridge_share),
         {
             let mut row = Measure::new(
                 "steps to exit",
                 m.hops_to_exit.map_or_else(dash, |h| format!("{h:.0}")),
-                "Rooms on the shortest way from the entrance to the exit.",
+                "Rooms on the shortest way from the entrance to the exit. The bar is that way as a share of the diameter.",
             );
             // A floor with no entrance and exit has no way to show, so no bar either.
             if let Some(h) = m.hops_to_exit {
@@ -262,6 +262,20 @@ pub fn analysis_tab(app: &mut App, ui: &mut Ui) {
     let pal = Palette::new(ui.visuals().dark_mode);
     let m = &map.metrics;
 
+    // The room that is picked on the plan, described where the rest of the floor is read.
+    if let Some(room) = app.selected.and_then(|id| map.floor.rooms.get(id)) {
+        card(ui, "Selected room", |ui| {
+            ui.label(RichText::new(crate::map::describe(&map.floor, room)).color(pal.accent));
+            ui.label(muted(
+                ui,
+                format!(
+                    "{} door{} used · [ and ] pick another, Esc lets go",
+                    room.used.len(),
+                    if room.used.len() == 1 { "" } else { "s" }
+                ),
+            ));
+        });
+    }
     rules_section(ui, &map);
 
     card(ui, "Measures", |ui| measures(ui, &measure_rows(m)));

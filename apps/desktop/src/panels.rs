@@ -307,6 +307,14 @@ fn panel_toggle(ui: &mut Ui, shown: bool) -> egui::Response {
     };
     let icon = egui::Rect::from_center_size(rect.center(), egui::vec2(14.0, 11.0));
     let painter = ui.painter();
+    if response.has_focus() {
+        painter.rect_stroke(
+            rect.shrink(1.0),
+            0.0,
+            Stroke::new(2.0, c.border_focused),
+            egui::StrokeKind::Inside,
+        );
+    }
     painter.rect_stroke(
         icon,
         0.0,
@@ -1334,7 +1342,7 @@ fn advanced_tab(app: &mut App, ui: &mut Ui) {
     let layout = app.params.layout;
     let focus = app.focus_group.take();
     let mut edits: Vec<(String, Value)> = Vec::new();
-    let mut reset = None;
+    let mut reset: Option<(String, Vec<String>)> = None;
     let mut shown = 0;
     for group in groups
         .iter()
@@ -1365,6 +1373,21 @@ fn advanced_tab(app: &mut App, ui: &mut Ui) {
             continue;
         }
         shown += 1;
+        let listed = fields.len();
+        let listed_paths: Vec<String> = fields.iter().map(|f| f.path.clone()).collect();
+        // Settings that do nothing with this layout or intent are not listed; the group says how many, and the search finds them.
+        let hidden = if needle.is_empty() {
+            group
+                .fields
+                .iter()
+                .filter(|f| {
+                    !listed_paths.contains(&f.path)
+                        && !crate::relevance::applies(&f.path, &app.params)
+                })
+                .count()
+        } else {
+            0
+        };
         let changed = group
             .fields
             .iter()
@@ -1377,7 +1400,7 @@ fn advanced_tab(app: &mut App, ui: &mut Ui) {
         let id = ui.make_persistent_id(("advanced_group", &group.id));
         let bar = theme::GroupBar {
             title: group.title.as_str(),
-            count: group.fields.len(),
+            count: listed,
             changed,
             default_open: false,
         };
@@ -1397,8 +1420,24 @@ fn advanced_tab(app: &mut App, ui: &mut Ui) {
                         }
                     }
                 });
-            if changed > 0 && ui.small_button("Reset this group").clicked() {
-                reset = Some(group.id.clone());
+            if hidden > 0 {
+                ui.label(muted(
+                    ui,
+                    format!(
+                        "{hidden} more setting{} not listed: {} nothing with this layout or intent. The filter finds {}.",
+                        if hidden == 1 { "" } else { "s" },
+                        if hidden == 1 { "it does" } else { "they do" },
+                        if hidden == 1 { "it" } else { "them" },
+                    ),
+                ));
+            }
+            if changed > 0
+                && ui
+                    .small_button("Reset the settings listed here")
+                    .on_hover_text("Puts the size's default back on the settings of this group that are listed")
+                    .clicked()
+            {
+                reset = Some((group.id.clone(), listed_paths.clone()));
             }
         });
         if focused {
@@ -1409,8 +1448,8 @@ fn advanced_tab(app: &mut App, ui: &mut Ui) {
     if shown == 0 {
         theme::note(ui, muted(ui, "No parameter matches the search."));
     }
-    if let Some(id) = reset {
-        app.reset_group(&id);
+    if let Some((id, paths)) = reset {
+        app.reset_group(&id, &paths);
     } else if !edits.is_empty() {
         let mut value = current;
         for (path, next) in edits {
@@ -1427,7 +1466,10 @@ fn advanced_tab(app: &mut App, ui: &mut Ui) {
                     app.params_edited();
                 }
             }
-            Err(error) => app.status = format!("Invalid parameter: {error}", error = error),
+            Err(error) => {
+                let error = app.plain_error(&error.to_string());
+                app.notify(format!("Invalid parameter: {error}"), true);
+            }
         }
     }
 }
@@ -1466,6 +1508,67 @@ pub fn json_window(app: &mut App, ctx: &egui::Context) {
 }
 
 // ---- Map ----------------------------------------------------------------------------------------
+
+/// The keys of the plan while it has the focus.
+fn plan_keys(app: &mut App, ctx: &egui::Context, xf: &Xf) {
+    use egui::Key;
+    let pressed = |key| ctx.input(|i| i.key_pressed(key));
+    let step = 60.0 / f64::from(xf.scale.max(0.01));
+    if pressed(Key::ArrowLeft) {
+        app.pan[0] -= step;
+    }
+    if pressed(Key::ArrowRight) {
+        app.pan[0] += step;
+    }
+    if pressed(Key::ArrowUp) {
+        app.pan[1] -= step;
+    }
+    if pressed(Key::ArrowDown) {
+        app.pan[1] += step;
+    }
+    if pressed(Key::Plus) || pressed(Key::Equals) {
+        app.zoom = (app.zoom * 1.25).min(20.0);
+    }
+    if pressed(Key::Minus) {
+        app.zoom = (app.zoom * 0.8).max(0.3);
+    }
+    if pressed(Key::Num0) {
+        app.zoom = 1.0;
+        app.pan = [0.0, 0.0];
+    }
+    if pressed(Key::Escape) {
+        app.selected = None;
+    }
+    let next = pressed(Key::CloseBracket);
+    let previous = pressed(Key::OpenBracket);
+    if (next || previous) && app.generated.is_some() {
+        let level = app.overlays.level;
+        let rooms: Vec<usize> = app
+            .generated
+            .as_ref()
+            .map(|g| {
+                g.floor
+                    .rooms
+                    .iter()
+                    .filter(|r| r.alive && level.is_none_or(|l| r.level == l))
+                    .map(|r| r.id)
+                    .collect()
+            })
+            .unwrap_or_default();
+        if !rooms.is_empty() {
+            let at = app
+                .selected
+                .and_then(|id| rooms.iter().position(|r| *r == id));
+            let to = match (at, next) {
+                (None, true) => 0,
+                (None, false) => rooms.len() - 1,
+                (Some(i), true) => (i + 1) % rooms.len(),
+                (Some(i), false) => (i + rooms.len() - 1) % rooms.len(),
+            };
+            app.selected = Some(rooms[to]);
+        }
+    }
+}
 
 pub fn central(app: &mut App, ui: &mut Ui) {
     egui::CentralPanel::default()
@@ -1514,6 +1617,37 @@ pub fn central(app: &mut App, ui: &mut Ui) {
             if response.double_clicked() {
                 app.zoom = 1.0;
                 app.pan = [0.0, 0.0];
+            }
+            // The plan from the keyboard, when it has the focus (Tab reaches it): arrows pan, + and - zoom, 0 fits, [ and ] pick the
+            // previous and the next room, Esc lets go of the pick.
+            if plan {
+                if response.has_focus() {
+                    ctx.memory_mut(|m| {
+                        m.set_focus_lock_filter(
+                            response.id,
+                            egui::EventFilter {
+                                horizontal_arrows: true,
+                                vertical_arrows: true,
+                                ..Default::default()
+                            },
+                        );
+                    });
+                    plan_keys(app, &ctx, &xf);
+                    xf = Xf::new(inner, min, max, app.zoom, app.pan);
+                    painter.rect_stroke(
+                        rect.shrink(1.0),
+                        0.0,
+                        Stroke::new(2.0, theme::of(ui).border_focused),
+                        egui::StrokeKind::Inside,
+                    );
+                }
+                response.widget_info(|| {
+                    egui::WidgetInfo::labeled(
+                        egui::Role::Group,
+                        true,
+                        "Floor plan: arrows pan, plus and minus zoom, brackets pick a room",
+                    )
+                });
             }
             if response.hovered() && app.view_mode != crate::ViewMode::Solid {
                 let (scroll, pinch) = ctx.input(|i| (i.smooth_scroll_delta().y, i.zoom_delta()));
@@ -1659,13 +1793,23 @@ pub fn central(app: &mut App, ui: &mut Ui) {
             }
             if app.overlays.legend && inner.width() > 440.0 && inner.height() > 320.0 {
                 if let Some(generated) = &app.generated {
-                    let present: Vec<&str> = generated
+                    let mut present: Vec<&str> = generated
                         .floor
                         .rooms
                         .iter()
                         .filter(|room| room.alive)
                         .map(|room| room.cls.name())
                         .collect();
+                    // What else is drawn that the legend should name.
+                    if generated.floor.rooms.iter().any(|r| r.alive && r.leaf) {
+                        present.push("leaf");
+                    }
+                    if generated.floor.edges.iter().any(|e| e.stair) {
+                        present.push("stairs");
+                    }
+                    if app.selected.is_some() {
+                        present.push("picked");
+                    }
                     map::legend(&painter, inner, &pal, ui.visuals().text_color(), &present);
                     map::scales(
                         &painter,
@@ -1723,8 +1867,9 @@ pub fn central(app: &mut App, ui: &mut Ui) {
                     }
                     _ => ("x —  y —".to_string(), String::new()),
                 };
+                // The picked room is described in the Reading column when that is shown; the strip says it only when it is not.
                 let picked = floor
-                    .zip(app.selected)
+                    .zip(app.selected.filter(|_| !reading_visible(app, ui)))
                     .and_then(|(f, id)| f.rooms.get(id).map(|r| map::describe(f, r)))
                     .unwrap_or_default();
                 map::hud(&painter, rect, &pal, &xy, &under, &picked);

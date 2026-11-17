@@ -32,7 +32,7 @@ pub fn field_row(
             ui.painter().rect_filled(mark, 0.0, amber);
         }
         label_id = Some(
-            ui.add(egui::Label::new(label).truncate())
+            ui.add(egui::Label::new(label).wrap())
                 .on_hover_text(format!("{}\n{}", field.label.as_str(), field.help.as_str()))
                 .id,
         );

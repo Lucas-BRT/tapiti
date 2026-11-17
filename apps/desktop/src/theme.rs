@@ -136,7 +136,8 @@ pub fn colors(dark: bool) -> Colors {
             element_active: rgb(0x20252a),
             border: rgb(0x6c7884),
             border_variant: rgb(0x2a3138),
-            border_focused: rgb(0xffb454),
+            // The focus ring is cyan, not amber: amber is what is changed or picked, and a pressed control uses the ring's colour too.
+            border_focused: rgb(0x62cbe8),
             text: rgb(0xd2d9df),
             text_muted: rgb(0xa9b0b7),
             accent: rgb(0xffb454),
@@ -155,7 +156,7 @@ pub fn colors(dark: bool) -> Colors {
             element_active: rgb(0xdde3e8),
             border: rgb(0x6a7680),
             border_variant: rgb(0xcdd5db),
-            border_focused: rgb(0x693e00),
+            border_focused: rgb(0x074e62),
             text: rgb(0x1b2127),
             text_muted: rgb(0x3f4a53),
             accent: rgb(0x693e00),
@@ -351,7 +352,7 @@ pub fn group(
         painter.rect_stroke(
             rect.shrink(1.0),
             0.0,
-            Stroke::new(1.0, c.border_focused),
+            Stroke::new(2.0, c.border_focused),
             egui::StrokeKind::Inside,
         );
     }
