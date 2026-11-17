@@ -28,7 +28,7 @@ fn group_counts(app: &App, holds: impl Fn(&str) -> bool) -> (usize, usize) {
         .flat_map(|g| &g.fields)
         .map(|f| f.path.as_str());
     paths
-        .filter(|p| holds(p) && crate::relevance::applies(p, &app.params))
+        .filter(|p| holds(p) && tapiti_render::relevance::applies(p, &app.params))
         .fold((0, 0), |(all, changed), p| {
             (all + 1, changed + usize::from(app.changed.contains(p)))
         })
@@ -237,24 +237,9 @@ pub fn menu_bar(app: &mut App, ui: &mut Ui) {
         });
 }
 
-/// FNV-1a of a byte string, as eight hex digits.
-fn fnv1a(bytes: &[u8]) -> String {
-    let mut h: u32 = 0x811c_9dc5;
-    for b in bytes {
-        h ^= u32::from(*b);
-        h = h.wrapping_mul(16_777_619);
-    }
-    format!("{h:08x}")
-}
-
 /// A hash of the seed and the full Λ of the floor on the screen, so two windows that show the same hash show the same floor.
 pub fn floor_hash(map: &crate::GeneratedMap) -> String {
-    let key = format!(
-        "{}{}",
-        map.seed,
-        serde_json::to_string(&map.floor.params).unwrap_or_default()
-    );
-    fnv1a(key.as_bytes())
+    tapiti_render::readout::floor_hash(map.seed, &map.floor.params)
 }
 
 pub fn shortcuts_window(app: &mut App, ctx: &egui::Context) {
@@ -491,7 +476,7 @@ fn layout_card(app: &mut App, ui: &mut Ui) {
                         layout_fields(layout)
                             .iter()
                             .copied()
-                            .filter(|p| crate::relevance::applies(p, &app.params)),
+                            .filter(|p| tapiti_render::relevance::applies(p, &app.params)),
                     )
                     .chain(["levels.count"])
                     .chain(
@@ -1196,7 +1181,7 @@ fn advanced_tab(app: &mut App, ui: &mut Ui) {
                         && f.path != "layout"
                         && !layout_fields(app.params.layout).contains(&f.path.as_str())
                         && !intent_fields(app.params.topology.profile).contains(&f.path.as_str())
-                        && crate::relevance::applies(&f.path, &app.params))
+                        && tapiti_render::relevance::applies(&f.path, &app.params))
             })
             .filter(|f| {
                 needle.is_empty()
@@ -1217,7 +1202,7 @@ fn advanced_tab(app: &mut App, ui: &mut Ui) {
                 .iter()
                 .filter(|f| {
                     !listed_paths.contains(&f.path)
-                        && !crate::relevance::applies(&f.path, &app.params)
+                        && !tapiti_render::relevance::applies(&f.path, &app.params)
                 })
                 .count()
         } else {

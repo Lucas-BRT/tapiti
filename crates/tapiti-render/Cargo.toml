@@ -8,10 +8,8 @@ description = "SVG rendering of Tapiti floor floors (website, docs figures, READ
 
 [dependencies]
 libm = "=0.2.16"
-tapiti-core = { path = "../tapiti-core", default-features = false }
-
-[dev-dependencies]
 serde_json = "1"
+tapiti-core = { path = "../tapiti-core", default-features = false }
 
 [lints.rust]
 unsafe_code = "forbid"

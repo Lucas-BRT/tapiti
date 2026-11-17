@@ -36,76 +36,15 @@ impl Measure {
 /// The measures of a floor, from `metrics_of`, in the order they are read. A bar is drawn only where the value is a share of a whole
 /// that exists: loops of what fits, dead ends of the rooms, bridges of the corridors, the way to the exit of the diameter.
 pub fn measure_rows(m: &tapiti_core::metrics::Metrics) -> Vec<Measure> {
-    let rooms = (m.rooms + m.leaf_chambers) as f64;
-    let dash = || "—".to_string();
-    vec![
-        Measure::new(
-            "rooms",
-            format!("{}+{}", m.rooms, m.leaf_chambers),
-            format!(
-                "{} main rooms and {} leaf chambers, linked by a single corridor.",
-                m.rooms, m.leaf_chambers
-            ),
-        ),
-        Measure::new(
-            "corridors",
-            m.edges.to_string(),
-            "Pieces of corridor in the graph; each arm of a junction counts as one.",
-        ),
-        Measure::new(
-            "loops β",
-            format!("{} / {}", m.beta, m.beta_max),
-            format!(
-                "Extra ways round, instead of back: {} now, {} aimed for by the density, room for {}. A tree has none. The bar is how much of that room is used.",
-                m.beta, m.beta_target, m.beta_max
-            ),
-        )
-        .of(f64::from(m.beta_max), f64::from(m.beta)),
-        Measure::new(
-            "single-door rooms",
-            m.leaves.to_string(),
-            "Rooms with a single door: the leaf chambers, the entrance and the exit. The bar is their share of all the rooms.",
-        )
-        .of(rooms, m.leaves as f64),
-        Measure::new(
-            "bridges",
-            format!("{} · {:.0}%", m.bridges, m.bridge_share * 100.0),
-            "Corridors whose removal would cut part of the floor off. The bar is their share of the corridors.",
-        )
-        .of(1.0, m.bridge_share),
-        {
-            let mut row = Measure::new(
-                "steps to exit",
-                m.hops_to_exit.map_or_else(dash, |h| format!("{h:.0}")),
-                "Rooms on the shortest way from the entrance to the exit. The bar is that way as a share of the diameter.",
-            );
-            // A floor with no entrance and exit has no way to show, so no bar either.
-            if let Some(h) = m.hops_to_exit {
-                row = row.of(m.diameter, h);
-            }
-            row
-        },
-        Measure::new(
-            "routes → exit",
-            m.routes_to_exit.map_or_else(dash, |n| n.to_string()),
-            "Ways from the entrance to the exit that share no corridor.",
-        ),
-        Measure::new(
-            "diameter",
-            format!("{:.0}", m.diameter),
-            "The most rooms between two rooms, by the shortest way.",
-        ),
-        Measure::new(
-            "λ₂",
-            format!("{:.3}", m.lambda2),
-            "Connectivity: larger means less depending on a few corridors.",
-        ),
-        Measure::new(
-            "doors per room",
-            format!("{:.2}", m.mean_degree),
-            "Corridors per room, on average.",
-        ),
-    ]
+    tapiti_render::readout::rows(m)
+        .into_iter()
+        .map(|row| Measure {
+            label: row.label,
+            value: row.value,
+            share: row.share,
+            tip: row.tip,
+        })
+        .collect()
 }
 
 /// Draws the rows of a readout, each of the exact width of the column: the label on the left, the share as a bar in the middle when

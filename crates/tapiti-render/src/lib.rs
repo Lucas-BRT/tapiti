@@ -12,6 +12,8 @@ pub mod digest;
 mod hatch;
 pub mod mesh;
 pub mod raster;
+pub mod readout;
+pub mod relevance;
 pub mod view;
 pub mod walk;
 pub use hatch::{hatch, HatchMark};

@@ -15,7 +15,6 @@ mod panels;
 mod params_ui;
 mod pick;
 mod prefs;
-mod relevance;
 mod settings;
 mod solid;
 mod theme;

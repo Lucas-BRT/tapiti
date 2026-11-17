@@ -105,49 +105,16 @@ pub struct ReadRow {
     pub share: Option<f32>,
 }
 
-/// The measures of a floor in the order the desktop app reads them (its `measure_rows`), with a bar only where the value is a share of
-/// a whole that exists.
+/// The measures of a floor, as the desktop app and the lab read them (`tapiti_render::readout`): the same words everywhere.
 pub fn readout(m: &Metrics) -> Vec<ReadRow> {
-    let rooms = (m.rooms + m.leaf_chambers) as f64;
-    let row = |label, value: String, whole: f64, part: f64| ReadRow {
-        label,
-        value,
-        share: (whole > 0.0).then(|| (part / whole).clamp(0.0, 1.0) as f32),
-    };
-    let plain = |label, value: String| ReadRow {
-        label,
-        value,
-        share: None,
-    };
-    let dash = || "—".to_string();
-    vec![
-        plain("rooms", format!("{}+{}", m.rooms, m.leaf_chambers)),
-        plain("corridors", m.edges.to_string()),
-        row(
-            "loops β",
-            format!("{} / {}", m.beta, m.beta_max),
-            f64::from(m.beta_max),
-            f64::from(m.beta),
-        ),
-        row("dead ends", m.leaves.to_string(), rooms, m.leaves as f64),
-        row(
-            "bridges",
-            format!("{} · {:.0}%", m.bridges, m.bridge_share * 100.0),
-            1.0,
-            m.bridge_share,
-        ),
-        match m.hops_to_exit {
-            Some(h) => row("exit hops", format!("{h:.0}"), m.diameter, h),
-            None => plain("exit hops", dash()),
-        },
-        plain(
-            "routes → exit",
-            m.routes_to_exit.map_or_else(dash, |n| n.to_string()),
-        ),
-        plain("diameter", format!("{:.0}", m.diameter)),
-        plain("λ₂", format!("{:.3}", m.lambda2)),
-        plain("mean doors", format!("{:.2}", m.mean_degree)),
-    ]
+    tapiti_render::readout::rows(m)
+        .into_iter()
+        .map(|row| ReadRow {
+            label: row.label,
+            value: row.value,
+            share: row.share,
+        })
+        .collect()
 }
 
 /// The groups of the parameter tree, with how many settings each holds, from the same schema the apps are built from.
@@ -423,9 +390,9 @@ mod tests {
             format!("{}+{}", m.rooms, m.leaf_chambers)
         );
         assert_eq!(get("loops β").value, format!("{} / {}", m.beta, m.beta_max));
-        assert_eq!(get("dead ends").value, m.leaves.to_string());
+        assert_eq!(get("single-door rooms").value, m.leaves.to_string());
         assert_eq!(
-            get("exit hops").value,
+            get("steps to exit").value,
             format!("{:.0}", m.hops_to_exit.unwrap())
         );
         assert!(
