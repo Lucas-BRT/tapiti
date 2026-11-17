@@ -72,7 +72,9 @@ pub fn menu_bar(app: &mut App, ui: &mut Ui) {
         .frame(theme::bar_frame(ui))
         .exact_size(theme::bar_height(ui))
         .show(ui, |ui| {
-            egui::MenuBar::new().ui(ui, |ui| {
+            // The menus and the readout sit in the middle of the bar's height, not against its top edge.
+            ui.horizontal_centered(|ui| {
+                egui::MenuBar::new().ui(ui, |ui| {
                 ui.menu_button("File", |ui| {
                     if ui.add(Button::new("Open Λ…").shortcut_text("Ctrl+O")).clicked() {
                         ui.close();
@@ -218,6 +220,7 @@ pub fn menu_bar(app: &mut App, ui: &mut Ui) {
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     status_readout(app, ui);
                 });
+            });
             });
         });
 }
