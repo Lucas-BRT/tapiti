@@ -85,7 +85,7 @@ The menu bar has:
 - **View**: the reading panel.
 - **Tools**: the guided experiments and the JSON editor, in a window.
 - **Help**: the shortcuts.
-- **Settings** (<kbd>Ctrl</kbd>+<kbd>,</kbd>): a window of its own for the options of the application: the theme (the system's, light or dark; the system's is the default), the spacing (compact or comfortable), the reading panel (automatic, shown or hidden) and the motion: animations of the interface (120 ms; off changes everything at once) and whether a new floor is revealed from the entrance. A floor that arrives while the last is still being revealed, as when stepping through seeds, shows at once. They are saved and apply at once.
+- **Settings** (<kbd>Ctrl</kbd>+<kbd>,</kbd>): a window of its own for the options of the application. Each is a choice among presets with a Custom one that takes a value of your own: the theme (System, Light, Dark; the system's is the default); the spacing (Compact, Comfortable, or a row height in pixels); the text size (Small to Larger, or a percentage, for the whole window); the reading panel (Automatic, Shown or Hidden, and Narrow, Normal, Wide or a share of the window); and the motion, timed apart for the interface (a panel sliding, a group opening, a control changing colour) and for the reveal of a new floor: Off, Fast, Normal, Slow or milliseconds. A floor that arrives while the last is still being revealed, as when stepping through seeds, shows at once. They are saved and apply at once.
 
 On the right of the same bar are a hash of the seed and Λ (two windows with the same hash show the same floor) and V1 to V5. The seed is in the controls bar, and the time and the number of draws of the last floor are at the foot.
 
@@ -95,7 +95,7 @@ On the right of the same bar are a hash of the seed and Λ (two windows with the
 - <kbd>Alt</kbd>+<kbd>R</kbd> draws a random seed.
 - <kbd>Alt</kbd>+<kbd>←</kbd> and <kbd>→</kbd> step the seed.
 - <kbd>/</kbd> goes to the filter; <kbd>Tab</kbd> and <kbd>Shift</kbd>+<kbd>Tab</kbd> move between controls, <kbd>Enter</kbd> opens a group, <kbd>↑</kbd> and <kbd>↓</kbd> change a focused number, <kbd>Esc</kbd> leaves a field.
-- On the map, drag to pan, scroll to zoom, double-click to fit. A new seed or size is revealed from the entrance; turn that off in Settings, together with the other animations, to show it at once.
+- On the map, drag to pan, scroll to zoom, double-click to fit. A new seed or size is revealed from the entrance; set the new floor to Off in Settings to show it at once.
 
 ## The website and the lab
 

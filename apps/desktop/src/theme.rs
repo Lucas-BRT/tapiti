@@ -4,37 +4,40 @@
 
 use eframe::egui::{self, Color32, CornerRadius, FontFamily, FontId, Margin, Stroke, Theme};
 
-/// The spacing set: compact is the default, comfortable is a preference.
+/// The spacing set: compact is the default; comfortable and a row height of one's own are preferences.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Density {
     Compact,
     Comfortable,
+    /// The height of a row of a control, in points; everything else scales with it.
+    Custom(u8),
 }
 
 impl Density {
+    pub const ROW_RANGE: std::ops::RangeInclusive<u8> = 18..=40;
+
     pub fn saved() -> Self {
         match crate::prefs::load("density").as_deref() {
             Some("comfortable") => Self::Comfortable,
-            _ => Self::Compact,
+            Some(other) => other
+                .strip_prefix("custom:")
+                .and_then(|n| n.parse::<u8>().ok())
+                .map_or(Self::Compact, |n| {
+                    Self::Custom(n.clamp(*Self::ROW_RANGE.start(), *Self::ROW_RANGE.end()))
+                }),
+            None => Self::Compact,
         }
     }
 
     pub fn save(self) {
         crate::prefs::save(
             "density",
-            match self {
-                Self::Compact => "compact",
-                Self::Comfortable => "comfortable",
+            &match self {
+                Self::Compact => "compact".to_string(),
+                Self::Comfortable => "comfortable".to_string(),
+                Self::Custom(row) => format!("custom:{row}"),
             },
         );
-    }
-
-    /// Body text size, in points.
-    pub fn text(self) -> f32 {
-        match self {
-            Self::Compact => 12.0,
-            Self::Comfortable => 14.0,
-        }
     }
 
     /// Height of a row of a control, in points.
@@ -42,21 +45,30 @@ impl Density {
         match self {
             Self::Compact => 20.0,
             Self::Comfortable => 28.0,
+            Self::Custom(row) => f32::from(row),
         }
+    }
+
+    /// Where the row height sits between compact (0) and comfortable (1); the other sizes follow it.
+    fn t(self) -> f32 {
+        (self.row() - 20.0) / 8.0
+    }
+
+    fn lerp(self, compact: f32, comfortable: f32) -> f32 {
+        compact + (comfortable - compact) * self.t()
+    }
+
+    /// Body text size, in points.
+    pub fn text(self) -> f32 {
+        self.lerp(12.0, 14.0).clamp(11.0, 18.0)
     }
 
     fn item_spacing(self) -> egui::Vec2 {
-        match self {
-            Self::Compact => egui::vec2(8.0, 3.0),
-            Self::Comfortable => egui::vec2(10.0, 6.0),
-        }
+        egui::vec2(self.lerp(8.0, 10.0).max(6.0), self.lerp(3.0, 6.0).max(2.0))
     }
 
     fn button_padding(self) -> egui::Vec2 {
-        match self {
-            Self::Compact => egui::vec2(8.0, 2.0),
-            Self::Comfortable => egui::vec2(10.0, 4.0),
-        }
+        egui::vec2(self.lerp(8.0, 10.0).max(6.0), self.lerp(2.0, 4.0).max(1.0))
     }
 }
 
@@ -416,19 +428,15 @@ pub fn brand(ui: &mut egui::Ui) {
 pub fn apply(ctx: &egui::Context) {
     install_fonts(ctx);
     apply_density(ctx, Density::saved());
-    apply_motion(ctx, animations_saved());
+    apply_motion(ctx, crate::settings::Timing::interface().seconds());
+    ctx.set_zoom_factor(crate::settings::TextScale::saved().factor());
 }
 
-/// Whether the interface animates: on unless the choice kept in `~/.config/tapiti/motion` is `reduce`.
-pub fn animations_saved() -> bool {
-    crate::prefs::load("motion").as_deref() != Some("reduce")
-}
-
-/// How long the interface's own transitions last (a group opening, a hover fading in): 120 ms, or none.
-pub fn apply_motion(ctx: &egui::Context, on: bool) {
+/// How long the interface's own transitions last (a panel sliding, a group opening, a hover fading in), in seconds; 0 for none.
+pub fn apply_motion(ctx: &egui::Context, seconds: f32) {
     for theme in [Theme::Dark, Theme::Light] {
         ctx.style_mut_of(theme, |style| {
-            style.animation_time = if on { 0.12 } else { 0.0 };
+            style.animation_time = seconds;
         });
     }
 }

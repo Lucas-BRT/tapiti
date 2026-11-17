@@ -125,7 +125,7 @@ pub fn menu_bar(app: &mut App, ui: &mut Ui) {
                 });
                 ui.menu_button("Edit", |ui| {
                     if ui
-                        .add_enabled(!app.changed.is_empty(), Button::new("Reset all settings"))
+                        .add_enabled(!app.changed.is_empty(), Button::new("Reset parameters"))
                         .on_hover_text("Restore Classic and the defaults of the current size")
                         .clicked()
                     {
@@ -255,6 +255,9 @@ pub fn shortcuts_window(app: &mut App, ctx: &egui::Context) {
 /// The button that hides or shows the right panel: a square with a strip at its right edge, filled while the panel is shown.
 fn panel_toggle(ui: &mut Ui, shown: bool) -> egui::Response {
     let (rect, response) = ui.allocate_exact_size(egui::vec2(26.0, 22.0), egui::Sense::click());
+    response.widget_info(|| {
+        egui::WidgetInfo::selected(egui::Role::CheckBox, true, shown, "Reading panel")
+    });
     let c = theme::of(ui);
     let color = if response.hovered() {
         c.text
@@ -287,11 +290,11 @@ pub fn top_bar(app: &mut App, ui: &mut Ui) {
                 size_picker(app, ui);
                 ui.separator();
                 ui.label("Seed");
-                if ui
-                    .button("<")
-                    .on_hover_text("Previous seed (Alt+Left)")
-                    .clicked()
-                {
+                let step = ui.button("<").on_hover_text("Previous seed (Alt+Left)");
+                step.widget_info(|| {
+                    egui::WidgetInfo::labeled(egui::Role::Button, true, "Previous seed")
+                });
+                if step.clicked() {
                     app.set_seed(app.seed.saturating_sub(1));
                 }
                 let seed = ui.add(
@@ -302,11 +305,11 @@ pub fn top_bar(app: &mut App, ui: &mut Ui) {
                 if seed.lost_focus() && app.seed_draft != app.seed.to_string() {
                     app.commit_seed_draft();
                 }
-                if ui
-                    .button(">")
-                    .on_hover_text("Next seed (Alt+Right)")
-                    .clicked()
-                {
+                let step = ui.button(">").on_hover_text("Next seed (Alt+Right)");
+                step.widget_info(|| {
+                    egui::WidgetInfo::labeled(egui::Role::Button, true, "Next seed")
+                });
+                if step.clicked() {
                     app.set_seed(app.seed.saturating_add(1));
                 }
                 if ui
@@ -795,14 +798,19 @@ fn reading_visible(app: &App, ui: &Ui) -> bool {
 /// The right column: what the generated floor is, in charts and plain words, beside the map. Its width is fixed (a share of the window):
 /// a column that grows to fit its content would take the map's room.
 pub fn reading_panel(app: &mut App, ui: &mut Ui) {
-    if !reading_visible(app, ui) {
-        return;
-    }
+    // The panel slides in and out over the interface's transition time (none when that is off).
+    let mut visible = reading_visible(app, ui);
+    let width = panel_width(
+        ui,
+        f32::from(app.reading_width.percent()) / 100.0,
+        240.0,
+        560.0,
+    );
     Panel::right("reading")
         .frame(theme::panel_frame(ui))
         .resizable(false)
-        .default_size(panel_width(ui, 0.27, 300.0, 380.0))
-        .show(ui, |ui| {
+        .exact_size(width)
+        .show_collapsible(ui, &mut visible, |ui| {
             let mut area = ScrollArea::vertical().id_salt("reading").auto_shrink(false);
             if app.generated.is_some() {
                 if let Some(offset) = app.read_scroll.take() {
@@ -1445,7 +1453,7 @@ pub fn central(app: &mut App, ui: &mut Ui) {
                 }
             }
 
-            // A new floor (another seed or size) is revealed outwards from the entrance in about 0.6 s, unless animations or the reveal are off, the
+            // A new floor (another seed or size) is revealed outwards from the entrance in about 0.6 s, unless the reveal is off, the
             // progressive preview has just shown it being built, or a picture is being taken.
             let now = ctx.input(|i| i.time);
             if app.showing_building() {
@@ -1458,8 +1466,7 @@ pub fn central(app: &mut App, ui: &mut Ui) {
                     app.selected = app.select_after.take();
                     // A floor that arrives while the last one is still being revealed (stepping through seeds) shows at once: the
                     // animation never makes the person wait.
-                    app.reveal_start = (app.animations
-                        && app.reveal_floor
+                    app.reveal_start = (app.reveal_motion.is_on()
                         && !app.capturing()
                         && !app.skip_reveal
                         && app.reveal_start.is_none())
@@ -1469,7 +1476,8 @@ pub fn central(app: &mut App, ui: &mut Ui) {
             }
             let reveal = match app.reveal_start {
                 Some(start) => {
-                    let t = ((now - start) / 0.6) as f32;
+                    let t =
+                        ((now - start) / f64::from(app.reveal_motion.seconds().max(0.05))) as f32;
                     if t >= 1.0 {
                         app.reveal_start = None;
                         1.0
