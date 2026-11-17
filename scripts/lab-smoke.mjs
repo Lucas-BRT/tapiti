@@ -84,6 +84,15 @@ report('the shape legend repeats the plan hatches', (await run("return document.
 await resize(1440, 900)
 await sleep(300)
 
+// Pocket: a short screen (a phone held sideways, a page at 200% zoom) still reaches the form, and a phone held upright leaves room for it.
+for (const [w, h, name] of [[640, 400, 'at 200% zoom'], [812, 375, 'on a phone held sideways'], [375, 667, 'on a phone held upright']]) {
+  await resize(w, h)
+  await sleep(500)
+  const got = await run("const v = document.getElementById('view').getBoundingClientRect(); const t = document.querySelector('.lab-tabs').getBoundingClientRect(); return JSON.stringify({ view: Math.round(v.height), tabs: Math.round(t.top), h: innerHeight })")
+  const { view, tabs, h: inner } = JSON.parse(got)
+  report(`the tabs and the form are reachable ${name}`, view <= inner * 0.62 && tabs < inner, got)
+}
+
 // No sideways scroll on a phone.
 await resize(390, 844)
 await sleep(600)

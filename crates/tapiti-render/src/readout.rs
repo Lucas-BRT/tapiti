@@ -151,3 +151,23 @@ pub fn floor_hash(seed: u32, params: &Params) -> String {
 pub fn hash_of(seed: u32, floor: &Floor) -> String {
     floor_hash(seed, &floor.params)
 }
+
+/// The Λ of a size (1 small to 4 huge) with every group present, as JSON: the plain `params_of_size` leaves out the zones, the levels
+/// and the environment while they are off, but a form needs their fields, at their defaults, to edit them. The lab and the parameter
+/// reference both read the defaults from here.
+pub fn full_params(size: usize) -> serde_json::Value {
+    use tapiti_core::params::{params_of_size, LevelsSpec, Size, ZoneSpec};
+    let mut value = serde_json::to_value(params_of_size(Size::of_index(size))).unwrap_or_default();
+    if let Some(object) = value.as_object_mut() {
+        object
+            .entry("zones")
+            .or_insert_with(|| serde_json::to_value(ZoneSpec::default()).unwrap_or_default());
+        object
+            .entry("levels")
+            .or_insert_with(|| serde_json::to_value(LevelsSpec::default()).unwrap_or_default());
+        object.entry("environment").or_insert_with(|| {
+            serde_json::to_value(tapiti_core::environment::EnvSpec::default()).unwrap_or_default()
+        });
+    }
+    value
+}

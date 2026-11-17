@@ -90,22 +90,7 @@ pub fn default_params(size: u32) -> String {
 /// off (a floor does not need them), but a form needs their fields, at their defaults, to edit them.
 #[wasm_bindgen]
 pub fn full_params(size: u32) -> String {
-    let mut value = serde_json::to_value(params::params_of_size(params::Size::of_index(
-        size as usize,
-    )))
-    .unwrap();
-    if let Some(object) = value.as_object_mut() {
-        object
-            .entry("zones")
-            .or_insert_with(|| serde_json::to_value(params::ZoneSpec::default()).unwrap());
-        object
-            .entry("levels")
-            .or_insert_with(|| serde_json::to_value(params::LevelsSpec::default()).unwrap());
-        object.entry("environment").or_insert_with(|| {
-            serde_json::to_value(tapiti_core::environment::EnvSpec::default()).unwrap()
-        });
-    }
-    value.to_string()
+    readout::full_params(size as usize).to_string()
 }
 
 /// Λ of a size with every shape, junction and connection option on (the landing page's showcase), as JSON.

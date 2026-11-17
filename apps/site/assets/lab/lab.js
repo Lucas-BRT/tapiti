@@ -1360,6 +1360,7 @@ const setReading = (open, { focus = true } = {}) => {
   if (open) { results3.tabIndex = -1; results3.focus() } else readingToggle.focus()
 }
 readingToggle.addEventListener('click', () => setReading(root.dataset.reading !== 'open'))
+$('reading-close').addEventListener('click', () => setReading(false))
 root.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && root.dataset.reading === 'open' && event.target !== canvas) setReading(false)
 })

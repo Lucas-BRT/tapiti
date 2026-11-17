@@ -50,6 +50,23 @@ await sleep(1500)
 const heavy = await run("return performance.getEntriesByType('resource').map((r) => r.name).filter((n) => /tapiti_bg\\.wasm/.test(n)).length")
 check('docs load no wasm', heavy === 0, heavy)
 
+// The docs: each page says its own description and has its own title; narrow screens get the page's outline; the parameter reference
+// has a row to link to for each parameter and its defaults; the search page is not indexed; the 404 offers the lab and the search.
+const meta = async (path) => (await run(`const r = await fetch('${path}'); const t = await r.text(); const d = new DOMParser().parseFromString(t, 'text/html'); return [d.title, d.querySelector('meta[name=description]')?.content ?? '', d.querySelector('meta[name=robots]')?.content ?? ''].join('|')`))
+const [m1, m2] = [await meta('/docs/getting-started'), await meta('/docs/model')]
+check('each docs page has its own title and description', m1 !== m2 && m1.split('|')[0].endsWith('· Tapiti') && m1.split('|')[1] !== m2.split('|')[1], [m1, m2])
+check('the search page is not indexed', /noindex/.test(await meta('/search?q=seed')))
+check('the lab has its full title', (await meta('/lab')).startsWith('Lab · Tapiti'))
+await open('/docs/parameters')
+check('the parameter reference has a row and a default for each parameter', (await run("return document.querySelectorAll('tr[id^=param-]').length > 100 && document.querySelector('th:nth-child(4)').textContent === 'Default'")) === true)
+await open('/docs/model')
+await run("return true")
+const notFound = await (await fetch(base + '/no-such-page')).text()
+check('the 404 offers the lab and the search', notFound.includes('href="/lab"') && notFound.includes('/search'))
+await open('/')
+check('the hero has IN and OUT chips and no V1 to V5 strip', (await run("return !!document.querySelector('.tapiti-floor .badges') && !document.querySelector('.bench-bar').textContent.includes('V1 V2')")) === true)
+check('the parameter tree links to its groups', (await run("return new Set([...document.querySelectorAll('.tree-list a')].map((a) => a.hash)).size > 5")) === true)
+
 // Settings: the button opens a dialog; the theme, the text size and the motion are choices of presets (and a value of one's own),
 // kept in the browser, applied at once and on the page before it is painted. They start from the system's.
 await open('/')

@@ -101,12 +101,23 @@ The rules V1 to V5 and a hash of the seed and Λ (two windows with the same hash
 The website you are reading is a [Topcoat](https://github.com/tokio-rs/topcoat) app. To run it with live reload:
 
 ```sh
-cargo install topcoat-cli
+cargo install topcoat-cli --version 0.12.0 --locked
 scripts/build-wasm.sh                      # the WebAssembly module of the lab
 topcoat dev -p tapiti-site      # http://127.0.0.1:3000
 ```
 
-The lab (`/lab`) runs the generator in your browser, compiled to WebAssembly. Its form is built from the same parameter schema as the desktop app. The lab is in English only.
+### The lab
+
+The lab (`/lab`) runs the generator in your browser, compiled to WebAssembly, in a worker, so editing never waits for a floor. Its form is built from the same parameter schema as the desktop app, and it reads a floor with the same words: the rules V1 to V5 and a hash of the seed and Λ (the same hash is the same floor, here and in the desktop app), then the measures (single-door rooms, steps to exit, doors per room).
+
+- **Plan.** The entrance has a green outline and an IN chip, the exit a violet outline and an OUT chip. Click a room, or press <kbd>[</kbd> and <kbd>]</kbd> with the plan focused, to pick it: it is outlined in amber and described under Selected room. Rooms can be coloured by shape or by an environment layer the floor has (height, water, humidity, temperature, light), with the scale in the legend; a stacked floor has a level to choose.
+- **Keys.** With the plan focused (<kbd>Tab</kbd> reaches it, or the link at the top): the arrows move it, <kbd>+</kbd> and <kbd>-</kbd> zoom, <kbd>0</kbd> or <kbd>Home</kbd> fits it, <kbd>Enter</kbd> picks the room in the middle, <kbd>Esc</kbd> lets go. Anywhere: <kbd>Alt</kbd>+<kbd>1</kbd> to <kbd>4</kbd> pick a size, <kbd>Alt</kbd>+<kbd>R</kbd> a random seed, <kbd>Alt</kbd>+<kbd>←</kbd> and <kbd>→</kbd> the previous or next seed, <kbd>Ctrl</kbd>+<kbd>Z</kbd> and <kbd>Ctrl</kbd>+<kbd>Y</kbd> undo and redo, <kbd>/</kbd> goes to the filter of the parameters and <kbd>?</kbd> lists the keys. Settings can turn the single keys off.
+- **Undo and redo** go one step each way, over a size, a reset, an example, a paste or an edit; the floor of the step is kept in memory (Settings says which floors), so neither generates it again.
+- **Where you left off.** The last size, seed, changed parameters and overlays are kept in the browser. *Copy link* writes a link that opens the lab on the size, the seed and what differs from the size's defaults; *Paste parameters* takes the JSON that *Copy parameters* writes, or the one the desktop app saves.
+- **Parameters.** A parameter you changed is marked in amber, with a button that puts its default back, and each group says how many it holds changed. The ones that change nothing under the present layout or intent are dimmed and say so. A value out of range is not applied, and the message names the field. The reference of every parameter, with its default in each size, is [on its own page](parameters).
+- **Settings** (the button in the header): the theme, the text size, the motion, and, for the lab, the reading panel and its width, the floors kept for undo and the single-key shortcuts. Each is a set of presets with a value of your own, kept in the browser; they start from what your system says (its colour scheme, its wish for less motion).
+
+The lab is in English only.
 
 ## Docker
 

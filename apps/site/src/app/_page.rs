@@ -108,7 +108,6 @@ pub async fn page(cx: &Cx) -> Result<impl View> {
                     </span>
                     <span class="sp"></span>
                     <span>
-                        "V1 V2 V3 V4 V5 "
                         if g.hero.valid {
                             <span class="valid-word">(t!(home_bar_valid))</span>
                         } else {
@@ -117,18 +116,24 @@ pub async fn page(cx: &Cx) -> Result<impl View> {
                     </span>
                 </div>
                 <div class="bench-cols">
-                    <aside class="bench-tree" aria-label=(t!(home_tree_label))>
+                    <div
+                        class="bench-tree"
+                        role="group"
+                        aria-label=(t!(home_tree_label))
+                    >
                         <div class="group-bar">
-                            "Λ"
+                            (t!(home_params_group))
                             <span>(groups.len())</span>
                         </div>
                         <ul class="tree-list">
-                            for (title, count) in &groups {
+                            for (id, title, count) in &groups {
                                 <li>
                                     <a
                                         href=(href!(
                                             crate::app::docs::slug::_page::page,
                                             crate::app::docs::slug::slug: "parameters",
+                                        ).fragment(
+                                            id.as_str(),
                                         ))
                                     >
                                         (title.as_str())
@@ -137,7 +142,7 @@ pub async fn page(cx: &Cx) -> Result<impl View> {
                                 </li>
                             }
                         </ul>
-                    </aside>
+                    </div>
                     <div class="bench-canvas">
                         (hero_svg)
                         <div class="bench-hud">
@@ -161,24 +166,40 @@ pub async fn page(cx: &Cx) -> Result<impl View> {
                                 <i></i>
                                 (t!(home_shape_star))
                             </span>
-                            <span class="in">
-                                <i></i>
+                            <span class="has-chip">
+                                <b class="chip in">"IN"</b>
                                 (t!(home_hud_entrance))
                             </span>
-                            <span class="out">
-                                <i></i>
+                            <span class="has-chip">
+                                <b class="chip out">"OUT"</b>
                                 (t!(home_hud_exit))
+                            </span>
+                            <span class="has-chip">
+                                <b class="chip leaf" aria-hidden="true"></b>
+                                (t!(home_hud_leaf))
+                            </span>
+                            <span class="has-chip">
+                                <b class="chip dot" aria-hidden="true"></b>
+                                (t!(home_hud_junction))
                             </span>
                         </div>
                     </div>
-                    <aside class="bench-read" aria-label=(t!(home_read_label))>
+                    <div
+                        class="bench-read"
+                        role="group"
+                        aria-label=(t!(home_read_label))
+                    >
                         <div class="group-bar">(t!(home_rules_group))</div>
                         <div class="readout">
                             for (code, name, detail, long) in &rules {
                                 <div class="rule-row" title=(long.as_str())>
-                                    <svg class="tick" viewBox="0 0 12 12" aria-hidden="true">
-                                        <path d="M1.5 6.5 4.5 9.5 10.5 2.5"></path>
-                                    </svg>
+                                    if g.hero.valid {
+                                        <svg class="tick" viewBox="0 0 12 12" aria-hidden="true">
+                                            <path d="M1.5 6.5 4.5 9.5 10.5 2.5"></path>
+                                        </svg>
+                                    } else {
+                                        <span class="cross" aria-hidden="true">"×"</span>
+                                    }
                                     <b>(*code)</b>
                                     <span>(name.as_str())</span>
                                     <span>(detail.as_str())</span>
@@ -208,7 +229,7 @@ pub async fn page(cx: &Cx) -> Result<impl View> {
                                 </li>
                             }
                         </ul>
-                    </aside>
+                    </div>
                 </div>
                 <form
                     class="bench-cmd"

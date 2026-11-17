@@ -7,7 +7,7 @@ How to run, build and check Tapiti, and where things are in the repository. To i
 ```bash
 cargo run                           # opens the native desktop app (egui) (workspace default; fast dev build)
 cargo run --release                 # optimized desktop build
-scripts/build-wasm.sh && topcoat dev -p tapiti-site     # the website (landing, docs, lab) on http://127.0.0.1:3000/, rebuilt on every change (`cargo install topcoat-cli`)
+scripts/build-wasm.sh && topcoat dev -p tapiti-site     # the website (landing, docs, lab) on http://127.0.0.1:3000/, rebuilt on every change (`cargo install topcoat-cli --version 0.12.0 --locked`)
 docker compose -f compose.local.yml up --build   # the same site as a container on http://localhost:8090/
 node scripts/lab-smoke.mjs                   # smoke test of the lab in headless Firefox (site running)
 node scripts/site-smoke.mjs                  # the landing page, the 404, the docs (site running; AXE_JS=… adds axe-core)

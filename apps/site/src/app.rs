@@ -247,7 +247,12 @@ async fn layout(cx: &Cx, slot: Slot<'_>) -> Result<impl View> {
                 <a class="skip-link" href="#main">(t!(skip_link))</a>
                 header()
                 <main id="main">(slot)</main>
-                footer()
+                // The lab is a tool that fills the window, not a page to scroll to a footer.
+                if !topcoat::router::request::try_uri(cx).is_some_and(
+                    |uri| uri.path().starts_with("/lab"),
+                ) {
+                    footer()
+                }
                 settings_dialog()
             </body>
         </html>

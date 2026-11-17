@@ -62,13 +62,14 @@ fn ratio(a: &str, b: &str) -> f64 {
     (a.max(b) + 0.05) / (a.min(b) + 0.05)
 }
 
-const TEXT: [&str; 6] = [
+const TEXT: [&str; 7] = [
     "--text",
     "--muted",
     "--amber",
     "--measure",
     "--ok",
     "--error",
+    "--exit",
 ];
 const SURFACES: [&str; 5] = ["--bar", "--panel", "--bg", "--element", "--element-hover"];
 
@@ -98,8 +99,18 @@ fn controls_keep_their_outline_and_the_main_action_its_text() {
         for surface in ["--panel", "--bg", "--bar"] {
             let r = ratio(&theme["--border"], &theme[surface]);
             assert!(r >= 3.0, "{name}: border on {surface} is {r:.2}");
-            let r = ratio(&theme["--amber"], &theme[surface]);
+            let r = ratio(&theme["--measure"], &theme[surface]);
             assert!(r >= 3.0, "{name}: the focus ring on {surface} is {r:.2}");
+            let r = ratio(&theme["--exit"], &theme[surface]);
+            assert!(
+                r >= 3.0,
+                "{name}: the exit's outline on {surface} is {r:.2}"
+            );
+        }
+        // The IN and OUT chips write the page's background colour on the role colour.
+        for role in ["--ok", "--exit", "--amber"] {
+            let r = ratio(&theme["--bg"], &theme[role]);
+            assert!(r >= 4.5, "{name}: a chip on {role} is {r:.2}");
         }
         let r = ratio(&theme["--on-primary"], &theme["--primary"]);
         assert!(r >= 7.0, "{name}: text on the main action is {r:.2}");

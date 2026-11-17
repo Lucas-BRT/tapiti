@@ -36,6 +36,33 @@ const SEARCH: u32 = 400;
 
 /// Rulers numbered in grid cells along the top and left edges of the plan, and a faint grid of the cells, written into the SVG so the
 /// page needs no script: the cells are the unit the desktop app and the lab count in.
+/// IN and OUT chips at the corner of the entrance and of the exit, so they are told apart by more than the colour of an outline (the
+/// desktop app and the lab draw the same chips).
+fn with_badges(mut svg: String, floor: &Floor) -> String {
+    use std::fmt::Write;
+    use tapiti_core::generate::Role;
+    let mut chips = String::from("<g class=\"badges\" aria-hidden=\"true\">");
+    for room in floor.rooms.iter().filter(|r| r.alive) {
+        let (class, text, w) = match room.role {
+            Role::Entrance => ("in", "IN", 54.0),
+            Role::Exit => ("out", "OUT", 74.0),
+            Role::Plain => continue,
+        };
+        let (x, y) = (room.bounds.lo[0] + 10.0, room.bounds.lo[1] + 10.0);
+        let _ = write!(
+            chips,
+            "<g class=\"{class}\"><rect x=\"{x}\" y=\"{y}\" width=\"{w}\" height=\"36\"/><text x=\"{}\" y=\"{}\" text-anchor=\"middle\">{text}</text></g>",
+            x + w / 2.0,
+            y + 26.0
+        );
+    }
+    chips.push_str("</g>");
+    if let Some(close) = svg.rfind("</svg>") {
+        svg.insert_str(close, &chips);
+    }
+    svg
+}
+
 fn with_rulers(mut svg: String, floor: &Floor) -> String {
     use std::fmt::Write;
     let (xs, ys) = (&floor.grid_x, &floor.grid_y);
@@ -118,10 +145,16 @@ pub fn readout(m: &Metrics) -> Vec<ReadRow> {
 }
 
 /// The groups of the parameter tree, with how many settings each holds, from the same schema the apps are built from.
-pub fn tree_groups() -> Vec<(String, usize)> {
+pub fn tree_groups() -> Vec<(String, String, usize)> {
     tapiti_schema::groups()
         .iter()
-        .map(|g| (g.title.as_str().to_string(), g.fields.len()))
+        .map(|g| {
+            (
+                g.id.to_string(),
+                g.title.as_str().to_string(),
+                g.fields.len(),
+            )
+        })
         .collect()
 }
 
@@ -185,7 +218,11 @@ fn figure(
             channel,
         },
     );
-    let svg = if hero { with_rulers(svg, &floor) } else { svg };
+    let svg = if hero {
+        with_badges(with_rulers(svg, &floor), &floor)
+    } else {
+        svg
+    };
     let range = channel.and_then(|c| {
         view::scale(&floor, c).map(|(low, high)| Range {
             label: c.label(),
@@ -380,6 +417,15 @@ mod tests {
     }
 
     #[test]
+    fn the_hero_plan_has_in_and_out_chips() {
+        let g = gallery();
+        let svg = &g.hero.svg.0;
+        assert!(svg.contains("class=\"badges\""));
+        assert!(svg.contains(">IN</text>") && svg.contains(">OUT</text>"));
+        assert!(!g.layouts[0].1.svg.0.contains("class=\"badges\""));
+    }
+
+    #[test]
     fn the_readout_holds_the_numbers_of_the_metrics() {
         let g = gallery();
         let m = &g.hero.metrics;
@@ -406,7 +452,11 @@ mod tests {
     fn the_tree_lists_every_group_of_the_schema() {
         let groups = tree_groups();
         assert_eq!(groups.len(), tapiti_schema::groups().len());
-        assert!(groups.iter().all(|(title, n)| !title.is_empty() && *n > 0));
+        assert!(
+            groups
+                .iter()
+                .all(|(id, title, n)| !id.is_empty() && !title.is_empty() && *n > 0)
+        );
     }
 
     #[test]

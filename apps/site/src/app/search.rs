@@ -1,7 +1,7 @@
 use topcoat::{
     Result,
     context::Cx,
-    metadata::Metadata,
+    metadata::{Metadata, Robots},
     router::{href, page, query_params},
     view::{View, view},
 };
@@ -18,7 +18,16 @@ struct Query {
 }
 
 /// Documentation search: a plain GET form, so it works without a script and can be linked.
-#[page(with(Metadata::new().title(t!(search_title))))]
+#[page(
+    with(Metadata::new()
+        .title(
+            format!(
+                "{} · Tapiti",
+                t!(search_title).resolve_in(&topcoat::l10n::locale!("en")),
+            ),
+        )
+        .robots(Robots::new().index(false).follow(true)))
+)]
 pub async fn page(cx: &Cx) -> Result<impl View> {
     let query: String = query_params::<Query>(cx)?
         .q
@@ -69,7 +78,9 @@ pub async fn page(cx: &Cx) -> Result<impl View> {
                                         <span class="hit-page">(hit.page_title.as_str())</span>
                                         <span class="hit-heading">(hit.heading.as_str())</span>
                                     </a>
-                                    <p>(hit.snippet.as_str())</p>
+                                    <p>
+                                        (crate::floor::TrustedHtml(hit.snippet_html.clone()))
+                                    </p>
                                 </li>
                             }
                         </ol>

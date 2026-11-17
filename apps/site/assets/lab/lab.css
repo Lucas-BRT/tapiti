@@ -249,3 +249,8 @@ details > :last-child { margin-bottom: 12px; }
   .lab-messages { position: fixed; bottom: 10px; }
 }
 [data-motion="off"] #results, [data-motion="off"] .lab[data-reading="open"] #results { transition: none; }
+
+.drawer-close { display: none; margin: 0 0 10px auto; padding: 4px 12px; border: 1px solid var(--rule-strong); background: var(--control); }
+@media (max-width: 1279px) { .drawer-close { display: block; } }
+@media (max-width: 999px) { .drawer-close { display: none; } }
+.lab[data-reading-mode="hidden"] .drawer-close { display: block; }

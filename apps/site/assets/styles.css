@@ -235,8 +235,11 @@
   .valid-word { color: var(--ok); font-weight: 500; }
   .bench-hud { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; min-height: 26px; padding: 3px 12px; border-top: 1px solid var(--hair); background: var(--bar); color: var(--muted); font-size: 11.5px; }
   .bench-hud i { display: inline-block; width: 11px; height: 11px; margin-right: 6px; vertical-align: -1px; background: var(--sw); border: 1px solid var(--edge); }
-  .bench-hud .in { --sw: transparent; border: 2px solid var(--ok); }
-  .bench-hud .out { --sw: transparent; border: 2px solid var(--exit); }
+  .bench-hud .chip { display: inline-block; margin-right: 6px; padding: 0 5px; vertical-align: 0; color: var(--bg); font: 600 10px/14px var(--font-mono); }
+  .bench-hud .chip.in { background: var(--ok); }
+  .bench-hud .chip.out { background: var(--exit); }
+  .bench-hud .chip.leaf { width: 11px; height: 11px; padding: 0; background: var(--map-rect); opacity: .6; }
+  .bench-hud .chip.dot { width: 9px; height: 9px; padding: 0; border-radius: 50%; background: var(--bg); border: 1px solid var(--edge); }
   .bench-cmd { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; padding: 6px 12px; background: var(--bar); border-top: 1px solid var(--hair); }
   .bench-cmd .prompt { color: var(--amber); }
   .bench-cmd label { color: var(--muted); }
@@ -249,6 +252,10 @@
   .tapiti-floor .cellgrid line { stroke: var(--map-grid); stroke-width: 2; }
   .tapiti-floor .rule line { stroke: var(--muted); stroke-width: 2; }
   .tapiti-floor .rule text { fill: var(--muted); font: 500 20px var(--font-mono); }
+  .tapiti-floor .badges rect { fill: var(--ok); }
+  .tapiti-floor .badges .out rect { fill: var(--exit); }
+  .tapiti-floor .badges text { fill: var(--bg); font: 600 24px var(--font-mono); }
+  .rule-row .cross { color: var(--error); font-weight: 700; }
 
   /* A plate: the floor on a grid and a one-line caption under it. */
   .plan { margin: 0; border: 1px solid var(--border); background: var(--bg); }
@@ -370,4 +377,18 @@
   @media (forced-colors: active) {
     .setting-choices input:checked + span { background: Highlight; color: HighlightText; border-color: Highlight; forced-color-adjust: none; }
   }
+}
+
+/* Print: the page without the chrome, in the light colours, with the address of every link. */
+@media print {
+  :root, :root[data-theme="dark"] { color-scheme: light; --bg: #fff; --text: #000; --muted: #333; --measure: #000; --hair: #bbb; --border: #666; --panel: #fff; --element: #eee; --bar: #fff; }
+  html { background: #fff; zoom: 1 !important; }
+  .site-header, .site-footer, .skip-link, .settings-dialog, .docs-nav, .docs-toc, .docs-toc-mobile, .copy, .anchor, .bench-cmd { display: none !important; }
+  .docs { display: block; padding: 0; max-width: none; }
+  .docs-content { display: block; }
+  .docs-article { max-width: none; color: #000; font-size: 11pt; }
+  .docs-article a { color: #000; }
+  .docs-article a[href^="http"]::after { content: " (" attr(href) ")"; font-size: 9pt; color: #333; }
+  pre, .table-wrap, blockquote, math { break-inside: avoid; }
+  pre { white-space: pre-wrap; border: 1px solid #999; padding: 8px; }
 }

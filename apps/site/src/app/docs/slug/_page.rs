@@ -16,10 +16,14 @@ use crate::{
 #[page(
     with(Metadata::from_fn(
         async |cx| {
-            let title = docs().page(slug(cx)).map(|found| found.title.clone());
+            let found = docs()
+                .page(slug(cx))
+                .map(|found| (found.title.clone(), found.description.clone()));
             Ok(
-                match title {
-                    Some(title) => Metadata::new().title(format!("{title} · Tapiti")),
+                match found {
+                    Some((title, description)) => Metadata::new()
+                        .title(format!("{title} · Tapiti"))
+                        .description(description),
                     None => Metadata::new().robots(
                         Robots::new().index(false).follow(false),
                     ),
@@ -36,6 +40,22 @@ pub async fn page(cx: &Cx) -> Result<impl View> {
             super::super::frame(
                 current: page.slug,
                 <div class="docs-content">
+                    // Below 1100 px the side outline is gone, so the page has its own, folded, above the text.
+                    <details class="docs-toc-mobile">
+                        <summary>(t!(docs_toc_label))</summary>
+                        <ul>
+                            for entry in page
+                                .toc
+                                .iter()
+                                .filter(|entry| entry.level <= 3) {
+                                <li class=(if entry.level > 2 { "sub" } else { "" })>
+                                    <a href=(format!("#{}", entry.id))>
+                                        (entry.text.as_str())
+                                    </a>
+                                </li>
+                            }
+                        </ul>
+                    </details>
                     <article class="docs-article">
                         (body)
                         <p class="docs-edit">

@@ -22,6 +22,10 @@ pub async fn not_found(cx: &Cx) -> Result<impl View> {
                 <a href=(href!(crate::app::_page::page))>(t!(missing_back))</a>
                 " · "
                 <a href=(href!(crate::app::docs::_page::page))>(t!(nav_docs))</a>
+                " · "
+                <a href=(href!(crate::app::lab::page))>(t!(nav_lab))</a>
+                " · "
+                <a href=(href!(crate::app::search::page))>(t!(missing_search))</a>
             </p>
         </section>
     })

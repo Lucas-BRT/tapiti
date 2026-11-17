@@ -114,6 +114,8 @@ pub struct Page {
     pub math_rendered: usize,
     /// Where to read or edit the source on GitHub.
     pub source_url: String,
+    /// What the page says first, in a sentence or two, for the page's own description in the search engines and the link previews.
+    pub description: String,
 }
 
 pub struct Docs {
@@ -410,6 +412,7 @@ fn render(markdown: &str, slug: &'static str) -> Page {
         )
         .replace("<pre>", "<pre tabindex=\"0\">")
         .replace("</table>", "</table></div>");
+    let description = first_paragraph(&html_out);
     Page {
         slug,
         title,
@@ -419,7 +422,42 @@ fn render(markdown: &str, slug: &'static str) -> Page {
         math_spans,
         math_rendered,
         source_url: String::new(),
+        description,
     }
+}
+
+/// The text of the first paragraph of a page's HTML, without tags, cut at a word near 170 characters.
+fn first_paragraph(html: &str) -> String {
+    let Some(start) = html.find("<p>") else {
+        return String::new();
+    };
+    let rest = &html[start + 3..];
+    let end = rest.find("</p>").unwrap_or(rest.len());
+    let mut text = String::new();
+    let mut in_tag = false;
+    for c in rest[..end].chars() {
+        match c {
+            '<' => in_tag = true,
+            '>' => in_tag = false,
+            c if !in_tag => text.push(c),
+            _ => {}
+        }
+    }
+    let text = text
+        .replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'");
+    let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    if text.chars().count() <= 170 {
+        return text;
+    }
+    let cut: String = text.chars().take(170).collect();
+    format!(
+        "{}…",
+        cut.rsplit_once(' ').map_or(cut.as_str(), |(head, _)| head)
+    )
 }
 
 fn heading_number(level: HeadingLevel) -> u8 {
@@ -499,11 +537,50 @@ fn parameters_page() -> Page {
         math_spans: 0,
         math_rendered: 0,
         source_url: format!("{GITHUB_BLOB}/crates/tapiti-schema/src/lib.rs"),
+        description: "Every parameter of Λ: its name in code, what it accepts, its default in each size and what it does.".to_string(),
     }
 }
 
+/// The default of a parameter in each of the four sizes, as text: one value when the sizes agree, else `small 1 · medium 2 · …`.
+fn defaults_text(field: &tapiti_schema::ParamField, sizes: &[serde_json::Value]) -> String {
+    let show = |value: Option<&serde_json::Value>| match (value, &field.kind) {
+        (None, _) | (Some(serde_json::Value::Null), _) => "—".to_string(),
+        (Some(serde_json::Value::Bool(b)), _) => if *b { "on" } else { "off" }.to_string(),
+        (Some(serde_json::Value::String(text)), FieldKind::Choice(options)) => options
+            .iter()
+            .find(|(value, _)| value == text)
+            .map_or(text.clone(), |(_, name)| name.as_str().to_string()),
+        (Some(value), FieldKind::Choice(options)) => {
+            let text = value.to_string();
+            options
+                .iter()
+                .find(|(v, _)| *v == text)
+                .map_or(text, |(_, name)| name.as_str().to_string())
+        }
+        (Some(value), _) => value.to_string(),
+    };
+    let at = |size: &'_ serde_json::Value| -> Option<serde_json::Value> {
+        field
+            .path
+            .split('.')
+            .try_fold(size, |value, key| value.get(key))
+            .cloned()
+    };
+    let texts: Vec<String> = sizes.iter().map(|size| show(at(size).as_ref())).collect();
+    if texts.iter().all(|t| *t == texts[0]) {
+        return texts[0].clone();
+    }
+    ["small", "medium", "large", "huge"]
+        .iter()
+        .zip(&texts)
+        .map(|(name, text)| format!("{name} {text}"))
+        .collect::<Vec<_>>()
+        .join(" · ")
+}
+
 fn group_table(html: &mut String, group: &ParamGroup) {
-    let head = ["Parameter", "Name", "Values", "What it does"];
+    let sizes: Vec<serde_json::Value> = (1..=4).map(tapiti_render::readout::full_params).collect();
+    let head = ["Parameter", "Name", "Values", "Default", "What it does"];
     let _ = write!(
         html,
         "<div class=\"table-wrap\" tabindex=\"0\"><table><thead><tr>"
@@ -530,10 +607,12 @@ fn group_table(html: &mut String, group: &ParamGroup) {
         };
         let _ = write!(
             html,
-            "<tr><td><code>{}</code></td><td>{}</td><td>{}</td><td>{}</td></tr>",
+            "<tr id=\"param-{}\"><td><code>{}</code></td><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>",
+            field.path.replace('.', "-"),
             escape(&field.path),
             escape(field.label.as_str()),
             escape(&values),
+            escape(&defaults_text(field, &sizes)),
             escape(field.help.as_str())
         );
     }
@@ -548,7 +627,8 @@ pub struct Hit {
     pub page_title: String,
     pub heading: String,
     pub id: String,
-    pub snippet: String,
+    /// The snippet of the section, escaped, with the words that were searched for in `<mark>`.
+    pub snippet_html: String,
 }
 
 /// Longest query accepted, in characters.
@@ -591,7 +671,7 @@ pub fn search(query: &str) -> Vec<Hit> {
                         section.heading.clone()
                     },
                     id: section.id.clone(),
-                    snippet: snippet(&section.text, &words[0]),
+                    snippet_html: mark_words(&snippet(&section.text, &words[0]), &words),
                 },
             ));
         }
@@ -601,6 +681,37 @@ pub fn search(query: &str) -> Vec<Hit> {
 }
 
 /// About 160 characters of `text` around the first occurrence of `word`.
+/// `text` escaped, with each of `words` (any case) wrapped in `<mark>`.
+fn mark_words(text: &str, words: &[String]) -> String {
+    let chars: Vec<char> = text.chars().collect();
+    let lower: Vec<char> = text.to_lowercase().chars().collect();
+    if lower.len() != chars.len() {
+        return escape(text);
+    }
+    let needles: Vec<Vec<char>> = words.iter().map(|w| w.chars().collect()).collect();
+    let mut out = String::new();
+    let mut i = 0;
+    while i < chars.len() {
+        let hit = needles
+            .iter()
+            .filter(|n| !n.is_empty() && lower[i..].starts_with(n))
+            .map(Vec::len)
+            .max();
+        match hit {
+            Some(len) => {
+                let word: String = chars[i..i + len].iter().collect();
+                out.push_str(&format!("<mark>{}</mark>", escape(&word)));
+                i += len;
+            }
+            None => {
+                out.push_str(&escape(&chars[i].to_string()));
+                i += 1;
+            }
+        }
+    }
+    out
+}
+
 fn snippet(text: &str, word: &str) -> String {
     let chars: Vec<char> = text.chars().collect();
     let lower: Vec<char> = text.to_lowercase().chars().collect();
@@ -777,5 +888,13 @@ mod tests {
                 );
             }
         }
+        // Every parameter has a row of its own to link to, and says its default.
+        for group in tapiti_schema::groups() {
+            for field in &group.fields {
+                let id = format!("id=\"param-{}\"", field.path.replace('.', "-"));
+                assert!(page.html.contains(&id), "{}", field.path);
+            }
+        }
+        assert!(page.html.contains("<th>Default</th>"));
     }
 }

@@ -146,7 +146,7 @@ fn field_help(field: &ParamField) -> String {
 
 #[page(
     with(Metadata::new()
-        .title("Lab")
+        .title("Lab · Tapiti")
         .description(
             "Generate a floor in your browser with WebAssembly. Every parameter of the model is a field you can edit.",
         ))
@@ -499,6 +499,9 @@ pub async fn page(cx: &Cx) -> Result<impl View> {
                 </p>
             </section>
             <section id="results" class="lab-panel" aria-label=(e!(lab_results_aria))>
+                <button type="button" class="drawer-close" id="reading-close">
+                    (e!(lab_reading_close))
+                </button>
                 <div id="selected-room"></div>
                 <div id="results-body">
                     <p class="status-line">(e!(lab_loading))</p>

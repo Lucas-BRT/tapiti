@@ -22,6 +22,11 @@
   input[type=search]:focus-visible { outline-offset: 1px; }
   input[type=search]::placeholder { color: var(--muted); }
 
+  .docs-toc-mobile { display: none; margin: 0 0 20px; border: 1px solid var(--hair); }
+  .docs-toc-mobile summary { padding: 8px 12px; background: var(--element); font: 500 13px var(--font-mono); cursor: pointer; }
+  .docs-toc-mobile ul { margin: 0; padding: 6px 0; list-style: none; }
+  .docs-toc-mobile a { display: block; padding: 5px 12px; color: var(--muted); font: 400 13px var(--font-mono); text-decoration: none; }
+  .docs-toc-mobile li.sub a { padding-left: 28px; }
   .docs-content { display: grid; grid-template-columns: minmax(0, 1fr) 14rem; gap: clamp(24px, 4vw, 56px); align-items: start; }
   .docs-article { min-width: 0; max-width: 72ch; color: var(--text); line-height: 1.7; font: 400 16px/1.7 var(--font-sans); }
   .docs-article > :first-child { margin-top: 0; }
@@ -94,13 +99,14 @@
   @media (max-width: 1100px) {
     .docs-content { grid-template-columns: 1fr; }
     .docs-toc { display: none; }
+    .docs-toc-mobile { display: block; }
   }
   @media (max-width: 860px) {
     .docs { grid-template-columns: 1fr; padding-top: 16px; gap: 8px; }
     .docs-nav { position: static; max-height: none; overflow: visible; }
     .docs-side-title { margin-top: 14px; }
     /* The page list becomes one scrolling row, the group names between the pages. */
-    .docs-groups { display: flex; align-items: center; gap: 2px; overflow-x: auto; margin-inline: calc(-1 * var(--gutter)); padding: 0 var(--gutter) 8px; scrollbar-width: none; }
+    .docs-groups { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 2px; padding: 0 0 8px; }
     .docs-group, .docs-group > ul { display: contents; }
     .docs-group + .docs-group { margin-top: 0; }
     .docs-group-title { flex: none; padding: 4px 6px 4px 12px; background: none; border: 0; color: var(--muted); font: 400 12px var(--font-mono); white-space: nowrap; }
