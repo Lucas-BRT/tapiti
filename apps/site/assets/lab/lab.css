@@ -1,11 +1,11 @@
 /* The lab: Operate mode. Controls on the left, the map in the middle, the reading of the floor on the right. Colours come from the site's
    tokens. Below 1280px the reading becomes a drawer; below 1000px the map comes first and the two panels become tabs. */
 .lab {
-  --role-entrance: var(--ok); --role-exit: var(--amber); --role-plain: var(--plate);
+  --role-entrance: var(--ok); --role-exit: var(--exit); --role-plain: var(--plate);
   --lab-top: var(--header-h);
   position: relative;
   display: grid;
-  grid-template-columns: 372px minmax(0, 1fr) 328px;
+  grid-template-columns: 372px minmax(0, 1fr) var(--reading-w, 328px);
   height: calc(100dvh - var(--lab-top));
   min-height: 480px;
   border-bottom: 1px solid var(--rule);
@@ -22,7 +22,9 @@
 #floor-map { display: block; width: 100%; height: 100%; touch-action: none; }
 #floor-map { cursor: grab; }
 #floor-map.dragging { cursor: grabbing; }
-.lab :focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
+.lab :focus-visible { outline: 2px solid var(--measure); outline-offset: 2px; }
+/* The plan's ring is inside it: the plan clips whatever is drawn outside its box. */
+#floor-map:focus-visible { outline-offset: -4px; }
 
 .lab h1 { margin: 0 0 6px; font: 600 1.9rem/1.05 var(--font-display); font-synthesis: none; }
 .lab h2 { margin: 0; font: 600 14px/1.3 var(--font-display); font-synthesis: none; letter-spacing: 0; color: var(--ink); }
@@ -36,7 +38,7 @@
 .lab button { cursor: pointer; }
 .secondary-button, .icon-button, .experiment-button, .map-tool-button, .text-button {
   border: 1px solid var(--rule-strong); border-radius: var(--radius-sm); background: var(--control); color: var(--ink);
-  transition: border-color .15s, background-color .15s;
+  transition: border-color var(--t, 150ms), background-color var(--t, 150ms);
 }
 .secondary-button:hover, .icon-button:hover, .experiment-button:hover, .map-tool-button:hover { border-color: var(--ink-2); background: var(--control-hover); }
 .secondary-button:active, .icon-button:active, .map-tool-button:active, .size-button:active { transform: translateY(1px); }
@@ -60,13 +62,13 @@
 .secondary-button { min-height: 36px; padding: 6px 12px; font-size: .92rem; font-weight: 700; }
 .action-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
 .changed-status { margin: 8px 0 0; color: var(--ink-2); font-size: .88rem; }
-.changed-status.changed { color: var(--link); font-weight: 700; }
+.changed-status.changed { color: var(--amber); font-weight: 700; }
 
 details.howto, details.tool-group, details.result-group, details.parameter-group { margin-top: 8px; border: 1px solid var(--rule); border-radius: var(--radius-md); background: var(--surface); }
 details[open] { background: var(--control); }
 details > summary { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 44px; padding: 8px 12px; border-radius: var(--radius-md); cursor: pointer; font-weight: 700; list-style: none; }
 details > summary::-webkit-details-marker { display: none; }
-details > summary::after { content: ""; flex: none; width: 8px; height: 8px; margin: 0 4px 3px auto; border: solid var(--ink-2); border-width: 0 2px 2px 0; transform: rotate(45deg); transition: transform .15s; }
+details > summary::after { content: ""; flex: none; width: 8px; height: 8px; margin: 0 4px 3px auto; border: solid var(--ink-2); border-width: 0 2px 2px 0; transform: rotate(45deg); transition: transform var(--t, 150ms); }
 details[open] > summary::after { transform: rotate(-135deg); margin-bottom: -3px; }
 details > summary:hover { background: var(--control); }
 details > :not(summary) { margin-left: 12px; margin-right: 12px; }
@@ -93,17 +95,17 @@ details > :last-child { margin-bottom: 12px; }
 
 .help-button { flex: none; width: 22px; height: 22px; padding: 0; border: 1px solid transparent; border-radius: 0; background: transparent; color: var(--ink-2); font-size: .74rem; font-weight: 700; line-height: 1; }
 .help-button:hover, .help-button:focus-visible, .help-button[aria-expanded=true] { border-color: var(--link); color: var(--link); }
-.help-tooltip { position: fixed; z-index: 40; padding: 9px 11px; border: 1px solid var(--rule-strong); border-radius: var(--radius-sm); background: var(--surface); box-shadow: var(--shadow-float); font-size: .88rem; pointer-events: none; }
+.help-tooltip { position: fixed; z-index: 40; padding: 9px 11px; border: 1px solid var(--rule-strong); border-radius: var(--radius-sm); background: var(--surface); font-size: .88rem; pointer-events: none; }
 
 /* The map's own tools. */
-.map-toolbar { position: absolute; top: 14px; left: 14px; right: 14px; z-index: 6; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; width: fit-content; max-width: calc(100% - 28px); padding: 5px; background: var(--surface); border: 1px solid var(--rule); border-radius: var(--radius-md); box-shadow: var(--shadow-float); }
+.map-toolbar { position: absolute; top: 14px; left: 14px; right: 14px; z-index: 6; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; width: fit-content; max-width: calc(100% - 28px); padding: 5px; background: var(--surface); border: 1px solid var(--rule); border-radius: var(--radius-md); }
 .map-tool-button { min-width: 36px; min-height: 34px; padding: 0 11px; font-weight: 700; font-size: .92rem; }
 .reading-toggle { display: none; }
 .zoom-label { min-width: 3.4em; text-align: center; color: var(--ink-2); font-size: .85rem; }
 .map-instructions { position: absolute; bottom: 12px; left: 50%; margin: 0; padding: 4px 12px; transform: translateX(-50%); width: max-content; max-width: calc(100% - 24px); text-align: center; color: var(--ink-2); background: var(--bg); border-radius: 0; font-size: .88rem; pointer-events: none; }
 @media (pointer: coarse) { .map-instructions { display: none; } }
 .map-tooltip { position: absolute; z-index: 5; max-width: 260px; padding: 8px 10px; border: 1px solid var(--rule-strong); border-radius: var(--radius-sm); background: var(--surface); font-size: .85rem; white-space: pre-line; pointer-events: none; }
-.toast { position: fixed; bottom: 18px; left: 50%; z-index: 50; transform: translateX(-50%); padding: 9px 14px; border: 1px solid var(--rule-strong); border-radius: var(--radius-sm); background: var(--surface); box-shadow: var(--shadow-float); }
+.toast { position: fixed; bottom: 18px; left: 50%; z-index: 50; transform: translateX(-50%); padding: 9px 14px; border: 1px solid var(--rule-strong); border-radius: var(--radius-sm); background: var(--surface); }
 
 /* The reading of the floor. */
 .panel-header { margin-bottom: 14px; }
@@ -129,8 +131,8 @@ details > :last-child { margin-bottom: 12px; }
 /* Below 1280px: the reading is a drawer, opened from the map's toolbar. */
 @media (max-width: 1279px) {
   .lab { grid-template-columns: 356px minmax(0, 1fr); }
-  #results { position: absolute; top: 0; right: 0; bottom: 0; z-index: 15; width: min(340px, 90%); transform: translateX(100%); visibility: hidden; transition: transform .2s var(--ease-out), visibility 0s .2s; border-left: 1px solid var(--rule-strong); }
-  .lab[data-reading="open"] #results { transform: none; visibility: visible; transition: transform .2s var(--ease-out); }
+  #results { position: absolute; top: 0; right: 0; bottom: 0; z-index: 15; width: min(340px, 90%); transform: translateX(100%); visibility: hidden; transition: transform var(--t, 200ms) var(--ease-out), visibility 0s .2s; border-left: 1px solid var(--rule-strong); }
+  .lab[data-reading="open"] #results { transform: none; visibility: visible; transition: transform var(--t, 200ms) var(--ease-out); }
   .reading-toggle { display: inline-flex; align-items: center; }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -159,3 +161,91 @@ details > :last-child { margin-bottom: 12px; }
   #view { background: Canvas; }
   .shape-chip i, .legend-item i { forced-color-adjust: none; border: 1px solid CanvasText; }
 }
+
+/* Skip link, messages, selection, rules, and the other parts the interaction model added. */
+.skip-to-plan { position: absolute; left: 8px; top: 8px; z-index: 30; padding: 6px 12px; background: var(--primary); color: var(--on-primary); font-weight: 500; }
+.skip-to-plan:not(:focus) { width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.lab[aria-busy="true"] #controls { opacity: .6; }
+
+.lab-messages { position: absolute; left: 50%; bottom: 14px; z-index: 50; display: grid; gap: 6px; width: min(560px, calc(100% - 24px)); transform: translateX(-50%); pointer-events: none; }
+.lab-message { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; padding: 8px 10px; border: 1px solid var(--rule-strong); background: var(--surface); color: var(--ink); pointer-events: auto; }
+.lab-message.error { border-color: var(--danger); color: var(--danger); }
+.message-close { flex: none; width: 24px; height: 24px; padding: 0; border: 1px solid transparent; background: transparent; line-height: 1; }
+.message-close:hover { border-color: var(--rule-strong); }
+.lab-progress { margin-left: 6px; color: var(--ink-2); font-size: .85rem; }
+.map-tool-button:disabled, .secondary-button:disabled { opacity: .45; cursor: default; }
+
+.field { position: relative; }
+.field.changed .field-title label::before { content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 6px; background: var(--amber); vertical-align: 2px; }
+.field.changed .field-title label { color: var(--amber); }
+.field-reset { flex: none; width: 24px; height: 24px; padding: 0; border: 1px solid var(--rule-strong); background: var(--control); line-height: 1; }
+.field.unused { opacity: .62; }
+.field-note { color: var(--ink-2); font-size: .8rem; }
+.field-note:empty { display: none; }
+.group-count.changed { color: var(--amber); }
+.param-filter { display: grid; gap: 4px; margin: 8px 0 4px; font-weight: 700; }
+.param-filter input { min-height: 36px; padding: 5px 8px; border: 1px solid var(--rule-strong); background: var(--bg); font-weight: 400; }
+
+.tint-list { margin: 10px 0 0; padding: 0; border: 0; display: grid; gap: 4px; }
+.tint-list legend { margin-bottom: 4px; padding: 0; font-weight: 700; }
+.tint-list label { display: flex; align-items: center; gap: 8px; }
+.tint-list label:has(input:disabled) { color: var(--ink-2); }
+.level-picker { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-weight: 700; }
+.level-picker select { padding: 4px 8px; border: 1px solid var(--rule-strong); background: var(--bg); }
+.overlay-option { justify-content: space-between; }
+.overlay-option label { display: flex; align-items: center; gap: 8px; }
+
+.stale-note { margin: 0 0 10px; padding: 6px 8px; color: var(--amber); border: 1px solid var(--amber); font-size: .88rem; }
+#results-body.stale { opacity: .6; }
+.selected-card { margin: 0 0 14px; padding: 10px 12px; border: 1px solid var(--amber); }
+.selected-text { margin: 0 0 6px; white-space: pre-line; color: var(--amber); }
+.validity-body { flex: 1; min-width: 0; }
+.validity-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.hash { color: var(--ink-2); font-size: .85rem; font-variant-numeric: tabular-nums; }
+.rule-list { margin: 8px 0 0; padding: 0; list-style: none; display: grid; gap: 6px; }
+.rule { display: grid; grid-template-columns: auto 1fr; gap: 2px 8px; }
+.rule-mark { color: var(--ok); font-weight: 700; }
+.rule.failed .rule-mark { color: var(--danger); }
+.rule-name { font-weight: 700; }
+.rule-detail { grid-column: 2; color: var(--ink-2); font-size: .82rem; }
+.rule .violation-list { grid-column: 2; margin: 2px 0 0; padding-left: 0; list-style: none; }
+.violation { display: block; width: 100%; padding: 3px 0; border: 0; background: none; color: var(--danger); text-align: left; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.violation:disabled { cursor: default; text-decoration: none; }
+.measures td { white-space: nowrap; }
+.measures .bar { display: inline-block; width: 64px; height: 6px; margin-right: 8px; background: var(--hair); vertical-align: middle; }
+.measures .bar i { display: block; height: 100%; background: var(--measure); }
+.numbers-group h4 { margin: 8px 0 2px; font: 600 13px var(--font-display); }
+.chip { display: inline-block; min-width: 20px; padding: 0 4px; color: var(--bg); font: 600 10px/14px var(--font-mono); text-align: center; }
+.legend-item .dot { border-radius: 50%; background: var(--control); border: 1px solid var(--ink); }
+.legend-item .tick { width: 12px; height: 2px; background: var(--ink); fill: none; stroke: none; }
+.legend-item .pick { border: 2px solid var(--amber); background: transparent; }
+.ramp { display: flex; align-items: center; gap: 8px; font-size: .85rem; }
+.ramp i { flex: 1; height: 8px; }
+
+.lab-dialog { width: min(520px, calc(100vw - 32px)); padding: 16px 20px; color: var(--ink); background: var(--surface); border: 1px solid var(--rule-strong); }
+.lab-dialog::backdrop { background: rgb(0 0 0 / .55); }
+.lab-dialog textarea { width: 100%; font: 12px var(--font-mono); color: var(--ink); background: var(--bg); border: 1px solid var(--rule-strong); }
+.dialog-actions { display: flex; gap: 8px; margin-top: 12px; }
+.keys-list { margin: 8px 0 0; padding-left: 18px; display: grid; gap: 4px; }
+
+/* The reading panel as the settings ask for it. */
+@media (min-width: 1280px) {
+  .lab[data-reading-mode="hidden"] { grid-template-columns: 372px minmax(0, 1fr); }
+  .lab[data-reading-mode="hidden"] #results { position: absolute; top: 0; right: 0; bottom: 0; z-index: 15; width: min(340px, 90%); transform: translateX(100%); visibility: hidden; transition: transform var(--t, 200ms) var(--ease-out), visibility 0s var(--t, 200ms); border-left: 1px solid var(--rule-strong); }
+  .lab[data-reading-mode="hidden"][data-reading="open"] #results { transform: none; visibility: visible; transition: transform var(--t, 200ms) var(--ease-out); }
+  .lab[data-reading-mode="hidden"] .reading-toggle { display: inline-flex; align-items: center; }
+}
+
+/* Pocket: a short screen (a phone held sideways, a page at 200% zoom) cannot give half of it to a map that never scrolls away. */
+@media (max-width: 999px) {
+  #view { height: clamp(180px, 42dvh, 55dvh); min-height: 0; }
+  .lab-tabs { top: calc(var(--lab-top) + clamp(180px, 42dvh, 55dvh)); }
+}
+@media (max-width: 999px) and (max-height: 600px) {
+  #view { position: relative; top: auto; height: clamp(180px, 60dvh, 320px); }
+  .lab-tabs { position: static; }
+}
+@media (max-width: 999px) {
+  .lab-messages { position: fixed; bottom: 10px; }
+}
+[data-motion="off"] #results, [data-motion="off"] .lab[data-reading="open"] #results { transition: none; }

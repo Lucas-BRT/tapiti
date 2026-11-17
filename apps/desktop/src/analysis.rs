@@ -116,13 +116,7 @@ fn phase_name(name: &str) -> &'static str {
 }
 
 /// The five rules and what each one checks, in few words.
-const RULES: [(&str, &str, &str); 5] = [
-    ("V1", "connectivity", "every room reached"),
-    ("V2", "clearances", "rooms and corridors apart"),
-    ("V3", "doors", "fit and separated"),
-    ("V4", "corridors", "angles, bends, lengths"),
-    ("V5", "entrance, exit", "present, far enough"),
-];
+use tapiti_render::readout::RULES;
 
 /// A check mark or a cross, drawn: Plex Mono has neither glyph.
 fn mark(ui: &mut Ui, ok: bool) {

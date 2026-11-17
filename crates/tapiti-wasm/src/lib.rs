@@ -4,6 +4,7 @@
 //! The browser calls [`stage_json`]: the stage, its violations and its measures come back as one JSON string, so the page only draws.
 
 use tapiti_core::{clock, generate, metrics, par, params, stage};
+use tapiti_render::{readout, relevance, view};
 
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
@@ -16,6 +17,64 @@ struct Answer<'a> {
     metrics: metrics::Metrics,
     /// Milliseconds the generation took inside the module (when the host gave a clock), for the page's panel.
     ms: f64,
+    /// The measures, as the desktop app and the landing page read them (one id, label, value, share and explanation each).
+    readout: Vec<ReadoutRow>,
+    /// The five rules: code, name, what each checks.
+    rules: Vec<[&'static str; 3]>,
+    /// A hash of the seed and the Λ of the floor: the same hash is the same floor, in the browser and in the desktop app.
+    hash: String,
+    /// The environment layers the floor carries, each with a colour per room (by room id) and its scale.
+    tints: Vec<Tint>,
+}
+
+#[derive(Serialize)]
+struct ReadoutRow {
+    id: &'static str,
+    label: &'static str,
+    value: String,
+    share: Option<f32>,
+    tip: String,
+}
+
+#[derive(Serialize)]
+struct Tint {
+    id: &'static str,
+    label: &'static str,
+    unit: &'static str,
+    /// The ends of the scale, as the inspector prints them.
+    lo: String,
+    hi: String,
+    /// The colour of each room as `#rrggbb`, or `null` for a dead room.
+    colors: Vec<Option<String>>,
+    /// The two ends of the colour ramp, for the legend.
+    ramp: [String; 2],
+}
+
+fn hex(c: [u8; 3]) -> String {
+    format!("#{:02x}{:02x}{:02x}", c[0], c[1], c[2])
+}
+
+fn tints_of(floor: &generate::Floor) -> Vec<Tint> {
+    view::Channel::ALL
+        .into_iter()
+        .filter(|c| c.available(floor))
+        .filter_map(|c| {
+            let scale = view::scale(floor, c)?;
+            let colors = view::room_values(floor, c)
+                .into_iter()
+                .map(|v| v.map(|v| hex(view::color(c, view::position(scale, v)))))
+                .collect();
+            Some(Tint {
+                id: c.id(),
+                label: c.label(),
+                unit: c.unit(),
+                lo: view::format_value(c, scale.0),
+                hi: view::format_value(c, scale.1),
+                colors,
+                ramp: [hex(view::color(c, 0.0)), hex(view::color(c, 1.0))],
+            })
+        })
+        .collect()
 }
 
 /// Λ of a size (1 small, 2 medium, 3 large, 4 huge) as JSON.
@@ -68,10 +127,41 @@ pub fn stage_json(seed: u32, params_json: &str) -> Result<String, JsError> {
         floor: &s.d,
         violations: &s.violations,
         draws: s.draws,
+        readout: readout::rows(&m)
+            .into_iter()
+            .map(|r| ReadoutRow {
+                id: r.id,
+                label: r.label,
+                value: r.value,
+                share: r.share,
+                tip: r.tip,
+            })
+            .collect(),
+        rules: readout::RULES
+            .iter()
+            .map(|(a, b, c)| [*a, *b, *c])
+            .collect(),
+        hash: readout::floor_hash(seed, &s.d.params),
+        tints: tints_of(&s.d),
         metrics: m,
         ms,
     })
     .map_err(|e| JsError::new(&e.to_string()))
+}
+
+/// Of the parameter paths in `paths_json` (a JSON array of strings), those that cannot change the floor under the Λ in `params_json`:
+/// the form greys them out. The same rules as the desktop app's.
+#[wasm_bindgen]
+pub fn inapplicable(params_json: &str, paths_json: &str) -> Result<String, JsError> {
+    let p: params::Params =
+        serde_json::from_str(params_json).map_err(|e| JsError::new(&format!("bad Λ: {e}")))?;
+    let paths: Vec<String> = serde_json::from_str(paths_json)
+        .map_err(|e| JsError::new(&format!("bad list of paths: {e}")))?;
+    let out: Vec<&String> = paths
+        .iter()
+        .filter(|path| !relevance::applies(path, &p))
+        .collect();
+    serde_json::to_string(&out).map_err(|e| JsError::new(&e.to_string()))
 }
 
 /// The ground of a height layer that runs before the layout, at the point `(x, y)`, for the seed and the Λ in `params_json`: to draw a

@@ -38,7 +38,19 @@ fn dictionary() -> String {
         }};
     }
     let map = dict! {
-        lab_map_instructions,
+        lab_map_instructions, lab_map_label(rooms, state),
+        lab_load_failed_title, lab_load_failed_detail(error), lab_reload, lab_loading_status,
+        lab_generating(size), lab_stale, lab_msg_close,
+        lab_err_field_int(label, min, max), lab_err_field_range(label, min, max),
+        lab_undo_done, lab_redo_done, lab_nothing_undo, lab_nothing_redo,
+        lab_reset_field(label, value), lab_changed_field(value), lab_changed_one, lab_changed_group(n, total),
+        lab_link_copied, lab_paste_bad(error), lab_pasted, lab_not_used,
+        lab_selected_title, lab_selected_hint(doors), lab_picked(id), lab_released,
+        lab_rules_title, lab_measures_title, lab_hash, lab_hash_help, lab_more_numbers,
+        lab_tint_shape, lab_tint_relative, lab_tint_scale(label, lo, hi), lab_tint_unavailable,
+        lab_level_n(n), lab_legend_leaf, lab_legend_junction, lab_legend_door, lab_legend_picked,
+        lab_legend_stairs, lab_legend_in, lab_legend_out, lab_legend_colours,
+        lab_state_valid, lab_state_invalid(n), lab_filter_none, lab_developer_done, lab_keys_off,
         lab_size_1, lab_size_2, lab_size_3, lab_size_4,
         lab_seed_error, lab_copied, lab_no_clipboard,
         lab_changed_none, lab_changed_some(n),
@@ -143,6 +155,11 @@ pub async fn page(cx: &Cx) -> Result<impl View> {
     let groups = tapiti_schema::groups();
     let sizes_help = e!(lab_sizes_help);
     let seed_help = e!(lab_seed_help);
+    let keys = e!(lab_keys_list).into_owned();
+    let seed_name = e!(lab_seed);
+    let sizes_name = e!(lab_sizes_title);
+    let overlays_name = e!(lab_overlays_title);
+    let params_name = e!(lab_params_title);
     let overlays_help = e!(lab_overlays_help);
     let params_help = e!(lab_params_help);
     let overlays = [
@@ -194,11 +211,14 @@ pub async fn page(cx: &Cx) -> Result<impl View> {
             class="lab"
             lang="en"
             data-tab="controls"
+            aria-busy="true"
             data-i18n=(dictionary())
             data-worker=(asset!("assets/lab/worker.js"))
             data-hatch=(asset!("assets/lab/hatch.js"))
+            data-settings=(asset!("assets/settings.js"))
         >
             <noscript><p class="lab-noscript">(e!(lab_needs_js))</p></noscript>
+            <a class="skip-to-plan" href="#floor-map">(e!(lab_skip_to_plan))</a>
             <div class="lab-tabs" role="tablist" aria-label=(e!(lab_tabs_aria))>
                 <button
                     type="button"
@@ -227,7 +247,7 @@ pub async fn page(cx: &Cx) -> Result<impl View> {
                 <div class="size-section">
                     <div class="section-title">
                         <h2>(e!(lab_sizes_title))</h2>
-                        help_button(text: &sizes_help)
+                        help_button(text: &sizes_help, about: &sizes_name)
                     </div>
                     <div class="size-list">
                         for n in 1..=4 {
@@ -247,7 +267,7 @@ pub async fn page(cx: &Cx) -> Result<impl View> {
                 <div class="seed-card">
                     <label for="seed-input">
                         (e!(lab_seed))
-                        help_button(text: &seed_help)
+                        help_button(text: &seed_help, about: &seed_name)
                     </label>
                     <div class="seed-control">
                         <button
@@ -273,9 +293,13 @@ pub async fn page(cx: &Cx) -> Result<impl View> {
                             max="4294967295"
                             step="1"
                             value="1"
-                            aria-label=(e!(lab_seed_aria))
                         >
-                        <button type="button" class="secondary-button" id="seed-random">
+                        <button
+                            type="button"
+                            class="secondary-button"
+                            id="seed-random"
+                            aria-label=(e!(lab_seed_random_aria))
+                        >
                             (e!(lab_seed_random))
                         </button>
                     </div>
@@ -283,6 +307,12 @@ pub async fn page(cx: &Cx) -> Result<impl View> {
                 <div class="action-row">
                     <button type="button" class="secondary-button" id="copy-params">
                         (e!(lab_copy))
+                    </button>
+                    <button type="button" class="secondary-button" id="copy-link">
+                        (e!(lab_copy_link))
+                    </button>
+                    <button type="button" class="secondary-button" id="paste-params">
+                        (e!(lab_paste))
                     </button>
                     <button type="button" class="secondary-button" id="reset-size">
                         (e!(lab_reset_size))
@@ -295,17 +325,42 @@ pub async fn page(cx: &Cx) -> Result<impl View> {
                 </details>
                 <div class="section-title">
                     <h2>(e!(lab_overlays_title))</h2>
-                    help_button(text: &overlays_help)
+                    help_button(text: &overlays_help, about: &overlays_name)
                 </div>
                 <div class="overlay-list">
                     for (key, name, text, on) in &overlays {
-                        <label class="overlay-option">
-                            <input type="checkbox" data-overlay=(*key) checked=(*on)>
-                            <span>(name.as_ref())</span>
-                            help_button(text: text.as_ref())
-                        </label>
+                        <div class="overlay-option">
+                            <label>
+                                <input type="checkbox" data-overlay=(*key) checked=(*on)>
+                                <span>(name.as_ref())</span>
+                            </label>
+                            help_button(text: text.as_ref(), about: name.as_ref())
+                        </div>
                     }
                 </div>
+                <fieldset class="tint-list" id="tint-list">
+                    <legend>(e!(lab_tint_title))</legend>
+                    <label>
+                        <input type="radio" name="tint" value="shape" checked=(true)>
+                        <span>(e!(lab_tint_shape))</span>
+                    </label>
+                    for (id, name) in [
+                        ("height", "Height"),
+                        ("water", "Water depth"),
+                        ("humidity", "Humidity"),
+                        ("temperature", "Temperature"),
+                        ("light", "Light"),
+                    ] {
+                        <label data-tint=(id)>
+                            <input type="radio" name="tint" value=(id) disabled=(true)>
+                            <span>(name)</span>
+                        </label>
+                    }
+                </fieldset>
+                <label class="level-picker" id="level-picker" hidden=(true)>
+                    <span>(e!(lab_level_label))</span>
+                    <select id="level-select"></select>
+                </label>
                 <details class="tool-group">
                     <summary>(e!(lab_experiments_title))</summary>
                     <p class="group-intro">(e!(lab_experiments_intro))</p>
@@ -324,8 +379,18 @@ pub async fn page(cx: &Cx) -> Result<impl View> {
                 </details>
                 <div class="section-title">
                     <h2>(e!(lab_params_title))</h2>
-                    help_button(text: &params_help)
+                    help_button(text: &params_help, about: &params_name)
                 </div>
+                <label class="param-filter">
+                    <span>(e!(lab_filter_label))</span>
+                    <input
+                        id="param-filter"
+                        type="search"
+                        placeholder=(e!(lab_filter_placeholder))
+                        autocomplete="off"
+                    >
+                </label>
+                <p class="status-line" id="filter-status" role="status"></p>
                 <div class="parameter-groups" id="parameter-groups">
                     for group in &groups {
                         param_group(group: group)
@@ -363,7 +428,7 @@ pub async fn page(cx: &Cx) -> Result<impl View> {
                     id="floor-map"
                     tabindex="0"
                     role="img"
-                    aria-label=(e!(lab_map_label))
+                    aria-label=(e!(lab_map_label, rooms: "0", state: "loading"))
                     aria-describedby="map-instructions"
                 ></canvas>
                 <div class="map-tooltip" id="map-tooltip" role="tooltip" hidden=(true)></div>
@@ -372,6 +437,24 @@ pub async fn page(cx: &Cx) -> Result<impl View> {
                     role="toolbar"
                     aria-label=(e!(lab_toolbar_aria))
                 >
+                    <button
+                        type="button"
+                        class="map-tool-button"
+                        id="undo"
+                        aria-label=(e!(lab_undo_aria))
+                        disabled=(true)
+                    >
+                        (e!(lab_undo))
+                    </button>
+                    <button
+                        type="button"
+                        class="map-tool-button"
+                        id="redo"
+                        aria-label=(e!(lab_redo_aria))
+                        disabled=(true)
+                    >
+                        (e!(lab_redo))
+                    </button>
                     <button
                         type="button"
                         class="map-tool-button"
@@ -409,21 +492,50 @@ pub async fn page(cx: &Cx) -> Result<impl View> {
                     >
                         (e!(lab_reading))
                     </button>
+                    <span class="lab-progress" id="lab-progress" role="status"></span>
                 </div>
                 <p class="map-instructions" id="map-instructions">
                     (e!(lab_map_instructions))
                 </p>
             </section>
             <section id="results" class="lab-panel" aria-label=(e!(lab_results_aria))>
-                <p class="status-line">(e!(lab_loading))</p>
+                <div id="selected-room"></div>
+                <div id="results-body">
+                    <p class="status-line">(e!(lab_loading))</p>
+                </div>
             </section>
-            <div
-                class="toast"
-                id="lab-toast"
-                role="status"
-                aria-live="polite"
-                hidden=(true)
-            ></div>
+            <div class="lab-messages" id="lab-messages"></div>
+            <p class="sr-only" id="lab-live" role="status" aria-live="polite"></p>
+            <dialog id="paste-dialog" class="lab-dialog" aria-labelledby="paste-title">
+                <form method="dialog">
+                    <h2 id="paste-title">(e!(lab_paste_title))</h2>
+                    <p>(e!(lab_paste_text))</p>
+                    <textarea id="paste-text" rows="10" spellcheck="false"></textarea>
+                    <div class="dialog-actions">
+                        <button type="button" class="secondary-button" id="paste-apply">
+                            (e!(lab_paste_apply))
+                        </button>
+                        <button type="submit" class="secondary-button">
+                            (e!(lab_paste_cancel))
+                        </button>
+                    </div>
+                </form>
+            </dialog>
+            <dialog id="keys-dialog" class="lab-dialog" aria-labelledby="keys-title">
+                <form method="dialog">
+                    <h2 id="keys-title">(e!(lab_keys_title))</h2>
+                    <ul class="keys-list">
+                        for line in keys.split('|') {
+                            <li>(line.to_string())</li>
+                        }
+                    </ul>
+                    <div class="dialog-actions">
+                        <button type="submit" class="secondary-button">
+                            (e!(lab_keys_close))
+                        </button>
+                    </div>
+                </form>
+            </dialog>
             <div class="help-tooltip" id="help-tooltip" role="tooltip" hidden=(true)></div>
         </div>
         <script type="module" src=(asset!("assets/lab/lab.js"))></script>
@@ -432,13 +544,15 @@ pub async fn page(cx: &Cx) -> Result<impl View> {
 
 /// The small "?" that shows a text on hover, focus or click. The page script handles it for every button with `data-help`.
 #[component]
-async fn help_button(cx: &Cx, text: &str) -> Result<impl View> {
+async fn help_button(cx: &Cx, text: &str, about: &str) -> Result<impl View> {
+    // The name says what the help is about; the help itself is in the tooltip, which the button describes.
+    let about = about.replace(['\u{2068}', '\u{2069}'], "");
     Ok(view! {
         <button
             type="button"
             class="help-button"
             data-help=(text)
-            aria-label=(e!(lab_help_prefix, text: text))
+            aria-label=(e!(lab_help_about, about: about))
             aria-expanded="false"
             aria-describedby="help-tooltip"
         >
@@ -458,7 +572,9 @@ async fn param_group(cx: &Cx, group: &ParamGroup) -> Result<impl View> {
         >
             <summary>
                 <span>(group.title.as_str())</span>
-                <span class="group-count">(group.fields.len().to_string())</span>
+                <span class="group-count" data-total=(group.fields.len().to_string())>
+                    (group.fields.len().to_string())
+                </span>
             </summary>
             <p class="group-intro">(group.intro.as_str())</p>
             <button type="button" class="text-button group-reset">
@@ -477,10 +593,11 @@ async fn param_field(cx: &Cx, field: &ParamField) -> Result<impl View> {
     let id = format!("param-{}", field.path.replace('.', "-"));
     let help = field_help(field);
     Ok(view! {
-        <div class="field">
+        <div class="field" data-path=(field.path.as_str())>
             <div class="field-title">
                 <label for=(id.as_str())>(field.label.as_str())</label>
-                help_button(text: &help)
+                <button type="button" class="field-reset" hidden=(true)>"×"</button>
+                help_button(text: &help, about: field.label.as_str())
             </div>
             match &field.kind {
                 FieldKind::Boolean => {
@@ -513,10 +630,12 @@ async fn param_field(cx: &Cx, field: &ParamField) -> Result<impl View> {
                         max=(max.to_string())
                         step=(if *integer { "1" } else { "any" })
                         inputmode="decimal"
+                        aria-describedby=(format!("{id}-error"))
                     >
                 }
             }
-            <span class="field-error" aria-live="polite"></span>
+            <span class="field-note" aria-live="polite"></span>
+            <span class="field-error" id=(format!("{id}-error")) aria-live="polite"></span>
         </div>
     })
 }

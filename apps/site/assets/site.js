@@ -1,34 +1,5 @@
 // Progressive enhancement only: the site works without this file.
 (() => {
-  // The theme button cycles the system's, light and dark; the choice is kept and announced to the pages that draw their own pixels.
-  const toggle = document.querySelector(".theme-toggle");
-  if (toggle) {
-    const order = ["system", "light", "dark"];
-    const current = () => {
-      try {
-        const saved = localStorage.getItem("tapiti-theme");
-        return order.includes(saved) ? saved : "system";
-      } catch {
-        return "system";
-      }
-    };
-    const show = () => {
-      toggle.hidden = false;
-      toggle.textContent = current();
-    };
-    toggle.addEventListener("click", () => {
-      const next = order[(order.indexOf(current()) + 1) % order.length];
-      try {
-        localStorage.setItem("tapiti-theme", next);
-      } catch {}
-      if (next === "system") delete document.documentElement.dataset.theme;
-      else document.documentElement.dataset.theme = next;
-      show();
-      window.dispatchEvent(new Event("themechange"));
-    });
-    show();
-  }
-
   // Docs: a copy button on every code block.
   const label = ["Copy", "Copied"];
   for (const pre of document.querySelectorAll(".docs-article pre")) {

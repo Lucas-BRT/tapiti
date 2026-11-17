@@ -38,6 +38,15 @@ impl Row {
     }
 }
 
+/// The five rules the validator checks, each as its code, a name and what it checks, in few words.
+pub const RULES: [(&str, &str, &str); 5] = [
+    ("V1", "connectivity", "every room reached"),
+    ("V2", "clearances", "rooms and corridors apart"),
+    ("V3", "doors", "fit and separated"),
+    ("V4", "corridors", "angles, bends, lengths"),
+    ("V5", "entrance, exit", "present, far enough"),
+];
+
 /// The measures of a floor, in the order they are read.
 pub fn rows(m: &Metrics) -> Vec<Row> {
     let rooms = (m.rooms + m.leaf_chambers) as f64;

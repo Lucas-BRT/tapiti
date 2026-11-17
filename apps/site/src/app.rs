@@ -28,6 +28,13 @@ use topcoat::{
 // Loads `src/l10n/en.ftl` and creates `t!`. The site is English only.
 messages!("./l10n/{locale}.ftl");
 
+/// A message of this file as an owned `String`, for components that take text.
+macro_rules! s {
+    ($($t:tt)*) => {
+        t!($($t)*).resolve_in(&locale!("en")).into_owned()
+    };
+}
+
 pub fn router() -> Router {
     // Drawn now, at startup, so the first visitor does not wait for the specimens.
     crate::floor::gallery();
@@ -233,6 +240,7 @@ async fn layout(cx: &Cx, slot: Slot<'_>) -> Result<impl View> {
                 >
                 <link rel="stylesheet" href=(asset!("assets/styles.css"))>
                 <script src=(asset!("assets/site.js")) defer="defer"></script>
+                <script type="module" src=(asset!("assets/settings.js"))></script>
                 topcoat::dev::script()
             </head>
             <body>
@@ -240,6 +248,7 @@ async fn layout(cx: &Cx, slot: Slot<'_>) -> Result<impl View> {
                 header()
                 <main id="main">(slot)</main>
                 footer()
+                settings_dialog()
             </body>
         </html>
     })
@@ -280,11 +289,14 @@ async fn header(cx: &Cx) -> Result<impl View> {
                 </a>
                 <a href=(GITHUB)>"GitHub"</a>
                 <button
-                    class="theme-toggle"
+                    class="settings-button"
                     type="button"
                     hidden=(true)
-                    aria-label=(t!(theme_toggle))
-                ></button>
+                    aria-haspopup="dialog"
+                    aria-controls="settings-dialog"
+                >
+                    (t!(settings_button))
+                </button>
             </nav>
         </header>
     })
@@ -320,5 +332,196 @@ async fn footer(cx: &Cx) -> Result<impl View> {
                 </nav>
             </div>
         </footer>
+    })
+}
+
+/// One option of the settings: a set of presets as radio buttons, and, when it has one, a value of the user's own.
+#[component]
+async fn setting_option(
+    cx: &Cx,
+    id: &str,
+    legend: &str,
+    help: &str,
+    choices: &[(&str, String)],
+    custom: Option<(&str, &str, &str)>,
+) -> Result<impl View> {
+    Ok(view! {
+        <fieldset class="setting" data-option=(id)>
+            <legend>(legend)</legend>
+            <p class="setting-help" id=(format!("setting-{id}-help"))>(help)</p>
+            <div class="setting-choices">
+                for (value, label) in choices {
+                    <label>
+                        <input type="radio" name=(id) value=(*value)>
+                        <span>(label.as_str())</span>
+                    </label>
+                }
+                if custom.is_some() {
+                    <label>
+                        <input type="radio" name=(id) value="custom">
+                        <span>(t!(settings_custom))</span>
+                    </label>
+                }
+            </div>
+            if let Some((min, max, unit)) = custom {
+                <label class="setting-custom" hidden=(true)>
+                    <span class="sr-only">(legend)</span>
+                    <input
+                        type="number"
+                        data-custom=(id)
+                        min=(min)
+                        max=(max)
+                        step="1"
+                        aria-describedby=(format!("setting-{id}-help"))
+                    >
+                    <span>(unit)</span>
+                </label>
+            }
+        </fieldset>
+    })
+}
+
+/// What the settings dialog lists for one option.
+struct SettingSpec {
+    id: &'static str,
+    legend: String,
+    help: String,
+    choices: Vec<(&'static str, String)>,
+    custom: Option<(&'static str, &'static str, &'static str)>,
+}
+
+/// The settings of the site, in a dialog the header's button opens. The page script (`settings.js`) fills it from, and saves it to, the
+/// browser's storage; every option starts from what the system says (its colour scheme, its wish for less motion).
+#[component]
+async fn settings_dialog(cx: &Cx) -> Result<impl View> {
+    let spec = |id, legend: String, help: String, choices: Vec<(&'static str, String)>, custom| {
+        SettingSpec {
+            id,
+            legend,
+            help,
+            choices,
+            custom,
+        }
+    };
+    let site = vec![
+        spec(
+            "theme",
+            s!(settings_theme),
+            s!(settings_theme_help),
+            vec![
+                ("system", s!(settings_system)),
+                ("light", s!(settings_light)),
+                ("dark", s!(settings_dark)),
+            ],
+            None,
+        ),
+        spec(
+            "text",
+            s!(settings_text),
+            s!(settings_text_help),
+            vec![
+                ("small", s!(settings_small)),
+                ("normal", s!(settings_normal)),
+                ("large", s!(settings_large)),
+                ("larger", s!(settings_larger)),
+            ],
+            Some(("70", "200", "%")),
+        ),
+        spec(
+            "motion",
+            s!(settings_motion),
+            s!(settings_motion_help),
+            vec![
+                ("off", s!(settings_off)),
+                ("fast", s!(settings_fast)),
+                ("normal", s!(settings_normal)),
+                ("slow", s!(settings_slow)),
+            ],
+            Some(("0", "600", "ms")),
+        ),
+    ];
+    let lab = vec![
+        spec(
+            "reading",
+            s!(settings_reading),
+            s!(settings_reading_help),
+            vec![
+                ("automatic", s!(settings_automatic)),
+                ("shown", s!(settings_shown)),
+                ("hidden", s!(settings_hidden)),
+            ],
+            None,
+        ),
+        spec(
+            "width",
+            s!(settings_width),
+            s!(settings_width_help),
+            vec![
+                ("narrow", s!(settings_narrow)),
+                ("normal", s!(settings_normal)),
+                ("wide", s!(settings_wide)),
+            ],
+            Some(("240", "560", "px")),
+        ),
+        spec(
+            "memory",
+            s!(settings_memory),
+            s!(settings_memory_help),
+            vec![
+                ("off", s!(settings_off)),
+                ("small", s!(settings_small_floors)),
+                ("always", s!(settings_always)),
+            ],
+            Some(("10", "1000", "rooms")),
+        ),
+        spec(
+            "shortcuts",
+            s!(settings_shortcuts),
+            s!(settings_shortcuts_help),
+            vec![("on", s!(settings_on)), ("off", s!(settings_off))],
+            None,
+        ),
+    ];
+    Ok(view! {
+        <dialog
+            id="settings-dialog"
+            class="settings-dialog"
+            aria-labelledby="settings-title"
+        >
+            <form method="dialog">
+                <div class="settings-head">
+                    <h2 id="settings-title">(t!(settings_title))</h2>
+                    <button type="submit" class="settings-close">
+                        (t!(settings_close))
+                    </button>
+                </div>
+                <p class="settings-intro">(t!(settings_intro))</p>
+                <h3>(t!(settings_site))</h3>
+                for o in &site {
+                    setting_option(
+                        id: o.id,
+                        legend: &o.legend,
+                        help: &o.help,
+                        choices: &o.choices,
+                        custom: o.custom
+                    )
+                }
+                <h3>(t!(settings_lab))</h3>
+                for o in &lab {
+                    setting_option(
+                        id: o.id,
+                        legend: &o.legend,
+                        help: &o.help,
+                        choices: &o.choices,
+                        custom: o.custom
+                    )
+                }
+                <p class="settings-note">
+                    <button type="button" class="secondary-button" id="settings-reset">
+                        (t!(settings_reset))
+                    </button>
+                </p>
+            </form>
+        </dialog>
     })
 }
