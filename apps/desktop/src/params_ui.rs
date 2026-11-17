@@ -23,6 +23,7 @@ pub fn field_row(
     let label_width = (width * 0.52).max(96.0);
     let control_width = (width - label_width - 14.0).max(80.0);
     let height = ui.spacing().interact_size.y;
+    let mut label_id = None;
     ui.allocate_ui(egui::vec2(label_width, height), |ui| {
         // A cell takes the width of what it holds unless told otherwise, and every group of rows would then have its own columns.
         ui.set_min_width(label_width);
@@ -30,8 +31,11 @@ pub fn field_row(
             let (mark, _) = ui.allocate_exact_size(egui::vec2(6.0, 6.0), egui::Sense::hover());
             ui.painter().rect_filled(mark, 0.0, amber);
         }
-        ui.add(egui::Label::new(label).truncate())
-            .on_hover_text(format!("{}\n{}", field.label.as_str(), field.help.as_str()));
+        label_id = Some(
+            ui.add(egui::Label::new(label).truncate())
+                .on_hover_text(format!("{}\n{}", field.label.as_str(), field.help.as_str()))
+                .id,
+        );
     });
     let mut next = None;
     ui.allocate_ui_with_layout(
@@ -39,18 +43,23 @@ pub fn field_row(
         egui::Layout::right_to_left(egui::Align::Center),
         |ui| {
             ui.set_min_width(control_width);
-            if differs
-                && ui
-                    .small_button("×")
-                    .on_hover_text(format!(
-                        "Reset to the size default: {}",
-                        default.map_or_else(String::new, json_value_text)
-                    ))
-                    .clicked()
-            {
-                next = default.cloned();
+            if differs {
+                let reset = ui.small_button("×").on_hover_text(format!(
+                    "Reset to the size default: {}",
+                    default.map_or_else(String::new, json_value_text)
+                ));
+                reset.widget_info(|| {
+                    egui::WidgetInfo::labeled(
+                        egui::Role::Button,
+                        true,
+                        format!("Reset {}", field.label.as_str()),
+                    )
+                });
+                if reset.clicked() {
+                    next = default.cloned();
+                }
             }
-            if let Some(value) = control(ui, field, current) {
+            if let Some(value) = control(ui, field, current, label_id) {
                 next = Some(value);
             }
         },
@@ -61,7 +70,17 @@ pub fn field_row(
 
 /// Just the control of a parameter (no label, no reset), in whatever layout the caller is in: a drag value, a check box or a
 /// drop-down, with the parameter's help on hover. Returns the new value when the user changed it.
-pub fn control(ui: &mut Ui, field: &ParamField, current: &Value) -> Option<Value> {
+pub fn control(
+    ui: &mut Ui,
+    field: &ParamField,
+    current: &Value,
+    label: Option<egui::Id>,
+) -> Option<Value> {
+    // The control is named by the label beside it, for assistive technology.
+    let named = |response: egui::Response| match label {
+        Some(id) => response.labelled_by(id),
+        None => response,
+    };
     let mut next = None;
     match &field.kind {
         FieldKind::Number { min, max, integer } => {
@@ -80,7 +99,7 @@ pub fn control(ui: &mut Ui, field: &ParamField, current: &Value) -> Option<Value
             } else {
                 drag.max_decimals(3)
             };
-            if ui.add(drag).on_hover_text(field.help.as_str()).changed() {
+            if named(ui.add(drag).on_hover_text(field.help.as_str())).changed() {
                 next = Some(if *integer {
                     json!(v.round() as i64)
                 } else {
@@ -90,11 +109,7 @@ pub fn control(ui: &mut Ui, field: &ParamField, current: &Value) -> Option<Value
         }
         FieldKind::Boolean => {
             let mut b = current.as_bool().unwrap_or(false);
-            if ui
-                .checkbox(&mut b, "")
-                .on_hover_text(field.help.as_str())
-                .changed()
-            {
+            if named(ui.checkbox(&mut b, "").on_hover_text(field.help.as_str())).changed() {
                 next = Some(json!(b));
             }
         }
@@ -104,7 +119,7 @@ pub fn control(ui: &mut Ui, field: &ParamField, current: &Value) -> Option<Value
                 .iter()
                 .find(|(v, _)| *v == text)
                 .map_or(text.as_str(), |(_, n)| n.as_str());
-            egui::ComboBox::from_id_salt(&field.path)
+            let combo = egui::ComboBox::from_id_salt(&field.path)
                 .width(100.0)
                 .selected_text(shown)
                 .show_ui(ui, |ui| {
@@ -122,6 +137,7 @@ pub fn control(ui: &mut Ui, field: &ParamField, current: &Value) -> Option<Value
                         }
                     }
                 });
+            named(combo.response);
         }
     }
     next

@@ -1,6 +1,6 @@
 //! Small charts drawn with the painter (no plotting crate): bars and columns, square and flat like the rest of the interface.
 
-use eframe::egui::{Align2, Color32, FontId, Pos2, Rect, Sense, Ui, Vec2};
+use eframe::egui::{Align2, Color32, FontId, Pos2, Rect, Sense, Stroke, Ui, Vec2};
 
 pub struct Bar {
     pub label: String,
@@ -35,7 +35,17 @@ pub fn hbars(ui: &mut Ui, bars: &[Bar], max: f64) {
     let c = crate::theme::of(ui);
     let (text, track) = (c.text, c.border_variant);
     let font = FontId::proportional(12.0);
-    let label_w = (rect.width() * 0.34).clamp(80.0, 150.0);
+    // As wide as the longest label needs, so it never runs into its bar, but not more than half of the row.
+    let widest = bars
+        .iter()
+        .map(|b| {
+            painter
+                .layout_no_wrap(b.label.clone(), font.clone(), text)
+                .size()
+                .x
+        })
+        .fold(0.0_f32, f32::max);
+    let label_w = (widest + 10.0).clamp(80.0, (rect.width() * 0.55).max(80.0));
     let value_w = 40.0;
     for (i, bar) in bars.iter().enumerate() {
         let y = rect.top() + row * i as f32;
@@ -83,7 +93,8 @@ pub fn columns(ui: &mut Ui, bars: &[Bar], max: f64, height: f32) {
         let x0 = rect.left() + slot * i as f32 + slot * 0.18;
         let x1 = rect.left() + slot * (i + 1) as f32 - slot * 0.18;
         let full = Rect::from_min_max(Pos2::new(x0, top), Pos2::new(x1, bottom));
-        painter.rect_filled(full, 0.0, track);
+        // A baseline, not a full-height track: an empty column then reads as none, not as a dark bar.
+        painter.hline(full.x_range(), full.bottom(), Stroke::new(1.0, track));
         let h = if max > 0.0 {
             ((bar.value / max) as f32).clamp(0.0, 1.0) * full.height()
         } else {

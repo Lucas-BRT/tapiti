@@ -62,14 +62,14 @@ cargo run --release
 
 ### Generating a floor
 
-Pick a layout (grid, or growth, where rooms grow one from another) and a size (small, medium, large or huge) in the top bar, next to the seed and the Generate button. Change the seed and edit any parameter: the floor is generated again a moment after each change. A very large floor can be stopped with the Cancel button (or <kbd>Esc</kbd>), and the floor on the screen stays.
+Pick a size (small, medium, large or huge) in the top bar, next to the seed and the Generate button, and a layout (grid, or growth, where rooms grow one from another) in the Layout group on the left. Change the seed and edit any parameter: the floor is generated again a moment after each change. A very large floor can be stopped with the Cancel button (or <kbd>Esc</kbd>), and the floor on the screen stays.
 
 ### The three columns
 
 The window has three columns:
 
 - **Parameters**, on the left: the layout, the exploration intent and the environment layers first, then every other group, one bar each. A bar says how many settings the group holds and how many of them differ from the size's defaults. A setting that differs is marked in amber, and its `×` puts the default back. One filter searches every parameter.
-- **The map**, in the middle: rulers numbered in grid cells, the pointer in cells and the room under it in the strip below the plan, and a click picks a room.
+- **The map**, in the middle: rulers numbered in grid cells, the pointer in cells and the room under it in the strip below the plan, and a click picks a room (it is outlined in amber and described at the right of the strip). The entrance has a green outline and an IN badge, the exit a violet outline and an OUT badge. Fit shows the floor, not the empty grid around it.
 - **Reading**, on the right: the rules V1 to V5, the measures of the floor, the shapes, the doors per room and the phases of the generation. The longer explanation of a line is on hover. A narrow window hides this column; the button at the right of the controls bar (a square with a strip at its edge), or View > Reading panel, shows or hides it.
 
 ### The command line
@@ -93,7 +93,8 @@ On the right of the same bar are a hash of the seed and Λ (two windows with the
 
 - <kbd>Alt</kbd>+<kbd>1</kbd> to <kbd>4</kbd> switch the size.
 - <kbd>Alt</kbd>+<kbd>R</kbd> draws a random seed.
-- <kbd>Alt</kbd>+<kbd>←</kbd> and <kbd>→</kbd> step the seed.
+- <kbd>Alt</kbd>+<kbd>←</kbd> and <kbd>→</kbd> step the seed; <kbd>F5</kbd> or <kbd>Ctrl</kbd>+<kbd>Enter</kbd> generates again.
+- <kbd>Ctrl</kbd>+<kbd>O</kbd> opens a Λ, <kbd>Ctrl</kbd>+<kbd>S</kbd> saves it, <kbd>Ctrl</kbd>+<kbd>Z</kbd> restores the previous Λ (the one before the last size, reset, experiment or file; again, it goes forward), <kbd>Ctrl</kbd>+<kbd>Q</kbd> quits, <kbd>F1</kbd> lists the shortcuts. In the command line, <kbd>↑</kbd> and <kbd>↓</kbd> walk the earlier commands.
 - <kbd>/</kbd> goes to the filter; <kbd>Tab</kbd> and <kbd>Shift</kbd>+<kbd>Tab</kbd> move between controls, <kbd>Enter</kbd> opens a group, <kbd>↑</kbd> and <kbd>↓</kbd> change a focused number, <kbd>Esc</kbd> leaves a field.
 - On the map, drag to pan, scroll to zoom, double-click to fit. A new seed or size is revealed from the entrance; set the new floor to Off in Settings to show it at once.
 

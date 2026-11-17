@@ -77,6 +77,16 @@ pub const GAP: f32 = 4.0;
 pub const PAD: f32 = 8.0;
 /// Height of the bars (menu and status, controls, command line), in points.
 pub const BAR_HEIGHT: f32 = 30.0;
+
+/// The height of a group bar: 24 points, or what the spacing's rows need.
+fn bar_row(ui: &egui::Ui) -> f32 {
+    (ui.spacing().interact_size.y + 4.0).max(24.0)
+}
+
+/// The height of a bar: 30 points, or what a row of controls needs when the spacing or the text is larger.
+pub fn bar_height(ui: &egui::Ui) -> f32 {
+    BAR_HEIGHT.max(ui.spacing().interact_size.y + 10.0)
+}
 /// Corners are square.
 pub const RADIUS: u8 = 0;
 /// Text on the amber fill of a primary button.
@@ -316,12 +326,15 @@ pub fn group(
     if let Some(open) = force {
         state.set_open(open);
     }
-    let (rect, response) =
-        ui.allocate_exact_size(egui::vec2(ui.available_width(), 24.0), egui::Sense::click());
+    let (rect, response) = ui.allocate_exact_size(
+        egui::vec2(ui.available_width(), bar_row(ui)),
+        egui::Sense::click(),
+    );
     if response.clicked() {
         state.toggle(ui);
     }
     let open = state.is_open();
+    response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, open, title));
     let painter = ui.painter();
     let fill = if response.hovered() {
         c.element_hover

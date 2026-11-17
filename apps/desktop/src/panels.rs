@@ -29,7 +29,7 @@ fn group_counts(app: &App, holds: impl Fn(&str) -> bool) -> (usize, usize) {
         .flat_map(|g| &g.fields)
         .map(|f| f.path.as_str());
     paths
-        .filter(|p| holds(p))
+        .filter(|p| holds(p) && crate::relevance::applies(p, &app.params))
         .fold((0, 0), |(all, changed), p| {
             (all + 1, changed + usize::from(app.changed.contains(p)))
         })
@@ -70,7 +70,7 @@ fn primary(ui: &Ui, text: &str) -> Button<'static> {
 pub fn menu_bar(app: &mut App, ui: &mut Ui) {
     Panel::top("menu")
         .frame(theme::bar_frame(ui))
-        .exact_size(theme::BAR_HEIGHT)
+        .exact_size(theme::bar_height(ui))
         .show(ui, |ui| {
             egui::MenuBar::new().ui(ui, |ui| {
                 theme::brand(ui);
@@ -278,14 +278,15 @@ pub fn shortcuts_window(app: &mut App, ctx: &egui::Context) {
         .resizable(false)
         .show(ctx, |ui| {
             for line in [
-                "/ filters the parameters · : opens the command line · Esc leaves a field",
+                "/ filters the parameters · : or Ctrl+K opens the command line (Up and Down: earlier commands) · Esc leaves a field",
                 "Tab and Shift+Tab move between controls · Enter opens or closes a group",
                 "Up and Down change a focused number",
-                "Alt+1–4 switches the size · Alt+R random seed",
-                "Alt+Left / Right: previous / next seed",
-                "Esc cancels a generation",
-                "Drag moves the map · wheel zooms at the cursor",
-                "Double-click fits the map to the window",
+                "Alt+1–4 switches the size · Alt+R random seed · Alt+Left / Right previous / next seed",
+                "F5 or Ctrl+Enter generates again · Esc cancels a generation",
+                "Ctrl+O opens a Λ · Ctrl+S saves it · Ctrl+Z restores the previous Λ (and again, goes forward) · Ctrl+Q quits",
+                "Ctrl+, opens Preferences · F1 shows this list",
+                "On the map: drag moves it · wheel zooms at the cursor · double-click fits it to the floor · click picks a room",
+                "In 2.5D and 3D: arrows turn the view; see the docs for the 3D camera",
             ] {
                 ui.label(line);
             }
@@ -324,28 +325,41 @@ fn panel_toggle(ui: &mut Ui, shown: bool) -> egui::Response {
 pub fn top_bar(app: &mut App, ui: &mut Ui) {
     Panel::top("top")
         .frame(theme::bar_frame(ui))
-        .exact_size(theme::BAR_HEIGHT + 4.0)
+        .exact_size(theme::bar_height(ui) + 4.0)
         .show(ui, |ui| {
             ui.horizontal_centered(|ui| {
                 size_picker(app, ui);
                 ui.separator();
                 ui.label("Seed");
-                let step = ui.button("<").on_hover_text("Previous seed (Alt+Left)");
+                let step = ui
+                    .add(Button::new("<").min_size(egui::vec2(26.0, 0.0)))
+                    .on_hover_text("Previous seed (Alt+Left)");
                 step.widget_info(|| {
                     egui::WidgetInfo::labeled(egui::Role::Button, true, "Previous seed")
                 });
                 if step.clicked() {
                     app.set_seed(app.seed.saturating_sub(1));
                 }
-                let seed = ui.add(
-                    TextEdit::singleline(&mut app.seed_draft)
-                        .desired_width(92.0)
-                        .hint_text("0–4294967295"),
-                );
-                if seed.lost_focus() && app.seed_draft != app.seed.to_string() {
-                    app.commit_seed_draft();
+                let invalid = app.seed_draft.trim().parse::<u32>().is_err();
+                let mut field = TextEdit::singleline(&mut app.seed_draft)
+                    .desired_width(92.0)
+                    .hint_text("0–4294967295");
+                if invalid {
+                    field = field.text_color(theme::of(ui).error);
                 }
-                let step = ui.button(">").on_hover_text("Next seed (Alt+Right)");
+                let seed = ui.add(field);
+                seed.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, "Seed"));
+                if seed.lost_focus() {
+                    // Esc gives the field up, and with it what was typed.
+                    if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                        app.seed_draft = app.seed.to_string();
+                    } else if app.seed_draft != app.seed.to_string() {
+                        app.commit_seed_draft();
+                    }
+                }
+                let step = ui
+                    .add(Button::new(">").min_size(egui::vec2(26.0, 0.0)))
+                    .on_hover_text("Next seed (Alt+Right)");
                 step.widget_info(|| {
                     egui::WidgetInfo::labeled(egui::Role::Button, true, "Next seed")
                 });
@@ -376,7 +390,12 @@ pub fn top_bar(app: &mut App, ui: &mut Ui) {
                         !app.busy && app.params.intent_error().is_none(),
                         primary(ui, "Generate"),
                     )
-                    .on_hover_text("Generate again with the current Λ")
+                    .on_hover_text("Generate again with the current Λ (F5)")
+                    .on_disabled_hover_text(
+                        app.params
+                            .intent_error()
+                            .unwrap_or("A floor is being generated."),
+                    )
                     .clicked()
                 {
                     app.generate_now();
@@ -405,7 +424,7 @@ pub fn top_bar(app: &mut App, ui: &mut Ui) {
 pub fn command_bar(app: &mut App, ui: &mut Ui) {
     Panel::bottom("bottom")
         .frame(theme::bar_frame(ui))
-        .exact_size(theme::BAR_HEIGHT + 4.0)
+        .exact_size(theme::bar_height(ui) + 4.0)
         .show(ui, |ui| {
             let c = theme::of(ui);
             ui.horizontal_centered(|ui| {
@@ -415,13 +434,37 @@ pub fn command_bar(app: &mut App, ui: &mut Ui) {
                     TextEdit::singleline(&mut app.command)
                         .id(theme::command_id())
                         .frame(egui::Frame::NONE)
-                        .hint_text(
-                            "Command: seed, size, step, random, layer, filter... (help lists them)",
-                        )
+                        .hint_text("Command (help lists them)")
                         .desired_width((ui.available_width() - right).max(160.0)),
                 );
+                field.widget_info(|| {
+                    egui::WidgetInfo::labeled(egui::Role::TextInput, true, "Command line")
+                });
+                // Up and Down walk the commands already run, like a shell.
+                if field.has_focus() {
+                    let step = ui.input_mut(|i| {
+                        i32::from(i.consume_key(egui::Modifiers::NONE, egui::Key::ArrowDown))
+                            - i32::from(i.consume_key(egui::Modifiers::NONE, egui::Key::ArrowUp))
+                    });
+                    if step != 0 && !app.command_history.is_empty() {
+                        let last = app.command_history.len();
+                        let at = app.command_cursor.unwrap_or(last) as i32 + step;
+                        if at >= last as i32 {
+                            app.command_cursor = None;
+                            app.command.clear();
+                        } else {
+                            let at = at.max(0) as usize;
+                            app.command_cursor = Some(at);
+                            app.command = app.command_history[at].clone();
+                        }
+                    }
+                }
                 if field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                     let line = std::mem::take(&mut app.command);
+                    app.command_cursor = None;
+                    if !line.trim().is_empty() && app.command_history.last() != Some(&line) {
+                        app.command_history.push(line.clone());
+                    }
                     run_command(app, &line);
                     field.request_focus();
                 }
@@ -491,20 +534,20 @@ fn run_command(app: &mut App, line: &str) {
     match command::parse(line) {
         Ok(Command::Seed(n)) => {
             app.set_seed(n);
-            app.status = format!("Seed {n}.");
+            app.notify(format!("Seed {n}."), false);
         }
         Ok(Command::Size(size)) => {
             app.set_size(size);
-            app.status = format!("Size {}.", size_label(size).to_lowercase());
+            app.notify(format!("Size {}.", size_label(size).to_lowercase()), false);
         }
         Ok(Command::Step(n)) => {
             let seed = (i64::from(app.seed) + n).clamp(0, i64::from(u32::MAX)) as u32;
             app.set_seed(seed);
-            app.status = format!("Seed {seed}.");
+            app.notify(format!("Seed {seed}."), false);
         }
         Ok(Command::Random) => app.random_seed(),
         Ok(Command::Reset) => app.reset_all(),
-        Ok(Command::Help) => app.status = command::HELP.into(),
+        Ok(Command::Help) => app.notify(command::HELP, false),
         Ok(Command::Layer(layer)) => show_layer(app, layer),
         Ok(Command::Filter(text)) => {
             app.status = if text.is_empty() {
@@ -521,14 +564,14 @@ fn run_command(app: &mut App, line: &str) {
             });
             match found.map(|g| g.id.clone()) {
                 Some(id) => {
-                    app.status = format!("Group {id}.");
+                    app.notify(format!("Group {id}."), false);
                     app.focus_group = Some(id);
                 }
-                None => app.status = format!("No group matches {text}."),
+                None => app.notify(format!("No group matches {text}."), true),
             }
         }
         Err(message) if message.is_empty() => {}
-        Err(message) => app.status = message,
+        Err(message) => app.notify(message, true),
     }
 }
 
@@ -635,7 +678,15 @@ fn layout_card(app: &mut App, ui: &mut Ui) {
     }
     // Leaving Growth drops an intent that only Growth can run.
     if !app.params.layout.allows(app.params.topology.profile) {
+        let was = app.params.topology.profile;
         app.set_intent(TopologyProfile::Classic);
+        app.notify(
+            format!(
+                "This layout cannot run the {:?} intent: it is back to Classic. Restore previous Λ goes back.",
+                was
+            ),
+            false,
+        );
     }
 }
 
@@ -670,16 +721,19 @@ fn intent_card(app: &mut App, ui: &mut Ui) {
                             if let Ok(option) = serde_json::from_value::<TopologyProfile>(
                                 Value::String(key.clone()),
                             ) {
-                                // A layout other than Growth cannot run an intent that plans its own rooms.
-                                if !app.params.layout.allows(option) {
-                                    continue;
-                                }
-                                if ui
-                                    .selectable_label(profile == option, label)
+                                // A layout other than Growth cannot run an intent that plans its own rooms: listed, but off,
+                                // with the reason.
+                                let allowed = app.params.layout.allows(option);
+                                let item = ui
+                                    .add_enabled(
+                                        allowed,
+                                        egui::Button::selectable(profile == option, label),
+                                    )
                                     .on_hover_text(intent_description(option))
-                                    .clicked()
-                                    && profile != option
-                                {
+                                    .on_disabled_hover_text(
+                                        "Needs the Growth layout: change the layout first.",
+                                    );
+                                if item.clicked() && profile != option {
                                     selected = Some(option);
                                 }
                             }
@@ -714,14 +768,13 @@ fn intent_card(app: &mut App, ui: &mut Ui) {
                         .find(|f| f.path == *path)
                     {
                         let value = value_of(app, &current, path);
-                        if let Some(next) = field_row(ui, field, &value, None) {
+                        if let Some(next) = field_row(ui, field, &value, app.default_ref(path)) {
                             edits.push((field.path.clone(), next));
                         }
                     }
                 }
             });
         ui.add_space(theme::GAP);
-        ui.label(RichText::new("Zones").strong());
         let blocker = app.params.zone_bottleneck_blocker();
         Grid::new("zone_controls")
             .num_columns(3)
@@ -740,7 +793,7 @@ fn intent_card(app: &mut App, ui: &mut Ui) {
                         .find(|f| f.path == path)
                     {
                         let value = value_of(app, &current, path);
-                        if let Some(next) = field_row(ui, field, &value, None) {
+                        if let Some(next) = field_row(ui, field, &value, app.default_ref(path)) {
                             edits.push((field.path.clone(), next));
                         }
                     }
@@ -763,7 +816,7 @@ fn intent_card(app: &mut App, ui: &mut Ui) {
             ui.label(muted(ui, "Last generated floor"));
             ui.horizontal_wrapped(|ui| {
                 ui.label(format!(
-                    "{} steps to exit",
+                    "{} steps to the exit",
                     map.metrics
                         .hops_to_exit
                         .map_or("—".to_string(), |h| format!("{h:.0}"))
@@ -774,7 +827,7 @@ fn intent_card(app: &mut App, ui: &mut Ui) {
             if !map.violations.is_empty() {
                 ui.colored_label(
                     theme::of(ui).error,
-                    "Some requirements did not fit. See Analysis.",
+                    "Some requirements did not fit. The reading panel lists them.",
                 );
             }
         }
@@ -813,19 +866,24 @@ pub fn tree_panel(app: &mut App, ui: &mut Ui) {
                 ui.add_space(theme::PAD);
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     ui.add_space(theme::PAD);
-                    if ui
+                    let clear = ui
                         .add_enabled(!app.filter.is_empty(), Button::new("×"))
-                        .on_hover_text("Clear the filter")
-                        .clicked()
-                    {
+                        .on_hover_text("Clear the filter");
+                    clear.widget_info(|| {
+                        egui::WidgetInfo::labeled(egui::Role::Button, true, "Clear the filter")
+                    });
+                    if clear.clicked() {
                         app.filter.clear();
                     }
-                    ui.add(
+                    let filter = ui.add(
                         TextEdit::singleline(&mut app.filter)
                             .id(theme::filter_id())
-                            .hint_text("Filter every parameter…")
+                            .hint_text("Filter every parameter… (/)")
                             .desired_width(ui.available_width()),
                     );
+                    filter.widget_info(|| {
+                        egui::WidgetInfo::labeled(egui::Role::TextInput, true, "Filter parameters")
+                    });
                 });
             });
             ui.add_space(theme::GAP);
@@ -877,6 +935,16 @@ pub fn reading_panel(app: &mut App, ui: &mut Ui) {
             }
             area.show(ui, |ui| {
                 ui.add_space(theme::GAP);
+                // What the panel describes is the floor on the screen, which is not the one the parameters describe while a run is
+                // pending or running, or after one failed.
+                if app.generation_failed || app.pending() || (app.busy && !app.benchmarking) {
+                    let text = if app.generation_failed {
+                        "Showing the previous floor: the last run did not finish."
+                    } else {
+                        "Showing the previous floor; the new one is being generated."
+                    };
+                    ui.label(RichText::new(text).color(theme::of(ui).accent));
+                }
                 analysis_tab(app, ui);
             });
         });
@@ -1096,7 +1164,7 @@ fn events_editor(
                 .add(
                     egui::DragValue::new(&mut event.count)
                         .range(0..=256)
-                        .suffix(" times"),
+                        .suffix(" ×"),
                 )
                 .on_hover_text("How many occurrences to place")
                 .changed();
@@ -1261,9 +1329,6 @@ fn design_tab(app: &mut App, ui: &mut Ui) {
 /// Every parameter group the Design tab does not already show, collapsed; the search finds any parameter, shown elsewhere or not.
 fn advanced_tab(app: &mut App, ui: &mut Ui) {
     let needle = app.filter.trim().to_lowercase();
-    if needle.is_empty() {
-        theme::note(ui, muted(ui, "Shape the space, rooms and connections."));
-    }
     let groups = std::mem::take(&mut app.groups);
     let current = serde_json::to_value(&app.params).unwrap_or(Value::Null);
     let layout = app.params.layout;
@@ -1375,7 +1440,7 @@ pub fn json_window(app: &mut App, ctx: &egui::Context) {
         .show(ctx, |ui| {
             ui.label(muted(
                 ui,
-                "Size, seed and the full Λ. A valid edit regenerates the floor after a short pause.",
+                "The full Λ (File > Save keeps the size and the seed too). A valid edit regenerates the floor after a short pause.",
             ));
             let editor = ui.add(
                 TextEdit::multiline(&mut app.json_text)
@@ -1722,10 +1787,20 @@ fn map_controls(app: &mut App, ui: &mut Ui, rect: egui::Rect) {
     // In the oblique view the levels are drawn together, so the selector of one is for the plan only.
     let plan_levels = levels > 1 && app.view_mode == crate::ViewMode::Plan;
     // The way the floor is shown, and in the oblique view where it is looked at from.
+    // The controls sit side by side, each after the width the one before had on the last frame, so they never overlap whatever the
+    // text size or the spacing.
+    let width_of = |ui: &Ui, name: &str, fallback: f32| {
+        ui.data(|d| d.get_temp::<f32>(ui.make_persistent_id(("map_control_width", name))))
+            .unwrap_or(fallback)
+    };
+    let layers_w = width_of(ui, "layers", 70.0) + 8.0;
+    let levels_w = if plan_levels {
+        width_of(ui, "levels", 90.0) + 8.0
+    } else {
+        0.0
+    };
     egui::Area::new(ui.scope_id().with("map_view"))
-        .fixed_pos(
-            rect.left_top() + margin + Vec2::new(84.0 + if plan_levels { 100.0 } else { 0.0 }, 0.0),
-        )
+        .fixed_pos(rect.left_top() + margin + Vec2::new(layers_w + levels_w, 0.0))
         .show(ui.ctx(), |ui| {
             ui.horizontal(|ui| {
                 egui::ComboBox::from_id_salt("map_view_mode")
@@ -1834,8 +1909,8 @@ fn map_controls(app: &mut App, ui: &mut Ui, rect: egui::Rect) {
             });
         });
     if plan_levels {
-        egui::Area::new(ui.scope_id().with("map_levels"))
-            .fixed_pos(rect.left_top() + margin + Vec2::new(84.0, 0.0))
+        let levels = egui::Area::new(ui.scope_id().with("map_levels"))
+            .fixed_pos(rect.left_top() + margin + Vec2::new(layers_w, 0.0))
             .show(ui.ctx(), |ui| {
                 let shown = app.overlays.level.unwrap_or(0).min(levels - 1);
                 egui::ComboBox::from_id_salt("map_level")
@@ -1850,8 +1925,15 @@ fn map_controls(app: &mut App, ui: &mut Ui, rect: egui::Rect) {
                         }
                     });
             });
+        let width = levels.response.rect.width();
+        ui.data_mut(|d| {
+            d.insert_temp(
+                ui.make_persistent_id(("map_control_width", "levels")),
+                width,
+            )
+        });
     }
-    egui::Area::new(ui.scope_id().with("map_layers"))
+    let layers = egui::Area::new(ui.scope_id().with("map_layers"))
         .fixed_pos(rect.left_top() + margin)
         .show(ui.ctx(), |ui| {
             ui.menu_button("Layers", |ui| {
@@ -1897,6 +1979,13 @@ fn map_controls(app: &mut App, ui: &mut Ui, rect: egui::Rect) {
                 }
             });
         });
+    let width = layers.response.rect.width();
+    ui.data_mut(|d| {
+        d.insert_temp(
+            ui.make_persistent_id(("map_control_width", "layers")),
+            width,
+        )
+    });
     egui::Area::new(ui.scope_id().with("map_zoom"))
         .fixed_pos(rect.right_bottom() - margin)
         .pivot(egui::Align2::RIGHT_BOTTOM)

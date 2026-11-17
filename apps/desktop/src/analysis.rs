@@ -43,7 +43,7 @@ pub fn measure_rows(m: &tapiti_core::metrics::Metrics) -> Vec<Measure> {
             "rooms",
             format!("{}+{}", m.rooms, m.leaf_chambers),
             format!(
-                "{} main rooms and {} dead-end chambers, linked by a single corridor.",
+                "{} main rooms and {} leaf chambers, linked by a single corridor.",
                 m.rooms, m.leaf_chambers
             ),
         ),
@@ -62,9 +62,9 @@ pub fn measure_rows(m: &tapiti_core::metrics::Metrics) -> Vec<Measure> {
         )
         .of(f64::from(m.beta_max), f64::from(m.beta)),
         Measure::new(
-            "dead ends",
+            "single-door rooms",
             m.leaves.to_string(),
-            "Rooms with a single door: the dead ends, the entrance and the exit.",
+            "Rooms with a single door: the leaf chambers, the entrance and the exit.",
         )
         .of(rooms, m.leaves as f64),
         Measure::new(
@@ -75,7 +75,7 @@ pub fn measure_rows(m: &tapiti_core::metrics::Metrics) -> Vec<Measure> {
         .of(1.0, m.bridge_share),
         {
             let mut row = Measure::new(
-                "exit hops",
+                "steps to exit",
                 m.hops_to_exit.map_or_else(dash, |h| format!("{h:.0}")),
                 "Rooms on the shortest way from the entrance to the exit.",
             );
@@ -101,7 +101,7 @@ pub fn measure_rows(m: &tapiti_core::metrics::Metrics) -> Vec<Measure> {
             "Connectivity: larger means less depending on a few corridors.",
         ),
         Measure::new(
-            "mean doors",
+            "doors per room",
             format!("{:.2}", m.mean_degree),
             "Corridors per room, on average.",
         ),
@@ -117,6 +117,13 @@ fn measures(ui: &mut Ui, rows: &[Measure]) {
     for row in rows {
         let (rect, response) =
             ui.allocate_exact_size(egui::vec2(ui.available_width(), 20.0), egui::Sense::hover());
+        response.widget_info(|| {
+            egui::WidgetInfo::labeled(
+                egui::Role::Label,
+                true,
+                format!("{}: {}", row.label, row.value),
+            )
+        });
         let painter = ui.painter_at(rect);
         let mid = rect.center().y;
         painter.text(
@@ -162,7 +169,9 @@ fn phase_name(name: &str) -> &'static str {
         "tree" => "tree",
         "β_max" => "β max",
         "cycles" => "cycles",
-        "leaf chambers" => "dead ends",
+        "leaf chambers" => "leaf chambers",
+        "stairs" => "stairs",
+        "other levels" => "other levels",
         _ => "other",
     }
 }
@@ -227,6 +236,7 @@ fn rules_section(ui: &mut Ui, map: &GeneratedMap) {
             .iter()
             .filter(|v| !RULES.iter().any(|(code, _, _)| v.starts_with(code)))
             .collect();
+        let shown_total = map.violations.len();
         for violation in others
             .into_iter()
             .chain(
@@ -237,6 +247,9 @@ fn rules_section(ui: &mut Ui, map: &GeneratedMap) {
             .take(12)
         {
             ui.label(RichText::new(translate_violation(violation)).color(c.error));
+        }
+        if shown_total > 12 {
+            ui.label(muted(ui, format!("and {} more", shown_total - 12)));
         }
     });
 }
@@ -288,7 +301,10 @@ pub fn analysis_tab(app: &mut App, ui: &mut Ui) {
                 .enumerate()
             {
                 ui.horizontal(|ui| {
-                    ui.colored_label(crate::map::event_color(k), "■");
+                    let (swatch, _) =
+                        ui.allocate_exact_size(egui::vec2(9.0, 9.0), egui::Sense::hover());
+                    ui.painter()
+                        .rect_filled(swatch, 0.0, crate::map::event_color(k));
                     ui.label(format!(
                         "{}: {} of {}",
                         kind.name,
@@ -390,7 +406,7 @@ pub fn analysis_tab(app: &mut App, ui: &mut Ui) {
         for room in map.floor.rooms.iter().filter(|r| r.alive) {
             counts[room.used.len().min(4)] += 1;
         }
-        let labels = ["0", "1", "2", "3", "4+"];
+        let labels = ["0 doors", "1 door", "2 doors", "3 doors", "4+ doors"];
         let measure = crate::theme::of(ui).measure;
         let bars: Vec<Bar> = counts
             .iter()
@@ -399,6 +415,7 @@ pub fn analysis_tab(app: &mut App, ui: &mut Ui) {
             .map(|(i, n)| Bar::new(labels[i], *n as f64, measure))
             .collect();
         let max = bars.iter().map(|b| b.value).fold(1.0, f64::max);
+        ui.label(muted(ui, "Rooms, by the doors they use"));
         ui.scope(|ui| charts::columns(ui, &bars, max, 96.0))
             .response
             .on_hover_text(
@@ -426,7 +443,10 @@ pub fn analysis_tab(app: &mut App, ui: &mut Ui) {
                 })
                 .collect();
             measures(ui, &rows);
-            ui.label(muted(ui, format!("{total:.1} ms in all")));
+            ui.label(muted(
+                ui,
+                format!("{total:.1} ms in all; each bar is relative to the longest phase"),
+            ));
         });
     }
 
@@ -549,7 +569,7 @@ fn metric_sections(map: &GeneratedMap) -> Vec<(&'static str, Vec<Row>)> {
                 (
                     "Single-door rooms",
                     m.leaves.to_string(),
-                    "Rooms with only one connection; includes dead ends, the entrance and the exit.",
+                    "Rooms with only one connection; includes leaf chambers, the entrance and the exit.",
                 ),
                 (
                     "Bridges",
@@ -639,12 +659,12 @@ mod tests {
             row(&rows, "loops β").value,
             format!("{} / {}", m.beta, m.beta_max)
         );
-        assert_eq!(row(&rows, "dead ends").value, m.leaves.to_string());
+        assert_eq!(row(&rows, "single-door rooms").value, m.leaves.to_string());
         assert!(row(&rows, "bridges")
             .value
             .starts_with(&m.bridges.to_string()));
         assert_eq!(
-            row(&rows, "exit hops").value,
+            row(&rows, "steps to exit").value,
             format!("{:.0}", m.hops_to_exit.unwrap())
         );
         assert_eq!(
@@ -665,7 +685,7 @@ mod tests {
                 "{seed}: {rooms}"
             );
             assert!(
-                rooms.contains(&format!("{} dead-end chambers", m.leaf_chambers)),
+                rooms.contains(&format!("{} leaf chambers", m.leaf_chambers)),
                 "{seed}: {rooms}"
             );
             let loops = &row(&rows, "loops β").tip;
@@ -699,7 +719,7 @@ mod tests {
             "corridors",
             "diameter",
             "λ₂",
-            "mean doors",
+            "doors per room",
             "routes → exit",
         ] {
             assert!(row(&rows, label).share.is_none(), "{label}");
@@ -713,7 +733,7 @@ mod tests {
         p.exit_room = false;
         let m = metrics_of(&stage(1, &p, 8).d);
         let rows = measure_rows(&m);
-        let hops = row(&rows, "exit hops");
+        let hops = row(&rows, "steps to exit");
         assert_eq!(hops.value, "—");
         assert!(hops.share.is_none());
         assert_eq!(row(&rows, "routes → exit").value, "—");

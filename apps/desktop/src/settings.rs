@@ -587,7 +587,7 @@ fn content(app: &mut App, ui: &mut Ui) {
             if choice_row(
                 ui,
                 "Show",
-                "The rules, measures and phases of the floor, on the right. Automatic shows it when the window is at least 1180 points wide.",
+                "The rules, measures and phases of the floor, on the right. Automatic shows it when the window is wide enough, about 1180 px.",
                 &mut reading,
             ) {
                 app.reading_open = reading.open();
@@ -623,7 +623,10 @@ fn content(app: &mut App, ui: &mut Ui) {
         });
         theme::note(
             ui,
-            RichText::new("Saved in ~/.config/tapiti and applied at once.")
+            RichText::new(format!(
+                "Saved in {} and applied at once.",
+                prefs::dir().map_or_else(|| "the config folder".into(), |d| d.display().to_string())
+            ))
                 .color(theme::of(ui).text_muted),
         );
     });

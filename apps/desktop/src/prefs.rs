@@ -3,6 +3,11 @@
 
 use std::path::PathBuf;
 
+/// The folder the choices are kept in, for the Settings window to name.
+pub fn dir() -> Option<PathBuf> {
+    file("")
+}
+
 fn file(name: &str) -> Option<PathBuf> {
     let base = std::env::var_os("XDG_CONFIG_HOME")
         .map(PathBuf::from)

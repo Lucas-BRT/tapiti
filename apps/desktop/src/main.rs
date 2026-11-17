@@ -54,6 +54,37 @@ pub struct GeneratedMap {
     pub phases: String,
 }
 
+impl GeneratedMap {
+    /// The box of the rooms and corridors that exist, with a margin, so Fit shows the floor and not the empty grid around it. `None`
+    /// when nothing is drawn.
+    pub fn occupied_bounds(&self) -> Option<([f64; 2], [f64; 2])> {
+        let (mut lo, mut hi) = ([f64::MAX; 2], [f64::MIN; 2]);
+        let mut grow = |p: [f64; 2]| {
+            for k in 0..2 {
+                lo[k] = lo[k].min(p[k]);
+                hi[k] = hi[k].max(p[k]);
+            }
+        };
+        for room in self.floor.rooms.iter().filter(|r| r.alive) {
+            grow([room.bounds.lo[0], room.bounds.lo[1]]);
+            grow([room.bounds.hi[0], room.bounds.hi[1]]);
+        }
+        for edge in &self.floor.edges {
+            for p in &edge.pts {
+                grow(*p);
+            }
+        }
+        if lo[0] > hi[0] || lo[1] > hi[1] {
+            return None;
+        }
+        let margin = 0.04 * (hi[0] - lo[0]).max(hi[1] - lo[1]).max(1.0) + self.floor.params.width;
+        Some((
+            [lo[0] - margin, lo[1] - margin],
+            [hi[0] + margin, hi[1] + margin],
+        ))
+    }
+}
+
 #[derive(Default)]
 pub struct BuildingMap {
     seed: u32,
@@ -190,6 +221,8 @@ pub struct App {
     pub generation_failed: bool,
     /// The Λ before the last big change (a size, a reset, a preset, a file), for Edit > Restore previous Λ.
     pub previous: Option<Snapshot>,
+    /// The title the window has, so it is set again only when it changes.
+    window_title: String,
     /// When the Λ was last remembered for a single edit, so a drag of a value is one step back.
     last_remember: Option<Instant>,
     /// The window size last written to the preferences, and the one the window has.
@@ -207,6 +240,9 @@ pub struct App {
     pub focus_group: Option<String>,
     /// What is typed in the command line, and what the last command said.
     pub command: String,
+    /// The commands run, oldest first, and where Up and Down are in them.
+    pub command_history: Vec<String>,
+    pub command_cursor: Option<usize>,
     /// Compact or comfortable spacing, kept between runs.
     pub density: theme::Density,
     /// The reading column: `None` follows the window (shown from 1180 points wide), `Some` is the user's choice.
@@ -302,6 +338,7 @@ impl App {
             notice: None,
             generation_failed: false,
             previous: None,
+            window_title: String::new(),
             last_remember: None,
             saved_window: None,
             status: "Preparing the generator…".into(),
@@ -310,6 +347,8 @@ impl App {
             building: BuildingMap::default(),
             groups: params_ui::groups(),
             focus_group: None,
+            command_history: Vec::new(),
+            command_cursor: None,
             command: String::new(),
             density: theme::Density::saved(),
             reading_open: settings::Reading::saved().open(),
@@ -607,6 +646,8 @@ impl App {
                                 s = if map.draws == 1 { "" } else { "s" }
                             );
                             self.generated = Some(map);
+                            // A room's index means another room in another floor.
+                            self.selected = None;
                             self.generation_failed = false;
                             // A failure is answered by the next floor; the other messages stay until they fade.
                             if self.notice.as_ref().is_some_and(|n| n.error) {
@@ -750,9 +791,17 @@ impl App {
 
     /// Call after `params` changed from outside the JSON editor: refreshes derived state and schedules a regeneration.
     pub fn params_edited(&mut self) {
+        if self.json_dirty {
+            self.notify("The JSON editor had text that was not applied yet: the change on the screen replaced it.", false);
+        }
         self.refresh_changed();
         self.sync_json();
         self.apply_at = Some(Instant::now() + APPLY_DELAY);
+    }
+
+    /// An edit is waiting to be applied.
+    pub fn pending(&self) -> bool {
+        self.apply_at.is_some()
     }
 
     pub fn notify(&mut self, text: impl Into<String>, error: bool) {
@@ -959,6 +1008,27 @@ impl App {
         prefs::save("last", &self.export_json());
     }
 
+    /// The window's title says what is on the screen, for the task switcher: size, seed and whether the floor is valid.
+    fn keep_title(&mut self, ctx: &egui::Context) {
+        let title = match &self.generated {
+            Some(g) => format!(
+                "Tapiti · {} · seed {} · {}",
+                size_label(g.size).to_lowercase(),
+                g.seed,
+                if g.violations.is_empty() {
+                    "valid"
+                } else {
+                    "violations"
+                }
+            ),
+            None => "Tapiti".to_string(),
+        };
+        if title != self.window_title {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Title(title.clone()));
+            self.window_title = title;
+        }
+    }
+
     /// Writes the window's size when it changed, so the next start has the window as it was left (not while maximized).
     fn keep_window(&mut self, ctx: &egui::Context) {
         let size = ctx.input(|i| i.viewport().inner_rect.map(|r| [r.width(), r.height()]));
@@ -1004,13 +1074,11 @@ impl App {
     pub fn commit_seed_draft(&mut self) {
         match self.seed_draft.trim().parse::<u32>() {
             Ok(seed) => self.set_seed(seed),
-            Err(_) => {
-                self.seed_draft = self.seed.to_string();
-                self.notify(
-                    "The seed must be an integer between 0 and 4,294,967,295.",
-                    true,
-                );
-            }
+            // The text stays, in the error colour, to be corrected.
+            Err(_) => self.notify(
+                "The seed must be an integer between 0 and 4,294,967,295.",
+                true,
+            ),
         }
     }
 
@@ -1135,10 +1203,10 @@ impl App {
 
     pub fn map_bounds(&self) -> Option<([f64; 2], [f64; 2])> {
         match (&self.generated, self.show_building) {
-            (Some(map), false) => Some((
+            (Some(map), false) => map.occupied_bounds().or(Some((
                 [*map.floor.grid_x.first()?, *map.floor.grid_y.first()?],
                 [*map.floor.grid_x.last()?, *map.floor.grid_y.last()?],
-            )),
+            ))),
             _ => self.building.bounds().or_else(|| {
                 let d = &self.generated.as_ref()?.floor;
                 Some((
@@ -1256,6 +1324,7 @@ impl eframe::App for App {
         self.shortcuts(&ctx);
         self.apply_due(&ctx);
         self.keep_window(&ctx);
+        self.keep_title(&ctx);
         // A message that is not an error fades after a few seconds.
         if let Some(notice) = &self.notice {
             if !notice.error && notice.at.elapsed() > Duration::from_secs(8) {

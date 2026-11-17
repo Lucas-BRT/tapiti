@@ -62,10 +62,12 @@ pub struct Palette {
     pub grid: Color32,
     pub ink: Color32,
     pub hatch: Color32,
-    /// The outline of a room with no role; the entrance and the exit are outlined in green and amber.
+    /// The outline of a room with no role; the entrance and the exit are outlined in green and violet.
     pub edge: Color32,
     pub accent: Color32,
     pub success: Color32,
+    /// The exit's outline and badge: not amber, which is for what is changed or picked.
+    pub exit: Color32,
     pub danger: Color32,
     pub dark: bool,
 }
@@ -98,6 +100,11 @@ impl Palette {
             },
             accent: c.accent,
             success: c.success,
+            exit: if dark {
+                Color32::from_rgb(0xc9, 0xa0, 0xff)
+            } else {
+                Color32::from_rgb(0x5a, 0x2d, 0x91)
+            },
             danger: c.error,
             dark,
         }
@@ -123,10 +130,50 @@ impl Palette {
     fn role(&self, role: Role) -> Color32 {
         match role {
             Role::Entrance => self.success,
-            Role::Exit => self.accent,
+            Role::Exit => self.exit,
             Role::Plain => self.edge,
         }
     }
+}
+
+/// Dark ink on a light fill and white on a dark one, whichever reads at least 4.5:1.
+fn ink_on(fill: Color32) -> Color32 {
+    let lin = |v: u8| {
+        let v = f64::from(v) / 255.0;
+        if v <= 0.04045 {
+            v / 12.92
+        } else {
+            ((v + 0.055) / 1.055).powf(2.4)
+        }
+    };
+    let l = 0.2126 * lin(fill.r()) + 0.7152 * lin(fill.g()) + 0.0722 * lin(fill.b());
+    // Contrast with white is 1.05 / (l + 0.05); with the graphite ink (about 0.005) it is (l + 0.05) / 0.055.
+    if 1.05 / (l + 0.05) >= (l + 0.05) / 0.055 {
+        Color32::WHITE
+    } else {
+        Color32::from_rgb(0x0e, 0x10, 0x12)
+    }
+}
+
+/// A chip at a room's corner that says IN or OUT, at the same size at every zoom, so the entrance and the exit are found by more than
+/// the colour of an outline.
+fn role_badge(painter: &Painter, xf: &Xf, room: &tapiti_core::generate::Room, pal: &Palette) {
+    let (text, fill) = match room.role {
+        Role::Entrance => ("IN", pal.success),
+        Role::Exit => ("OUT", pal.exit),
+        Role::Plain => return,
+    };
+    let corner = xf.pt([room.bounds.lo[0], room.bounds.lo[1]]);
+    let size = Vec2::new(if text == "IN" { 18.0 } else { 26.0 }, 13.0);
+    let chip = Rect::from_min_size(corner + Vec2::new(3.0, 3.0), size);
+    painter.rect_filled(chip, 0.0, fill);
+    painter.text(
+        chip.center(),
+        Align2::CENTER_CENTER,
+        text,
+        FontId::monospace(10.0),
+        ink_on(fill),
+    );
 }
 
 pub const SHAPE_CLASSES: [&str; 5] = ["rect", "disc", "oct", "L", "star"];
@@ -527,6 +574,9 @@ pub fn draw_floor(
                 outline,
                 false,
             );
+            if room.role != Role::Plain && a >= 0.6 {
+                role_badge(painter, xf, room, pal);
+            }
             let spacing = 10.0 / f64::from(xf.scale.max(0.01));
             let hatches = if a < 0.6 {
                 Vec::new()
@@ -610,8 +660,8 @@ pub fn draw_floor(
                             at,
                             eframe::egui::Align2::CENTER_CENTER,
                             letter.clone(),
-                            eframe::egui::FontId::proportional(9.0),
-                            Color32::WHITE,
+                            eframe::egui::FontId::monospace(10.0),
+                            ink_on(color),
                         );
                     }
                 }
@@ -659,8 +709,8 @@ pub fn draw_floor(
                 at,
                 eframe::egui::Align2::CENTER_CENTER,
                 "S",
-                eframe::egui::FontId::proportional(10.0),
-                Color32::WHITE,
+                eframe::egui::FontId::monospace(11.0),
+                pal.on_room(),
             );
         }
     }
@@ -831,13 +881,28 @@ pub fn hud(painter: &Painter, rect: Rect, pal: &Palette, pointer: &str, under: &
         font.clone(),
         c.text,
     );
-    painter.text(
-        Pos2::new(strip.left() + 150.0, mid),
-        Align2::LEFT_CENTER,
-        under,
-        font.clone(),
-        c.text_muted,
+    // The room that is picked has the right of the strip; what is under the pointer takes what is left of it, cut off, and is not
+    // said twice when it is the picked room.
+    let picked_w = painter
+        .layout_no_wrap(picked.to_string(), font.clone(), c.accent)
+        .size()
+        .x;
+    let room = Rect::from_min_max(
+        Pos2::new(strip.left() + 150.0, strip.top()),
+        Pos2::new(
+            (strip.right() - picked_w - 28.0).max(strip.left() + 150.0),
+            strip.bottom(),
+        ),
     );
+    if under != picked {
+        painter.with_clip_rect(room).text(
+            Pos2::new(room.left(), mid),
+            Align2::LEFT_CENTER,
+            under,
+            font.clone(),
+            c.text_muted,
+        );
+    }
     painter.text(
         Pos2::new(strip.right() - 12.0, mid),
         Align2::RIGHT_CENTER,
@@ -852,7 +917,7 @@ pub fn describe(floor: &Floor, room: &tapiti_core::generate::Room) -> String {
     let role = match room.role {
         Role::Entrance => "entrance",
         Role::Exit => "exit",
-        Role::Plain if room.leaf => "dead-end chamber",
+        Role::Plain if room.leaf => "leaf chamber",
         Role::Plain => "room",
     };
     let (w, h) = match &room.shape {
@@ -874,7 +939,7 @@ pub fn describe(floor: &Floor, room: &tapiti_core::generate::Room) -> String {
         .position(|n| matches!(n, Node::Room { room: r } if *r == room.id))
         .and_then(|i| hops.get(i).copied())
         .filter(|h| h.is_finite())
-        .map_or(String::new(), |h| format!(" · {h:.0} hops"));
+        .map_or(String::new(), |h| format!(" · {h:.0} steps"));
     format!(
         "#{} {role} · {} · {size}{at}",
         room.id,
@@ -947,7 +1012,7 @@ pub fn legend(painter: &Painter, rect: Rect, pal: &Palette, text_color: Color32,
             painter.rect_stroke(
                 r.shrink(1.0),
                 0.0,
-                Stroke::new(2.5, pal.accent),
+                Stroke::new(2.5, pal.exit),
                 eframe::egui::StrokeKind::Inside,
             );
         },
@@ -965,7 +1030,8 @@ pub fn legend(painter: &Painter, rect: Rect, pal: &Palette, text_color: Color32,
 
 #[cfg(test)]
 mod tests {
-    use super::{cell_coord, describe, reveal_alpha, triangulate};
+    use super::{cell_coord, describe, ink_on, reveal_alpha, triangulate, Palette};
+    use eframe::egui::Color32;
     use tapiti_core::generate::Role;
     use tapiti_core::params::{rich_of_size, Size};
     use tapiti_core::stage::stage;
@@ -979,6 +1045,21 @@ mod tests {
         assert_eq!(cell_coord(&grid, -0.1), None);
         assert_eq!(cell_coord(&grid, 30.1), None);
         assert_eq!(cell_coord(&[], 1.0), None);
+    }
+
+    #[test]
+    fn the_exit_is_not_amber_and_marks_read_on_their_fill() {
+        for dark in [true, false] {
+            let pal = Palette::new(dark);
+            assert_ne!(pal.exit, pal.accent, "the exit and what is picked differ");
+            assert_ne!(pal.exit, pal.success);
+        }
+        // Dark ink on amber and on the light room washes, white on the dark colours.
+        assert_eq!(
+            ink_on(Color32::from_rgb(0xff, 0xb4, 0x54)),
+            Color32::from_rgb(0x0e, 0x10, 0x12)
+        );
+        assert_eq!(ink_on(Color32::from_rgb(0x20, 0x30, 0x80)), Color32::WHITE);
     }
 
     #[test]
@@ -1007,12 +1088,12 @@ mod tests {
         };
         let entrance = describe(&floor, room_of(Role::Entrance));
         assert!(
-            entrance.contains("entrance") && entrance.contains(" 0 hops"),
+            entrance.contains("entrance") && entrance.contains(" 0 steps"),
             "{entrance}"
         );
         let exit = describe(&floor, room_of(Role::Exit));
         assert!(exit.contains("exit") && exit.contains("cells"), "{exit}");
-        assert!(!exit.contains(" 0 hops"), "{exit}");
+        assert!(!exit.contains(" 0 steps"), "{exit}");
     }
 
     fn area(pts: &[[f64; 2]]) -> f64 {
