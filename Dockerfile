@@ -6,7 +6,7 @@
 #   * the site (native, the `website` profile: size over speed, see Cargo.toml) and the lab's WebAssembly module build in parallel stages;
 #   * every cargo call has --locked, and every tag and version is pinned (scripts/check-pins.sh looks for newer ones every week).
 
-FROM rust:1.99.1-bookworm AS base
+FROM rust:1.100.0-bookworm AS base
 RUN rustup target add wasm32-unknown-unknown
 WORKDIR /app
 
