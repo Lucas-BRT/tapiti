@@ -217,9 +217,6 @@ pub fn menu_bar(app: &mut App, ui: &mut Ui) {
                     ui.hyperlink_to("Documentation and source", "https://github.com/Lucas-BRT/tapiti");
                     ui.label(muted(ui, format!("Tapiti {}", env!("CARGO_PKG_VERSION"))));
                 });
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    status_readout(app, ui);
-                });
             });
             });
         });
@@ -235,41 +232,14 @@ fn fnv1a(bytes: &[u8]) -> String {
     format!("{h:08x}")
 }
 
-/// The status line of the menu bar, from the right: the rules, then what produced the floor on the screen. The hash is of the seed and
-/// the full Λ, so two windows that show the same hash show the same floor.
-fn status_readout(app: &App, ui: &mut Ui) {
-    let c = theme::of(ui);
-    let Some(g) = &app.generated else {
-        ui.label(muted(ui, "generating"));
-        return;
-    };
-    let rules = ["V1", "V2", "V3", "V4", "V5"];
-    if g.violations.is_empty() {
-        ui.label(RichText::new("valid").color(c.text_muted));
-        for rule in rules.iter().rev() {
-            ui.label(RichText::new(*rule).color(c.success));
-        }
-    } else {
-        ui.label(RichText::new("violations").color(c.error));
-        for rule in rules.iter().rev() {
-            let broken = g.violations.iter().any(|v| v.starts_with(rule));
-            ui.label(RichText::new(*rule).color(if broken { c.error } else { c.success }));
-        }
-    }
-    ui.separator();
-    // Of the floor on the screen, not of the parameters being edited: two windows with the same hash show the same floor.
+/// A hash of the seed and the full Λ of the floor on the screen, so two windows that show the same hash show the same floor.
+pub fn floor_hash(map: &crate::GeneratedMap) -> String {
     let key = format!(
         "{}{}",
-        g.seed,
-        serde_json::to_string(&g.floor.params).unwrap_or_default()
+        map.seed,
+        serde_json::to_string(&map.floor.params).unwrap_or_default()
     );
-    ui.label(
-        RichText::new(fnv1a(key.as_bytes()))
-            .font(egui::FontId::new(12.0, theme::medium()))
-            .color(c.text),
-    );
-    ui.label(muted(ui, "hash"));
-    ui.add_space(6.0);
+    fnv1a(key.as_bytes())
 }
 
 pub fn shortcuts_window(app: &mut App, ctx: &egui::Context) {

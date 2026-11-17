@@ -87,7 +87,7 @@ The menu bar has:
 - **Help**: the shortcuts.
 - **Settings** (<kbd>Ctrl</kbd>+<kbd>,</kbd>): a window of its own for the options of the application. Each is a choice among presets with a Custom one that takes a value of your own: the theme (System, Light, Dark; the system's is the default); the spacing (Compact, Comfortable, or a row height in pixels); the text size (Small to Larger, or a percentage, for the whole window); the reading panel (Automatic, Shown or Hidden, and Narrow, Normal, Wide or a share of the window); and the motion, timed apart for the interface (a panel sliding, a group opening, a control changing colour) and for the reveal of a new floor: Off, Fast, Normal, Slow or milliseconds. A floor that arrives while the last is still being revealed, as when stepping through seeds, shows at once. They are saved and apply at once.
 
-On the right of the same bar are a hash of the seed and Λ (two windows with the same hash show the same floor) and V1 to V5. The seed is in the controls bar, and the time and the number of draws of the last floor are at the foot.
+The rules V1 to V5 and a hash of the seed and Λ (two windows with the same hash show the same floor) are in the Reading column, in the Rules card. The window's title says the size, the seed and whether the floor is valid. The seed is in the controls bar, and the time and the number of draws of the last floor are at the foot.
 
 ### Shortcuts and the map
 

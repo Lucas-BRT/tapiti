@@ -222,6 +222,18 @@ fn rules_section(ui: &mut Ui, map: &GeneratedMap) {
                     .font(egui::FontId::new(13.0, crate::theme::medium()))
                     .color(color),
             );
+            // At the right: what identifies the floor on the screen. Two windows with the same hash show the same floor.
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.label(
+                    RichText::new(crate::panels::floor_hash(map))
+                        .font(egui::FontId::new(12.0, crate::theme::medium()))
+                        .color(c.text),
+                )
+                .on_hover_text(
+                    "A hash of the seed and the full Λ: the same hash is the same floor",
+                );
+                ui.label(muted(ui, "hash"));
+            });
         });
         for (code, name, detail) in RULES {
             ui.horizontal(|ui| {
