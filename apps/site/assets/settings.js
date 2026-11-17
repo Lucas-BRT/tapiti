@@ -9,6 +9,7 @@ const DEFAULTS = {
   theme: 'system',
   text: { preset: 'normal', value: 100 },
   motion: { preset: null, value: 120 }, // null: what the system asks for
+  reveal: { preset: null, value: 600 },
   reading: 'automatic',
   width: { preset: 'normal', value: 328 },
   memory: { preset: 'small', value: 60 },
@@ -16,6 +17,7 @@ const DEFAULTS = {
 }
 const TEXT = { small: 90, normal: 100, large: 115, larger: 130 }
 const MOTION = { off: 0, fast: 80, normal: 120, slow: 220 }
+const REVEAL = { off: 0, fast: 300, normal: 600, slow: 1200 }
 const WIDTH = { narrow: 280, normal: 328, wide: 400 }
 
 const read = () => {
@@ -37,11 +39,13 @@ const wantsLessMotion = () => matchMedia('(prefers-reduced-motion: reduce)').mat
 // What the options mean in numbers, with the system's wish as the first answer to motion.
 export const resolve = (settings = read()) => {
   const motionMs = settings.motion.preset === null ? (wantsLessMotion() ? 0 : MOTION.normal) : settings.motion.preset === 'custom' ? settings.motion.value : MOTION[settings.motion.preset]
+  const revealMs = settings.reveal.preset === null ? (wantsLessMotion() ? 0 : REVEAL.normal) : settings.reveal.preset === 'custom' ? settings.reveal.value : REVEAL[settings.reveal.preset]
   const memoryRooms = { off: 0, small: 60, always: Infinity }[settings.memory.preset] ?? settings.memory.value
   return {
     theme: settings.theme,
     textPercent: settings.text.preset === 'custom' ? settings.text.value : TEXT[settings.text.preset] ?? 100,
     motionMs,
+    revealMs,
     reading: settings.reading,
     readingWidth: settings.width.preset === 'custom' ? settings.width.value : WIDTH[settings.width.preset] ?? 328,
     memoryRooms,
@@ -67,8 +71,8 @@ const choiceInputs = (option) => [...dialog.querySelectorAll(`input[type=radio][
 const customBox = (option) => dialog.querySelector(`[data-option="${option}"] .setting-custom`)
 const customInput = (option) => dialog.querySelector(`input[data-custom="${option}"]`)
 
-const OPTIONS = { theme: 'theme', text: 'text', motion: 'motion', reading: 'reading', width: 'width', memory: 'memory', shortcuts: 'shortcuts' }
-const hasCustom = (option) => option === 'text' || option === 'motion' || option === 'width' || option === 'memory'
+const OPTIONS = { theme: 'theme', text: 'text', motion: 'motion', reveal: 'reveal', reading: 'reading', width: 'width', memory: 'memory', shortcuts: 'shortcuts' }
+const hasCustom = (option) => option === 'text' || option === 'motion' || option === 'reveal' || option === 'width' || option === 'memory'
 
 const show = () => {
   const s = read()
@@ -101,6 +105,24 @@ const save = () => {
   apply()
   window.dispatchEvent(new Event('themechange'))
   window.dispatchEvent(new Event('settingschange'))
+}
+
+// Everywhere but the lab, the header has only a theme button: system, light, dark, and back.
+const toggle = document.querySelector('.theme-toggle')
+if (toggle) {
+  const order = ['system', 'light', 'dark']
+  const names = { system: toggle.dataset.system, light: toggle.dataset.light, dark: toggle.dataset.dark }
+  const show = () => { toggle.textContent = `${toggle.dataset.label}: ${names[read().theme] ?? names.system}` }
+  toggle.hidden = false
+  show()
+  toggle.addEventListener('click', () => {
+    const s = read()
+    s.theme = order[(order.indexOf(s.theme) + 1) % order.length]
+    write(s)
+    apply()
+    show()
+    window.dispatchEvent(new Event('themechange'))
+  })
 }
 
 if (dialog && button) {

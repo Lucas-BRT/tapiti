@@ -43,6 +43,8 @@ pub fn router() -> Router {
         .discover()
         .assets(AssetBundle::load().expect("asset bundle missing: run `topcoat dev`, or `topcoat asset bundle --package tapiti-site` after building"))
         // The lab's WebAssembly module and its glue live at fixed paths: the glue finds its `.wasm` next to itself, so they cannot be hashed assets.
+        // The two big files are routes of their own (below): `serve_dir` answers with `Accept-Ranges`, which keeps the response from being
+        // compressed, and the module is a megabyte. The rest of the folder (the glue's snippets) is served as it is.
         .serve_dir("/lab/pkg/{*file}", pkg_dir())
         .build()
 }
@@ -65,6 +67,36 @@ fn pkg_dir() -> PathBuf {
                 .find(|dir| dir.join("tapiti.js").is_file())
         })
         .unwrap_or_else(|| PathBuf::from("apps/site/pkg"))
+}
+
+/// A file of the lab's module folder, compressed by the router like a page, and kept by the browser for a few minutes (the paths are
+/// fixed, not hashed, so a long lifetime would hold on to an old module after an update).
+async fn pkg_file(
+    name: &str,
+    mime: &'static str,
+) -> Result<([(HeaderName, HeaderValue); 2], Vec<u8>)> {
+    let bytes =
+        std::fs::read(pkg_dir().join(name)).map_err(|_| topcoat::router::error::not_found())?;
+    Ok((
+        [
+            (CONTENT_TYPE, HeaderValue::from_static(mime)),
+            (
+                HeaderName::from_static("cache-control"),
+                HeaderValue::from_static("public, max-age=300, stale-while-revalidate=86400"),
+            ),
+        ],
+        bytes,
+    ))
+}
+
+#[route(GET "/lab/pkg/tapiti_bg.wasm")]
+async fn lab_wasm(cx: &Cx) -> Result<([(HeaderName, HeaderValue); 2], Vec<u8>)> {
+    pkg_file("tapiti_bg.wasm", "application/wasm").await
+}
+
+#[route(GET "/lab/pkg/tapiti.js")]
+async fn lab_glue(cx: &Cx) -> Result<([(HeaderName, HeaderValue); 2], Vec<u8>)> {
+    pkg_file("tapiti.js", "text/javascript; charset=utf-8").await
 }
 
 /// Browsers ask for this path on their own, whatever the page links to.
@@ -190,11 +222,35 @@ const PLEX_SANS_ITALIC: Font =
         host: Asset,
     );
 
-// Every request is rendered in English: Topcoat's `t!` needs a language in the context.
+/// The headers every response carries. The page runs its own scripts and styles, the module and its workers, and nothing from anywhere
+/// else; it is not framed, and it asks for no camera, microphone or position. (Inline `style` attributes are allowed: the bars and the
+/// chips of the readout carry their widths and colours.)
+const SECURITY_HEADERS: [(&str, &str); 5] = [
+    (
+        "content-security-policy",
+        "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
+    ),
+    ("x-content-type-options", "nosniff"),
+    ("referrer-policy", "strict-origin-when-cross-origin"),
+    (
+        "permissions-policy",
+        "camera=(), microphone=(), geolocation=()",
+    ),
+    ("cross-origin-opener-policy", "same-origin"),
+];
+
+// Every request is rendered in English (Topcoat's `t!` needs a language in the context) and every response carries the security headers.
 #[layer]
 async fn language(cx: &Cx, body: Body, next: Next<'_>) -> Result<Response> {
     let cx = cx.with(locale!("en"));
-    next.run(&cx, body).await
+    let mut response = next.run(&cx, body).await?;
+    for (name, value) in SECURITY_HEADERS {
+        response.headers_mut().insert(
+            HeaderName::from_static(name),
+            HeaderValue::from_static(value),
+        );
+    }
+    Ok(response)
 }
 
 #[layout(
@@ -252,8 +308,9 @@ async fn layout(cx: &Cx, slot: Slot<'_>) -> Result<impl View> {
                     |uri| uri.path().starts_with("/lab"),
                 ) {
                     footer()
+                } else {
+                    settings_dialog()
                 }
-                settings_dialog()
             </body>
         </html>
     })
@@ -293,15 +350,28 @@ async fn header(cx: &Cx) -> Result<impl View> {
                     (t!(nav_lab))
                 </a>
                 <a href=(GITHUB)>"GitHub"</a>
-                <button
-                    class="settings-button"
-                    type="button"
-                    hidden=(true)
-                    aria-haspopup="dialog"
-                    aria-controls="settings-dialog"
-                >
-                    (t!(settings_button))
-                </button>
+                // The lab has the settings (they are about the lab: its panel, its undo, its keys); the other pages only the theme.
+                if in_lab {
+                    <button
+                        class="settings-button"
+                        type="button"
+                        hidden=(true)
+                        aria-haspopup="dialog"
+                        aria-controls="settings-dialog"
+                    >
+                        (t!(settings_button))
+                    </button>
+                } else {
+                    <button
+                        class="theme-toggle"
+                        type="button"
+                        hidden=(true)
+                        data-label=(t!(settings_theme))
+                        data-system=(t!(settings_system))
+                        data-light=(t!(settings_light))
+                        data-dark=(t!(settings_dark))
+                    ></button>
+                }
             </nav>
         </header>
     })
@@ -446,6 +516,18 @@ async fn settings_dialog(cx: &Cx) -> Result<impl View> {
         ),
     ];
     let lab = vec![
+        spec(
+            "reveal",
+            s!(settings_reveal),
+            s!(settings_reveal_help),
+            vec![
+                ("off", s!(settings_off)),
+                ("fast", s!(settings_fast)),
+                ("normal", s!(settings_normal)),
+                ("slow", s!(settings_slow)),
+            ],
+            Some(("0", "3000", "ms")),
+        ),
         spec(
             "reading",
             s!(settings_reading),

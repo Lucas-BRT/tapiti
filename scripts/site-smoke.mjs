@@ -50,6 +50,12 @@ await sleep(1500)
 const heavy = await run("return performance.getEntriesByType('resource').map((r) => r.name).filter((n) => /tapiti_bg\\.wasm/.test(n)).length")
 check('docs load no wasm', heavy === 0, heavy)
 
+// The headers: the security headers on a page, and the module compressed and kept for a while.
+const page = await fetch(base + '/')
+check('a page carries the security headers', ['content-security-policy', 'x-content-type-options', 'referrer-policy'].every((h) => page.headers.get(h)), [...page.headers.keys()])
+const wasm = await fetch(base + '/lab/pkg/tapiti_bg.wasm', { headers: { 'accept-encoding': 'br, gzip' } })
+check('the module is compressed and may be kept for a few minutes', !!wasm.headers.get('content-encoding') && /max-age=300/.test(wasm.headers.get('cache-control') ?? '') && wasm.headers.get('content-type') === 'application/wasm', [wasm.headers.get('content-encoding'), wasm.headers.get('cache-control'), wasm.headers.get('content-type')])
+
 // The docs: each page says its own description and has its own title; narrow screens get the page's outline; the parameter reference
 // has a row to link to for each parameter and its defaults; the search page is not indexed; the 404 offers the lab and the search.
 const meta = async (path) => (await run(`const r = await fetch('${path}'); const t = await r.text(); const d = new DOMParser().parseFromString(t, 'text/html'); return [d.title, d.querySelector('meta[name=description]')?.content ?? '', d.querySelector('meta[name=robots]')?.content ?? ''].join('|')`))
@@ -58,7 +64,7 @@ check('each docs page has its own title and description', m1 !== m2 && m1.split(
 check('the search page is not indexed', /noindex/.test(await meta('/search?q=seed')))
 check('the lab has its full title', (await meta('/lab')).startsWith('Lab · Tapiti'))
 await open('/docs/parameters')
-check('the parameter reference has a row and a default for each parameter', (await run("return document.querySelectorAll('tr[id^=param-]').length > 100 && document.querySelector('th:nth-child(4)').textContent === 'Default'")) === true)
+check('the parameter reference is a list, with an anchor and a default for each parameter', (await run("return document.querySelectorAll('.param[id^=param-]').length > 100 && [...document.querySelectorAll('.param-meta span')].some((s) => s.textContent === 'Default') && document.querySelectorAll('.docs-article table').length === 0")) === true)
 await open('/docs/model')
 await run("return true")
 const notFound = await (await fetch(base + '/no-such-page')).text()
@@ -67,20 +73,33 @@ await open('/')
 check('the hero has IN and OUT chips and no V1 to V5 strip', (await run("return !!document.querySelector('.tapiti-floor .badges') && !document.querySelector('.bench-bar').textContent.includes('V1 V2')")) === true)
 check('the parameter tree links to its groups', (await run("return new Set([...document.querySelectorAll('.tree-list a')].map((a) => a.hash)).size > 5")) === true)
 
-// Settings: the button opens a dialog; the theme, the text size and the motion are choices of presets (and a value of one's own),
-// kept in the browser, applied at once and on the page before it is painted. They start from the system's.
+// The theme: outside the lab the header has a theme button (system, light, dark, and back) that keeps the choice and says it; the
+// settings, with the text size and the motion, are the lab's. Whatever was chosen is on every page before it is painted.
 await open('/')
 await run("localStorage.clear(); document.documentElement.removeAttribute('data-theme'); document.documentElement.style.zoom = ''")
 await open('/')
-check('the settings button is shown', (await run("return !document.querySelector('.settings-button').hidden")) === true)
+check('outside the lab there is a theme button and no settings button', (await run("return !document.querySelector('.theme-toggle').hidden && !document.querySelector('.settings-button') && !document.getElementById('settings-dialog')")) === true)
+check('the theme button shows the system choice', (await run("return document.querySelector('.theme-toggle').textContent")) === 'Theme: System')
+const click = () => run("document.querySelector('.theme-toggle').click(); return (document.documentElement.dataset.theme ?? 'none') + '|' + document.querySelector('.theme-toggle').textContent")
+check('the first click chooses light', (await click()) === 'light|Theme: Light')
+check('the second click chooses dark', (await click()) === 'dark|Theme: Dark')
+check('the third click goes back to the system', (await click()) === 'none|Theme: System')
+await click()
+await open('/docs/model')
+check('a chosen theme is on the page before it is painted', (await run("return document.documentElement.dataset.theme + '|' + document.querySelector('.theme-toggle').textContent")) === 'light|Theme: Light')
+await run("localStorage.clear()")
+
+// The lab's settings: the button opens a dialog; the theme, the text size and the motion are choices of presets (and a value of one's
+// own), kept in the browser, applied at once and on every page before it is painted. They start from the system's.
+await open('/lab')
+await sleep(3000) // the module loads; leaving before it has would abort its download, which is logged as an error
+check('the lab has the settings button', (await run("return !document.querySelector('.settings-button').hidden && !document.querySelector('.theme-toggle')")) === true)
 const choose = (name, value) => run(`const i = document.querySelector('input[name="${name}"][value="${value}"]'); i.checked = true; i.dispatchEvent(new Event('change', { bubbles: true })); return true`)
 await run("document.querySelector('.settings-button').click()")
 check('the dialog opens', (await run("return document.getElementById('settings-dialog').open")) === true)
 check('the theme starts from the system', (await run("return document.querySelector('input[name=theme][value=system]').checked")) === true)
-await choose('theme', 'light')
-check('a theme choice is applied at once', (await run("return document.documentElement.dataset.theme")) === 'light')
 await choose('theme', 'dark')
-check('and kept', (await run("return JSON.parse(localStorage.getItem('tapiti.settings')).theme + '|' + localStorage.getItem('tapiti-theme')")) === 'dark|dark')
+check('a theme choice is applied at once and kept', (await run("return document.documentElement.dataset.theme + '|' + JSON.parse(localStorage.getItem('tapiti.settings')).theme")) === 'dark|dark')
 await choose('text', 'larger')
 check('the text size scales the page', (await run("return document.documentElement.style.zoom")) === '1.3')
 await choose('motion', 'custom')
@@ -89,8 +108,10 @@ check('a custom motion time is a value of its own', (await run("return getComput
 await choose('motion', 'off')
 check('motion off', (await run("return document.documentElement.dataset.motion")) === 'off')
 await run("document.getElementById('settings-dialog').close()")
-await open('/')
-check('a chosen theme and text size are on the page before it is painted', (await run("return document.documentElement.dataset.theme + '|' + document.documentElement.style.zoom + '|' + document.documentElement.dataset.motion")) === 'dark|1.3|off')
+await open('/docs/model')
+check('the lab settings are on the other pages before they are painted', (await run("return document.documentElement.dataset.theme + '|' + document.documentElement.style.zoom + '|' + document.documentElement.dataset.motion")) === 'dark|1.3|off')
+await open('/lab')
+await sleep(3000)
 await run("document.querySelector('.settings-button').click(); document.getElementById('settings-reset').click(); document.getElementById('settings-dialog').close(); return true")
 check('back to the system choices', (await run("return (document.documentElement.dataset.theme ?? 'none') + '|' + (localStorage.getItem('tapiti.settings') ?? 'none')")) === 'none|none')
 await run("localStorage.clear()")

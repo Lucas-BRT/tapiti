@@ -1,8 +1,12 @@
 // Progressive enhancement only: the site works without this file.
 (() => {
-  // Docs: a copy button on every code block.
-  const label = ["Copy", "Copied"];
-  for (const pre of document.querySelectorAll(".docs-article pre")) {
+  // A copy button on every code block, in the docs and on the landing page. The result is said on the button and to assistive technology.
+  const label = ["Copy", "Copied", "Not copied"];
+  const status = document.createElement("p");
+  status.className = "sr-only";
+  status.setAttribute("role", "status");
+  document.body.append(status);
+  for (const pre of document.querySelectorAll(".docs-article pre, .landing pre")) {
     if (!navigator.clipboard) break;
     const wrap = document.createElement("div");
     wrap.className = "code-block";
@@ -12,12 +16,20 @@
     button.type = "button";
     button.className = "copy";
     button.textContent = label[0];
+    button.setAttribute("aria-label", "Copy the code");
     button.addEventListener("click", async () => {
+      let done = 1;
       try {
         await navigator.clipboard.writeText(pre.innerText);
-        button.textContent = label[1];
-        setTimeout(() => (button.textContent = label[0]), 1600);
-      } catch {}
+      } catch {
+        done = 2;
+      }
+      button.textContent = label[done];
+      status.textContent = done === 1 ? "Copied to the clipboard." : "Could not copy to the clipboard.";
+      setTimeout(() => {
+        button.textContent = label[0];
+        status.textContent = "";
+      }, 1600);
     });
     wrap.append(button);
   }

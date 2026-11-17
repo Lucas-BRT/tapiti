@@ -32,23 +32,26 @@ pub async fn frame(cx: &Cx, current: &str, #[default] child: Child<'_>) -> Resul
         <link rel="stylesheet" href=(asset!("assets/docs.css"))>
         <div class="docs">
             <aside class="docs-nav">
-                <form
-                    class="docs-search"
-                    role="search"
-                    method="get"
-                    action=(href!(search::page))
-                >
-                    <label class="visually-hidden" for="docs-q">
-                        (t!(docs_search_label))
-                    </label>
-                    <input
-                        id="docs-q"
-                        type="search"
-                        name="q"
-                        maxlength="80"
-                        placeholder=(t!(docs_search_placeholder))
+                // The search page has its own box; the others have this one.
+                if !current.is_empty() {
+                    <form
+                        class="docs-search"
+                        role="search"
+                        method="get"
+                        action=(href!(search::page))
                     >
-                </form>
+                        <label class="visually-hidden" for="docs-q">
+                            (t!(docs_search_label))
+                        </label>
+                        <input
+                            id="docs-q"
+                            type="search"
+                            name="q"
+                            maxlength="80"
+                            placeholder=(t!(docs_search_placeholder))
+                        >
+                    </form>
+                }
                 <nav aria-labelledby="docs-nav-title">
                     <p id="docs-nav-title" class="docs-side-title">
                         (t!(docs_nav_label))

@@ -42,7 +42,7 @@
   .docs-article a { color: var(--measure); text-decoration-color: currentColor; }
   .docs-article a:hover { text-decoration-thickness: 2px; }
   .docs-article .anchor { margin-left: .35em; color: var(--muted); text-decoration: none; opacity: 0; transition: opacity var(--t, 120ms); }
-  .docs-article :is(h2, h3, h4):hover .anchor, .docs-article .anchor:focus-visible { opacity: 1; }
+  .docs-article :is(h2, h3, h4):hover .anchor { opacity: 1; }
   .docs-article :is(pre, .table-wrap, .math-display):focus-visible { outline-offset: 2px; }
   .docs-article pre { overflow-x: auto; margin: 1.2em 0; padding: 14px 16px; font-size: 13.5px; line-height: 1.6; color: var(--text); background: var(--panel); border: 1px solid var(--border); border-radius: 0; scrollbar-width: thin; }
   .docs-article :not(pre) > code { padding: .1em .35em; color: var(--text); background: var(--element); }
@@ -52,13 +52,19 @@
   .docs-article blockquote > :last-child { margin-bottom: 0; }
   .docs-article hr { margin: 2.2em 0; border: 0; border-top: 1px solid var(--hair); }
 
-  .code-block { position: relative; margin: 1.2em 0; }
-  .code-block pre { margin: 0; padding-top: 38px; }
-  .copy { position: absolute; top: 6px; right: 6px; /* in a strip of its own above the code, so it never covers a line */ min-height: 26px; padding: 2px 10px; font: 500 12px var(--font-mono); color: var(--muted); background: var(--element); border: 1px solid var(--border); border-radius: 0; cursor: pointer; opacity: 0; transition: opacity var(--t, 120ms); }
-  .code-block:hover .copy, .copy:focus-visible { opacity: 1; }
-  .copy:hover { color: var(--text); }
-  @media (hover: none) { .copy { opacity: 1; } }
 
+  /* The parameter reference: a definition list, a name and its facts on one line, the explanation under it. */
+  .params { margin: 1.2em 0; border-top: 1px solid var(--hair); }
+  .params .param { padding: 12px 0; border-bottom: 1px solid var(--hair); }
+  .params dt { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; font-weight: 600; }
+  .params dd { margin: 4px 0 0; }
+  .params dd p { margin: 0 0 6px; }
+  .param-label { color: var(--text); }
+  .params dt code { padding: 0; background: none; color: var(--muted); font-weight: 400; }
+  .param-meta { color: var(--muted); font: 400 13px/1.6 var(--font-mono); }
+  .param-meta span { margin-right: 6px; color: var(--muted); }
+  .param-meta span:not(:first-child) { margin-left: 16px; }
+  .param:target { background: var(--panel); outline: 2px solid var(--measure); outline-offset: -2px; }
   .table-wrap { overflow-x: auto; margin: 1.4em 0; border: 1px solid var(--border); scrollbar-width: thin; }
   .table-wrap table { width: 100%; border-collapse: collapse; font-size: 14px; line-height: 1.5; font-variant-numeric: tabular-nums; }
   .table-wrap th, .table-wrap td { padding: 8px 12px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--hair); }

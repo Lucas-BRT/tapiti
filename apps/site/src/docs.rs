@@ -578,27 +578,22 @@ fn defaults_text(field: &tapiti_schema::ParamField, sizes: &[serde_json::Value])
         .join(" · ")
 }
 
+/// The parameters of a group as a list of definitions, not a table: a row of five columns with a sentence in the last one cannot be read
+/// in the width of a page (or of a phone), and the reference has more than a hundred of them. Each is a name, what it accepts and its
+/// defaults on one line, and what it does under it, with an anchor of its own to link to.
 fn group_table(html: &mut String, group: &ParamGroup) {
     let sizes: Vec<serde_json::Value> = (1..=4).map(tapiti_render::readout::full_params).collect();
-    let head = ["Parameter", "Name", "Values", "Default", "What it does"];
-    let _ = write!(
-        html,
-        "<div class=\"table-wrap\" tabindex=\"0\"><table><thead><tr>"
-    );
-    for h in head {
-        let _ = write!(html, "<th>{h}</th>");
-    }
-    let _ = write!(html, "</tr></thead><tbody>");
+    let _ = write!(html, "<dl class=\"params\">");
     for field in &group.fields {
         let values = match &field.kind {
             FieldKind::Number { min, max, integer } => {
                 if *integer {
-                    format!("{min:.0} – {max:.0}")
+                    format!("{min:.0} to {max:.0}")
                 } else {
-                    format!("{min} – {max}")
+                    format!("{min} to {max}")
                 }
             }
-            FieldKind::Boolean => "on / off".into(),
+            FieldKind::Boolean => "on or off".into(),
             FieldKind::Choice(options) => options
                 .iter()
                 .map(|(_, name)| name.as_str())
@@ -607,16 +602,16 @@ fn group_table(html: &mut String, group: &ParamGroup) {
         };
         let _ = write!(
             html,
-            "<tr id=\"param-{}\"><td><code>{}</code></td><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>",
-            field.path.replace('.', "-"),
-            escape(&field.path),
-            escape(field.label.as_str()),
-            escape(&values),
-            escape(&defaults_text(field, &sizes)),
-            escape(field.help.as_str())
+            "<div class=\"param\" id=\"param-{id}\"><dt><span class=\"param-label\">{label}</span> <code>{path}</code></dt><dd><p>{help}</p><p class=\"param-meta\"><span>Accepts</span> {values}<span>Default</span> {default}</p></dd></div>",
+            id = field.path.replace('.', "-"),
+            label = escape(field.label.as_str()),
+            path = escape(&field.path),
+            help = escape(field.help.as_str()),
+            values = escape(&values),
+            default = escape(&defaults_text(field, &sizes)),
         );
     }
-    let _ = write!(html, "</tbody></table></div>");
+    let _ = write!(html, "</dl>");
 }
 
 // ---- Search ------------------------------------------------------------------------------------------
@@ -895,6 +890,6 @@ mod tests {
                 assert!(page.html.contains(&id), "{}", field.path);
             }
         }
-        assert!(page.html.contains("<th>Default</th>"));
+        assert!(page.html.contains("<span>Default</span>"));
     }
 }

@@ -29,11 +29,12 @@ ws.onmessage = ({ data }) => {
   const message = JSON.parse(data)
   if (message.id && waiting.has(message.id)) waiting.get(message.id)(message)
   else if (message.method === 'log.entryAdded' && message.params.level === 'error') logs.push(message.params.text)
+  else if (message.method === 'network.beforeRequestSent' && message.params.isBlocked) ws.send(JSON.stringify({ id: ++id, method: 'network.failRequest', params: { request: message.params.request.request } }))
 }
 const send = (method, params = {}) => new Promise((resolve) => { const n = ++id; waiting.set(n, resolve); ws.send(JSON.stringify({ id: n, method, params })) })
 
 await send('session.new', { capabilities: {} })
-await send('session.subscribe', { events: ['log.entryAdded'] })
+await send('session.subscribe', { events: ['log.entryAdded', 'network.beforeRequestSent'] })
 const { result: { contexts: [{ context }] } } = await send('browsingContext.getTree', {})
 await send('browsingContext.setViewport', { context, viewport: { width: 1440, height: 900 } })
 await send('browsingContext.navigate', { context, url, wait: 'complete' })
@@ -61,6 +62,7 @@ const checks = [
   ['the exit is not amber, and the plan has a focus ring drawn inside it', `const s = getComputedStyle(document.getElementById('lab')); let ring = ''; for (const sheet of document.styleSheets) { try { for (const rule of sheet.cssRules) { if (rule.selectorText === '#floor-map:focus-visible') ring = rule.style.outlineOffset } } catch {} } return (s.getPropertyValue('--role-exit') !== s.getPropertyValue('--amber')) + '|' + ring`, (v) => /^true\|-\d/.test(v)],
   ['environment layers can be drawn: a tint to choose from', `document.querySelector('[name="environment.height.enabled"]').checked = true; document.querySelector('[name="environment.height.enabled"]').dispatchEvent(new Event('change', { bubbles: true })); ${wait(900)}; const r = document.querySelector('input[name=tint][value=height]'); return !r.disabled`, (v) => v === true],
   ['the settings dialog opens, scales the text, and stops the motion', `document.querySelector('.settings-button').click(); const open = document.getElementById('settings-dialog').open; const set = (name, value) => { const i = document.querySelector('input[name="' + name + '"][value="' + value + '"]'); i.checked = true; i.dispatchEvent(new Event('change', { bubbles: true })) }; set('text', 'large'); set('motion', 'off'); const zoom = document.documentElement.style.zoom; const motion = document.documentElement.dataset.motion; set('text', 'normal'); document.getElementById('settings-reset').click(); document.getElementById('settings-dialog').close(); return open + '|' + zoom + '|' + motion`, (v) => v === 'true|1.15|off'],
+  ['the lab reads the reveal setting', `document.querySelector('.settings-button').click(); const i = document.querySelector('input[name="reveal"][value="off"]'); const has = !!i; i.checked = true; i.dispatchEvent(new Event('change', { bubbles: true })); const off = JSON.parse(localStorage.getItem('tapiti.settings')).reveal.preset; document.getElementById('settings-reset').click(); document.getElementById('settings-dialog').close(); return has + '|' + off`, (v) => v === 'true|off'],
   ['benchmark runs', `document.querySelector('details.tool-group:last-of-type summary')?.click(); document.getElementById('bench-40').click(); return document.getElementById('bench-status').textContent`, (v) => /invalid of 40/.test(v)],
 ]
 let failed = 0
@@ -92,6 +94,18 @@ for (const [w, h, name] of [[640, 400, 'at 200% zoom'], [812, 375, 'on a phone h
   const { view, tabs, h: inner } = JSON.parse(got)
   report(`the tabs and the form are reachable ${name}`, view <= inner * 0.62 && tabs < inner, got)
 }
+
+// A module that cannot be downloaded is told, with a way to reload, instead of leaving the page on "Loading" for ever.
+await resize(1440, 900)
+const failing = await send('network.addIntercept', { phases: ['beforeRequestSent'], urlPatterns: [{ type: 'pattern', pathname: '/lab/pkg/tapiti_bg.wasm' }] })
+const logsBefore = logs.length
+await send('browsingContext.navigate', { context, url: url + '?broken', wait: 'complete' })
+await sleep(2500)
+report('a failed load of the generator is told, with a way to reload', (await run("return !!document.getElementById('lab-reload') && document.getElementById('results-body').textContent.includes('did not load') && document.getElementById('lab').getAttribute('aria-busy') === 'false'")) === true, 'load failure')
+await send('network.removeIntercept', { intercept: failing.result.intercept })
+logs.length = logsBefore // the failed request is the error this check asked for
+await send('browsingContext.navigate', { context, url, wait: 'complete' })
+await sleep(2500)
 
 // No sideways scroll on a phone.
 await resize(390, 844)

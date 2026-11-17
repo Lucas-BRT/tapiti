@@ -617,7 +617,29 @@ const boundsOfShape = (shape) => {
 
 // The level of every node: a room has its own, and a junction takes the one of the corridors that reach it.
 let nodeLevels = []
+let roomNode = []
+let hopsOf = []
+let farthest = 0
+// How far each node is from the entrance, in rooms: a new floor is revealed outwards from there, like the desktop app does.
+const computeHops = (d) => {
+  roomNode = []
+  d.nodes.forEach((node, id) => { if (node.kind === 'room') roomNode[node.room] = id })
+  const origin = d.rooms.find((r) => r.role === 'entrance')?.id
+  const start = origin != null ? roomNode[origin] : 0
+  hopsOf = d.nodes.map(() => Infinity)
+  hopsOf[start] = 0
+  const queue = [start]
+  while (queue.length) {
+    const at = queue.shift()
+    for (const edge of d.edges) {
+      const next = edge.u === at ? edge.v : edge.v === at ? edge.u : null
+      if (next != null && hopsOf[next] === Infinity) { hopsOf[next] = hopsOf[at] + 1; queue.push(next) }
+    }
+  }
+  farthest = Math.max(0, ...hopsOf.filter(Number.isFinite))
+}
 const computeLevels = (d) => {
+  computeHops(d)
   nodeLevels = d.nodes.map((node) => (node.kind === 'room' ? d.rooms[node.room].level ?? 0 : null))
   for (let round = 0; round < 3; round++) {
     for (const edge of d.edges) {
@@ -661,6 +683,25 @@ const fitView = () => { computeBounds(); view.zoom = 1; view.x = 0; view.y = 0 }
 
 /* ---------------- Drawing ---------------- */
 
+// The reveal of a new floor: from 0 (nothing) to 1 (all of it) over the time Settings give, outwards from the entrance.
+const reveal = { start: 0, ms: 0, running: false }
+const revealFront = () => {
+  if (!reveal.running) return null
+  const p = (performance.now() - reveal.start) / reveal.ms
+  if (p >= 1) { reveal.running = false; return null }
+  return p * (farthest + 1.5)
+}
+const nodeAlpha = (front, id) => (front == null ? 1 : Math.max(0, Math.min(1, front - (Number.isFinite(hopsOf[id]) ? hopsOf[id] : 0))))
+const startReveal = () => {
+  const ms = setting().revealMs ?? 0
+  if (ms <= 0 || reveal.running) { reveal.running = false; return }
+  reveal.start = performance.now()
+  reveal.ms = ms
+  reveal.running = true
+  const tick = () => { draw(); if (reveal.running) requestAnimationFrame(tick) }
+  requestAnimationFrame(tick)
+}
+
 const tintOf = () => (state.tint === 'shape' ? null : current?.tints.find((t) => t.id === state.tint) ?? null)
 
 const draw = () => {
@@ -688,6 +729,7 @@ const draw = () => {
   const colorOf = (cls) => css(`--map-${cls}`) || '#59677a'
   const roleColor = (role) => css(`--role-${role}`)
   const tint = tintOf()
+  const front = revealFront()
 
   if (overlays.cells) {
     ctx.strokeStyle = css('--rule')
@@ -716,23 +758,31 @@ const draw = () => {
     ctx.globalAlpha = 1
   }
   const edges = d.edges.filter(edgeOnLevel)
+  const edgeAlpha = (edge) => Math.min(nodeAlpha(front, edge.u), nodeAlpha(front, edge.v))
   ctx.strokeStyle = corridor
   ctx.lineWidth = P.width
   ctx.lineCap = 'butt'
   ctx.lineJoin = 'round'
-  for (const edge of edges) strokePolyline(edge.pts)
+  for (const edge of edges) {
+    ctx.globalAlpha = edgeAlpha(edge)
+    strokePolyline(edge.pts)
+  }
   ctx.strokeStyle = ink
-  ctx.globalAlpha = 0.55
   ctx.lineWidth = px
-  for (const edge of edges) strokePolyline(edge.pts)
+  for (const edge of edges) {
+    ctx.globalAlpha = 0.55 * edgeAlpha(edge)
+    strokePolyline(edge.pts)
+  }
   ctx.globalAlpha = 1
   for (const room of d.rooms) {
     if (!room.alive || !onLevel(room)) continue
+    const shown = nodeAlpha(front, roomNode[room.id])
+    if (shown <= 0) continue
     pathOf(room.shape)
     ctx.fillStyle = (tint && tint.colors[room.id]) || colorOf(room.cls)
-    ctx.globalAlpha = room.leaf ? 0.62 : 0.9
+    ctx.globalAlpha = (room.leaf ? 0.62 : 0.9) * shown
     ctx.fill()
-    ctx.globalAlpha = 1
+    ctx.globalAlpha = shown
     const pattern = !tint && hatches[room.cls]
     if (pattern) {
       pattern.setTransform(new DOMMatrix().scale(px))
@@ -743,6 +793,7 @@ const draw = () => {
     ctx.strokeStyle = role || ink
     ctx.lineWidth = (role ? 3.5 : 1.5) * px
     ctx.stroke()
+    ctx.globalAlpha = 1
   }
   for (const room of d.rooms) {
     if (room.alive || !onLevel(room)) continue
@@ -818,7 +869,7 @@ const draw = () => {
     ctx.fillText('S', ox + x * k, oy + y * k + 1)
   }
   for (const room of d.rooms) {
-    if (!room.alive || !onLevel(room) || room.role === 'plain') continue
+    if (!room.alive || !onLevel(room) || room.role === 'plain' || nodeAlpha(front, roomNode[room.id]) < 0.6) continue
     const [x0, y0] = boundsOfShape(room.shape)
     const text = room.role === 'entrance' ? 'IN' : 'OUT'
     const w = text === 'IN' ? 20 : 28
@@ -1098,7 +1149,7 @@ const labelCanvas = () => {
   const status = !current ? 'loading' : current.violations.length ? tr('lab_state_invalid', { n: current.violations.length }) : tr('lab_state_valid')
   canvas.setAttribute('aria-label', tr('lab_map_label', { rooms: n, state: status }))
 }
-const setCurrent = (answer) => {
+const setCurrent = (answer, { animate = false } = {}) => {
   current = answer
   computeLevels(current.floor)
   if (state.level >= levelCount()) state.level = 0
@@ -1109,6 +1160,7 @@ const setCurrent = (answer) => {
   markUnused()
   labelCanvas()
   setBusy()
+  if (animate) startReveal()
   draw()
   renderResults()
 }
@@ -1139,7 +1191,7 @@ const regenerate = async () => {
     pending = false
     stale = false
     clearMessage('generation')
-    setCurrent(answer)
+    setCurrent(answer, { animate: true })
     saveState()
   } catch (error) {
     if (mine !== generation) return

@@ -144,3 +144,5 @@ settings_shortcuts_help = Alt+1 to 4, Alt+R, Alt+arrows, the slash and the quest
 settings_on = On
 settings_reset = Back to my system's choices
 missing_search = Search the docs
+settings_reveal = New floor
+settings_reveal_help = A new floor in the lab is drawn from the entrance outwards over this time. A floor that comes while the last is still being drawn shows at once. It starts at Off when your system asks for less motion.

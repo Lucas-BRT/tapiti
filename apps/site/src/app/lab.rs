@@ -9,7 +9,7 @@ use topcoat::{
     context::Cx,
     l10n::{fluent::messages, locale},
     metadata::Metadata,
-    router::page,
+    router::{href, page},
     view::{View, component, view},
 };
 
@@ -580,6 +580,18 @@ async fn param_group(cx: &Cx, group: &ParamGroup) -> Result<impl View> {
                 </span>
             </summary>
             <p class="group-intro">(group.intro.as_str())</p>
+            <p class="group-intro">
+                <a
+                    href=(href!(
+                        crate::app::docs::slug::_page::page,
+                        crate::app::docs::slug::slug: "parameters",
+                    ).fragment(
+                        group.id.as_str(),
+                    ))
+                >
+                    (e!(lab_group_reference))
+                </a>
+            </p>
             <button type="button" class="text-button group-reset">
                 (e!(lab_group_reset))
             </button>

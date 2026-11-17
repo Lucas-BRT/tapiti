@@ -294,3 +294,4 @@ lab_developer_done = Done.
 lab_undo_aria = Undo the last change
 lab_redo_aria = Redo
 lab_reading_close = Close the reading
+lab_group_reference = Reference of this group, with the defaults
