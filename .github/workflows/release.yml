@@ -19,6 +19,7 @@ jobs:
 
   publish:
     needs: packages
+    timeout-minutes: 30
     runs-on: ubuntu-latest
     # id-token and attestations: the signed build provenance of the assets.
     permissions:
@@ -26,14 +27,14 @@ jobs:
       id-token: write
       attestations: write
     steps:
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           path: dist
           merge-multiple: true
       - name: SHA256SUMS
         working-directory: dist
         run: sha256sum -- * | tee SHA256SUMS
-      - uses: actions/attest-build-provenance@v4
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4
         with:
           subject-path: dist/*
       - name: Publish

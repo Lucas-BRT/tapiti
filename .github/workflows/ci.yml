@@ -1,11 +1,17 @@
 name: CI
 
 on:
+  # main and develop run on push so their caches exist for every PR to restore; PRs run on the PR (a branch can
+  # only read caches of its own ref, of the base branch and of the default branch), so a push to a feature branch
+  # would only run everything twice.
   push:
-    branches: ["**"]
+    branches: [main, develop]
   pull_request:
-    branches: [main]
   workflow_dispatch:
+  # GitHub deletes caches that were not read for 7 days: a weekly run on main (the default branch, readable from every
+  # branch) keeps the cache alive when nothing is pushed for a while.
+  schedule:
+    - cron: "23 3 * * 1"
 
 # A newer push to the same branch makes the running build pointless.
 concurrency:
@@ -24,18 +30,20 @@ jobs:
   # The install script and the packer of the Linux tar.gz (shellcheck is on the runner image).
   shell:
     name: Shell scripts
+    timeout-minutes: 30
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - run: shellcheck install.sh scripts/package-linux.sh scripts/package-macos.sh scripts/test-linux-packages.sh
 
   # Format, lints and tests of the Rust crates. Dependencies and build outputs are cached by rust-cache.
   rust:
     name: Rust
+    timeout-minutes: 30
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@master
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
         with:
           toolchain: 1.99.1
           components: rustfmt, clippy
@@ -43,8 +51,9 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends libxkbcommon-dev libwayland-dev libx11-dev libxcursor-dev libxi-dev libxrandr-dev libgl1-mesa-dev
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
+          save-if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop' }}
           shared-key: workspace
       - run: cargo fmt --check --all
       - run: cargo clippy -p tapiti-core -p tapiti-site -p tapiti-render -p tapiti-schema -p tapiti-desktop --no-deps -- -D warnings
@@ -53,15 +62,17 @@ jobs:
   # The desktop app on Windows, which the releases ship: it must build and pass its lints and tests there.
   windows:
     name: Desktop on Windows
+    timeout-minutes: 30
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@master
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
         with:
           toolchain: 1.99.1
           components: clippy
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
+          save-if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop' }}
           key: windows
       - run: cargo clippy -p tapiti-desktop --no-deps -- -D warnings
       - run: cargo test --release -p tapiti-desktop
@@ -69,18 +80,20 @@ jobs:
   # Topcoat's own formatter and the translation check (no unused or missing message).
   site:
     name: Site checks
+    timeout-minutes: 30
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@master
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
         with:
           toolchain: 1.99.1
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
+          save-if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop' }}
           shared-key: workspace
       - name: Topcoat CLI (cached by version)
         id: topcoat
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: |
             ~/.cargo/bin/topcoat
@@ -97,25 +110,27 @@ jobs:
   # The lab's WebAssembly module builds, and its script parses.
   wasm:
     name: WebAssembly
+    timeout-minutes: 30
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@master
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
         with:
           toolchain: 1.99.1
           targets: wasm32-unknown-unknown
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
+          save-if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop' }}
           shared-key: wasm
       - name: wasm-bindgen CLI (cached by version)
         id: bindgen
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ~/.cargo/bin/wasm-bindgen
           key: wasm-bindgen-cli-0.2.130
       - if: steps.bindgen.outputs.cache-hit != 'true'
         run: cargo install wasm-bindgen-cli --version 0.2.130 --locked
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: 22
       - run: scripts/build-wasm.sh
@@ -127,15 +142,17 @@ jobs:
   # The real site in headless Firefox: the landing page's 3D walk, the lab, the 404, and accessibility (axe-core). Screenshots are kept.
   browser:
     name: Browser
+    timeout-minutes: 30
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@master
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
         with:
           toolchain: 1.99.1
           targets: wasm32-unknown-unknown
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
+          save-if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop' }}
           shared-key: browser
       # The runner has no GPU and no display, and Firefox cannot make a WebGL2 context without one: Xvfb is the display and Mesa draws in software.
       - name: Xvfb and Mesa
@@ -144,7 +161,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends xvfb libgl1-mesa-dri libglx-mesa0 libegl1
       - name: wasm-bindgen CLI (cached by version)
         id: bindgen
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ~/.cargo/bin/wasm-bindgen
           key: wasm-bindgen-cli-0.2.130
@@ -152,7 +169,7 @@ jobs:
         run: cargo install wasm-bindgen-cli --version 0.2.130 --locked
       - name: Topcoat CLI (cached by version)
         id: topcoat
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: |
             ~/.cargo/bin/topcoat
@@ -160,7 +177,7 @@ jobs:
           key: topcoat-cli-0.12.0
       - if: steps.topcoat.outputs.cache-hit != 'true'
         run: cargo install topcoat-cli --version 0.12.0 --locked
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: 22
       - run: scripts/build-wasm.sh
@@ -180,7 +197,7 @@ jobs:
       - name: Screenshots
         if: always()
         run: xvfb-run -a node scripts/site-shots.mjs shots http://127.0.0.1:3000
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()
         with:
           name: screenshots
@@ -192,11 +209,12 @@ jobs:
   # The image builds (multi-stage, dependencies cached in the GitHub Actions cache). Nothing is pushed.
   docker:
     name: Docker image
+    timeout-minutes: 30
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: docker/setup-buildx-action@v4
-      - uses: docker/build-push-action@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
           context: .
           push: false
